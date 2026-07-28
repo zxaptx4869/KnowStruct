@@ -1,0 +1,30 @@
+schema: spec-driven
+
+context: |
+  项目名称：KnowStruct。
+
+  项目背景、范围、优先级、核心对象和技术约束必须参考：
+  - README.md
+  - docs/知识经验管理工具-项目背景与方案说明.md
+  - docs/功能结构图与优先级.md
+  - docs/OpenSpec前置准备基线.md
+  - docs/tech-stack.md
+
+  长期约束：
+  - AI 只能生成待确认候选内容，不得直接覆盖正式知识记录。
+  - Source、Extraction、Entry、Decision 必须分层保存。
+  - 正式知识记录必须支持来源追溯。
+  - P0 使用普通知识目录树，不引入图数据库。
+  - 移动端优先采集，桌面端优先整理。
+  - 当前只按 P0 垂直切片推进，不提前实现 P1-P3。
+  - 涉及全局导航、核心领域对象或产品范围的变更，必须检查是否与 docs/OpenSpec前置准备基线.md 冲突。
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
