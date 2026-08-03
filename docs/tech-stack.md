@@ -160,6 +160,8 @@ Nginx (SSL 终止, 静态资源)
 - 文件存储：阿里云 OSS
 - 后端部署：ECS 上 systemd 管理 uvicorn 进程
 - 前端部署：Nginx 直接 serve 静态文件，或挂 CDN
+- 登录接口：Nginx 对 `/api/auth/login` 配置请求限流，作为应用内单实例限流之外的入口保护
+- 会话安全：生产环境仅通过 HTTPS 下发 Secure、HttpOnly、SameSite=Lax Cookie，并限制可信 Origin
 
 ---
 

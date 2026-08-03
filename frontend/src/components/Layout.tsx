@@ -1,58 +1,81 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import {
+  FolderKanban,
+  Inbox,
+  LogOut,
+  Search,
+  ShieldCheck,
+  UserRound,
+} from 'lucide-react'
+import { useState } from 'react'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useAuth } from '../auth/useAuth'
 
-const tabs = [
-  { path: '/', label: '项目', icon: '📁' },
-  { path: '/inbox', label: '采集', icon: '📥' },
-  { path: '/search', label: '搜索', icon: '🔍' },
-  { path: '/review', label: 'Review', icon: '🔎' },
+const navigation = [
+  { path: '/', label: '项目', icon: FolderKanban, end: true },
+  { path: '/inbox', label: '采集', icon: Inbox },
+  { path: '/search', label: '搜索', icon: Search },
+  { path: '/review', label: 'Review', icon: ShieldCheck, p1: true },
 ]
 
 export default function Layout() {
-  const location = useLocation()
+  const auth = useAuth()
+  const navigate = useNavigate()
+  const [loggingOut, setLoggingOut] = useState(false)
 
-  // 不在节点详情页显示底部 Tab（因为它在项目详情内）
-  const showTabs = !location.pathname.includes('/nodes/')
+  async function handleLogout() {
+    if (loggingOut) return
+    setLoggingOut(true)
+    try {
+      await auth.logout()
+      navigate('/login', { replace: true })
+    } finally {
+      setLoggingOut(false)
+    }
+  }
 
   return (
-    <div className="flex flex-col min-h-dvh bg-gray-50">
-      {/* 顶部导航栏 */}
-      <header className="sticky top-0 z-50 bg-white border-b border-gray-200 safe-top">
-        <div className="flex items-center justify-between h-12 px-4">
-          <h1 className="text-lg font-semibold text-gray-900">
-            KnowStruct
-          </h1>
-        </div>
-      </header>
-
-      {/* 主内容区 */}
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
-
-      {/* 底部 Tab 导航（移动端） */}
-      {showTabs && (
-        <nav className="sticky bottom-0 z-50 bg-white border-t border-gray-200 safe-bottom">
-          <div className="flex items-center justify-around h-14">
-            {tabs.map((tab) => (
-              <NavLink
-                key={tab.path}
-                to={tab.path}
-                end={tab.path === '/'}
-                className={({ isActive }) =>
-                  `flex flex-col items-center justify-center gap-0.5 px-3 py-1 text-xs ${
-                    isActive
-                      ? 'text-primary font-medium'
-                      : 'text-gray-500'
-                  }`
-                }
-              >
-                <span className="text-xl">{tab.icon}</span>
-                <span>{tab.label}</span>
-              </NavLink>
-            ))}
-          </div>
+    <div className="app-shell">
+      <aside className="desktop-sidebar">
+        <div className="brand-lockup sidebar-brand"><span className="brand-mark">KS</span><span>KnowStruct</span></div>
+        <nav className="desktop-nav" aria-label="全局导航">
+          {navigation.map(({ path, label, icon: Icon, end, p1 }) => (
+            <NavLink key={path} to={path} end={end} className={({ isActive }) => `desktop-nav-item${isActive ? ' active' : ''}`}>
+              <Icon size={18} aria-hidden="true" />
+              <span>{label}</span>
+              {p1 && <span className="p1-label">P1</span>}
+            </NavLink>
+          ))}
         </nav>
-      )}
+        <div className="sidebar-account">
+          <div className="sidebar-user">
+            <UserRound size={18} aria-hidden="true" />
+            <span>{auth.user?.login_name}</span>
+          </div>
+          <button type="button" className="desktop-nav-item logout-button" onClick={handleLogout} disabled={loggingOut}>
+            <LogOut size={18} aria-hidden="true" />
+            <span>{loggingOut ? '正在退出' : '退出登录'}</span>
+          </button>
+        </div>
+      </aside>
+
+      <div className="app-main">
+        <header className="mobile-header">
+          <div className="brand-lockup"><span className="brand-mark">KS</span><span>KnowStruct</span></div>
+        </header>
+        <main className="content-area"><Outlet /></main>
+        <nav className="mobile-tabs safe-bottom" aria-label="移动端导航">
+          {navigation.map(({ path, label, icon: Icon, end, p1 }) => (
+            <NavLink key={path} to={path} end={end} className={({ isActive }) => `mobile-tab${isActive ? ' active' : ''}`}>
+              <span className="mobile-tab-icon"><Icon size={20} aria-hidden="true" />{p1 && <span className="mobile-p1-dot">P1</span>}</span>
+              <span>{label}</span>
+            </NavLink>
+          ))}
+          <NavLink to="/me" className={({ isActive }) => `mobile-tab${isActive ? ' active' : ''}`}>
+            <UserRound size={20} aria-hidden="true" />
+            <span>我的</span>
+          </NavLink>
+        </nav>
+      </div>
     </div>
   )
 }

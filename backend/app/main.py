@@ -1,20 +1,24 @@
 """FastAPI 应用入口"""
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.api.auth import clear_session_cookie
+from app.api.auth import router as auth_router
+from app.api.errors import NotAuthenticatedError
 from app.config import get_settings
+from app.database import dispose_engine
+from app.middleware.origin import TrustedOriginMiddleware
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
-    # TODO: startup — 初始化 DB 连接池、Redis 等
     yield
-    # TODO: shutdown — 关闭连接
+    await dispose_engine()
 
 
 app = FastAPI(
@@ -26,11 +30,24 @@ app = FastAPI(
 # CORS — 开发环境允许所有来源
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5174", "http://localhost:5173", "http://localhost:3000"],
+    allow_origins=settings.trusted_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(TrustedOriginMiddleware, settings=settings)
+
+app.include_router(auth_router)
+
+
+@app.exception_handler(NotAuthenticatedError)
+async def handle_not_authenticated(request: Request, exc: NotAuthenticatedError):
+    response = JSONResponse(
+        status_code=401,
+        content={"detail": {"code": "not_authenticated", "message": "请先登录"}},
+    )
+    clear_session_cookie(response)
+    return response
 
 
 @app.get("/api/health")

@@ -1,9 +1,30 @@
-/** API 客户端基础配置 */
-
 const BASE_URL = '/api'
 
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | undefined>
+}
+
+interface ErrorDetail {
+  code?: string
+  message?: string
+}
+
+export class ApiError extends Error {
+  status: number
+  code: string
+
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+let unauthorizedHandler: (() => void) | undefined
+
+export function setUnauthorizedHandler(handler?: () => void) {
+  unauthorizedHandler = handler
 }
 
 async function request<T = unknown>(
@@ -30,13 +51,31 @@ async function request<T = unknown>(
     ...(init.headers as Record<string, string>),
   }
 
-  const response = await fetch(url, { ...init, headers })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
-    throw new Error(error.detail || `Request failed: ${response.status}`)
+  let response: Response
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers,
+      credentials: 'include',
+    })
+  } catch {
+    throw new ApiError(0, 'network_error', '无法连接服务器，请检查网络后重试')
   }
 
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: undefined }))
+    const detail = error.detail as ErrorDetail | string | undefined
+    const code = typeof detail === 'object' && detail?.code
+      ? detail.code
+      : response.status === 401 ? 'not_authenticated' : 'request_failed'
+    const message = typeof detail === 'object' && detail?.message
+      ? detail.message
+      : typeof detail === 'string' ? detail : `请求失败（${response.status}）`
+    if (response.status === 401) unauthorizedHandler?.()
+    throw new ApiError(response.status, code, message)
+  }
+
+  if (response.status === 204) return undefined as T
   return response.json()
 }
 

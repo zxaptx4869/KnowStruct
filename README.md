@@ -72,6 +72,23 @@ pip install fastapi uvicorn sqlalchemy aiomysql alembic pydantic pydantic-settin
 uvicorn app.main:app --reload --port 8000
 ```
 
+首次启动前执行数据库迁移，并通过交互式命令创建已有账号：
+
+```bash
+cd backend
+source .venv/bin/activate
+alembic upgrade head
+python -m app.cli create-user <账号>
+```
+
+P0 不提供用户注册或自助找回密码。部署人员需要重设密码时运行：
+
+```bash
+python -m app.cli reset-password <账号>
+```
+
+两个命令都会通过隐藏输入读取并确认密码，不接受在命令行中传入明文密码。密码重设会撤销该账号的全部现有会话。
+
 ### 3. 启动前端
 
 ```bash
@@ -87,6 +104,7 @@ npm run dev
 
 | 路径 | 页面 |
 |------|------|
+| `/login` | 已有账号登录 |
 | `/` | 项目列表首页 |
 | `/projects/:id` | 项目详情（知识目录树） |
 | `/projects/:id/nodes/:nid` | 节点详情 |
@@ -99,7 +117,32 @@ npm run dev
 - [x] 项目初始化
 - [x] 前端骨架（路由 + 页面占位）
 - [x] 后端骨架（FastAPI + AI 抽象层）
-- [ ] 数据模型设计与数据库迁移
-- [ ] API 接口实现
+- [x] 已有账号密码登录、默认个人工作区与可撤销会话
+- [x] 认证基础数据模型与数据库迁移
+- [ ] 业务 API 接口实现
 - [ ] AI Provider 接入
 - [ ] 核心功能开发
+
+## 认证开发配置
+
+- 未勾选“保持登录”时使用浏览器会话 Cookie，服务端最长有效 24 小时。
+- 勾选后使用固定 30 天会话，不随访问自动续期。
+- 生产环境必须使用 HTTPS，设置 `SESSION_COOKIE_SECURE=true`，并将 `TRUSTED_ORIGINS` 配置为实际 HTTPS 来源。
+- 登录接口默认按客户端 IP 限制每分钟 10 次请求；生产 Nginx 还应为 `/api/auth/login` 配置入口限流。
+
+后端检查：
+
+```bash
+cd backend
+.venv/bin/ruff check app alembic tests
+.venv/bin/pytest -q
+```
+
+前端检查：
+
+```bash
+cd frontend
+npm run lint
+npm test
+npm run build
+```
