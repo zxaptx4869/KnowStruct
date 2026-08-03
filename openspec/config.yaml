@@ -3,28 +3,38 @@ schema: spec-driven
 context: |
   项目名称：KnowStruct。
 
-  项目背景、范围、优先级、核心对象和技术约束必须参考：
-  - README.md
-  - docs/知识经验管理工具-项目背景与方案说明.md
-  - docs/功能结构图与优先级.md
-  - docs/OpenSpec前置准备基线.md
-  - docs/tech-stack.md
+  默认上下文按以下顺序读取：
+  1. AGENTS.md
+  2. docs/项目上下文与文档路由.md
+  3. 与当前需求相关的 openspec/specs/ 主规格
+
+  不要默认全文读取三份长产品文档。仅在短上下文的路由表指向相关章节、
+  当前需求需要细节或发现冲突时，按需读取对应章节。归档 Change 只用于追溯历史理由。
+
+  产品定位：把截图、链接、文字和文件等零散经验，通过 AI 辅助处理与人工确认，
+  沉淀为可维护、可检索、可审查、可追溯的结构化知识与决策。
+
+  当前只按 P0 垂直切片推进：登录 -> 项目与目录 -> 文字采集 -> 图片 OCR
+  -> 提取确认 -> 搜索与来源追溯。不得顺带实现 P1-P3。
 
   长期约束：
   - AI 只能生成待确认候选内容，不得直接覆盖正式知识记录。
-  - Source、Extraction、Entry、Decision 必须分层保存。
+  - Source、Processing Task、Extraction、Entry、Decision 必须分层保存。
   - 正式知识记录必须支持来源追溯。
   - P0 使用普通知识目录树，不引入图数据库。
   - 移动端优先采集，桌面端优先整理。
-  - 当前只按 P0 垂直切片推进，不提前实现 P1-P3。
-  - 涉及全局导航、核心领域对象或产品范围的变更，必须检查是否与 docs/OpenSpec前置准备基线.md 冲突。
+  - 移动端和桌面端是同一个响应式 Web App，共用后端和认证会话。
+  - 业务数据必须归属当前认证用户的 Workspace。
+  - 涉及全局导航、核心对象、产品范围或技术栈时，按文档路由检查详细基线。
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - 明确用户问题、Appetite、本次包含和 Non-Goals，避免扩大到后续优先级。
+    - 说明依赖的现有主规格和需要按需读取的详细文档章节。
+  design:
+    - 明确数据归属、迁移、失败与重试、桌面/移动差异和安全边界。
+    - 涉及 AI 时必须保留候选与正式记录的人工确认边界。
+  specs:
+    - 场景必须可验证，并覆盖正常、空、失败以及需要时的重试行为。
+  tasks:
+    - 包含相关自动化测试、真实验收、文档同步和 OpenSpec 归档检查。
