@@ -1,4 +1,3 @@
-"""SQLAlchemy 基础模型"""
 import uuid
 from datetime import datetime
 
@@ -11,7 +10,6 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
-    """自动时间戳混入"""
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
@@ -21,7 +19,6 @@ class TimestampMixin:
 
 
 class UUIDMixin:
-    """UUID 主键混入（MySQL 用 CHAR(36) 存储）"""
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
