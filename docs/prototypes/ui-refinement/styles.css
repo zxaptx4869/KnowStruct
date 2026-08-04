@@ -370,11 +370,9 @@ body.focus-mode .viewport-shell { max-width: 100vw; height: 100dvh; border: 0; b
   .project-topbar { min-height: 74px; height: auto; gap: 7px; padding: 9px 12px; }
   .desktop-back { display: none; }
   .mobile-drag-notice { display: flex; }
-  .project-heading { flex-wrap: wrap; gap: 6px; }
-  .project-heading h1 { order: 3; width: 100%; max-width: 100%; font-size: 15px; }
-  .project-heading .count { margin-left: 2px; }
-  .project-actions .button { width: 40px; min-width: 40px; min-height: 40px; padding: 0; font-size: 0; }
-  .project-actions .button svg { width: 18px; height: 18px; }
+  .project-heading { flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+  .project-heading h1 { order: 0; flex: 1; min-width: 0; width: auto; max-width: 100%; font-size: 16px; }
+  .project-heading .count { order: 3; width: 100%; margin-left: 0; color: var(--ink-3); font-size: 10px; }
   .workspace-grid { display: block; min-height: 0; }
   .directory-panel, .workspace-content { display: none; }
   .mobile-project-directory { display: block; padding: 0 15px 24px; background: var(--surface); }
@@ -384,6 +382,7 @@ body.focus-mode .viewport-shell { max-width: 100vw; height: 100dvh; border: 0; b
   .mobile-node-header { padding: 20px 0 17px; }
   .mobile-node-header h2 { overflow-wrap: anywhere; margin-bottom: 7px; font-size: 21px; }
   .mobile-node-header p { margin-bottom: 12px; color: var(--ink-3); font-size: 11px; line-height: 1.55; }
+  .mobile-node-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
   .mobile-level { border-top: 1px solid var(--border); }
   .mobile-level-head { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .mobile-level-head h3 { margin-bottom: 3px; font-size: 13px; }

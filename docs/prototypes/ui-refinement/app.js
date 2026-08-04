@@ -57,6 +57,7 @@ const prototypeState = {
   pageState: 'list',
   viewport: '1440',
   focus: false,
+  path: [],
 }
 
 const projects = [
@@ -64,6 +65,45 @@ const projects = [
   { name: '日本旅行', goal: '东京、京都 8 日行程与预订信息', status: '规划中', tone: 'blue', nodes: 14, updated: '昨天 18:32' },
   { name: '家庭健康档案', goal: '整理体检结果与日常健康记录', status: '已暂停', tone: 'amber', nodes: 9, updated: '7 月 28 日' },
 ]
+
+const demoTree = [
+  { name: '硬装施工', description: '水电、墙面与地面', children: [
+    { name: '水电', description: '点位与管线', children: [
+      { name: '强弱电点位', description: '开关插座与网线点位' },
+    ]},
+    { name: '墙面与地面', description: '墙地面材料与工艺' },
+  ]},
+  { name: '家具家电', description: '大家电、家具', children: [
+    { name: '大家电', description: '冰箱、洗衣机、空调', children: [
+      { name: '冰箱', description: '整理冰箱尺寸、散热方式、安装条件和候选型号。', children: [
+        { name: '安装条件', description: '尺寸、散热和插座位置' },
+        { name: '候选型号', description: '按容量和开门方式整理' },
+      ]},
+      { name: '洗衣机', description: '尺寸、进出水条件与候选型号' },
+      { name: '空调', description: '匹数、安装位置与候选型号' },
+    ]},
+    { name: '家具', description: '床、柜、桌椅等' },
+  ]},
+  { name: '预算与采购', description: '预算、采购记录' },
+  { name: '施工验收', description: '验收标准和问题记录' },
+]
+
+function nodeAtPath(path) {
+  let list = demoTree
+  let node = null
+  for (const name of path) {
+    node = list.find(item => item.name === name) || null
+    if (!node) return null
+    list = node.children || []
+  }
+  return node
+}
+
+function childrenOf(path) {
+  const node = nodeAtPath(path)
+  if (node && node.children) return node.children
+  return path.length ? [] : demoTree
+}
 
 const icon = (name, size = 18) => `<i class="icon" data-lucide="${name}" style="width:${size}px;height:${size}px" aria-hidden="true"></i>`
 
@@ -148,8 +188,8 @@ function projectDialog(editing = false, settings = false) {
 
 function deleteProjectDialog() {
   return `<div class="dialog-backdrop"><section class="dialog small-dialog" role="dialog" aria-modal="true" aria-label="删除项目">
-    <header class="dialog-header"><div class="danger-heading">${icon('trash-2')}<h2>删除“新房装修”？</h2></div><button type="button" class="icon-button" data-close aria-label="关闭">${icon('x')}</button></header>
-    <div class="dialog-body"><p class="dialog-description">项目和其知识目录将被永久删除，当前版本无法恢复。</p><div class="danger-note"><strong>此操作会删除 28 个目录节点</strong><span>若项目存在受保护的正式记录或来源引用，系统将阻止删除。</span></div><div class="dialog-actions"><button type="button" class="button" data-close>取消</button><button type="button" class="button danger">确认删除</button></div></div>
+    <header class="dialog-header"><div class="danger-heading">${icon('trash-2')}<h2>删除“新房装修”项目？</h2></div><button type="button" class="icon-button" data-close aria-label="关闭">${icon('x')}</button></header>
+    <div class="dialog-body"><p class="dialog-description">项目和其知识目录将被永久删除，当前版本无法恢复。</p><div class="danger-note"><strong>此操作会删除 28 个目录节点</strong><span>若项目存在受保护的正式记录或来源引用，系统将阻止删除。</span></div><div class="dialog-actions"><button type="button" class="button" data-close>取消</button><button type="button" class="button danger">删除项目</button></div></div>
   </section></div>`
 }
 
@@ -194,13 +234,13 @@ function directoryTree(state) {
 }
 
 function projectTopbar() {
-  return `<header class="project-topbar"><button type="button" class="icon-button desktop-back" data-page="projects" data-state="list" aria-label="返回项目列表">${icon('arrow-left')}</button><div class="project-heading"><span class="status green">进行中</span><h1>新房装修</h1><span class="count">28 个目录节点</span></div><div class="project-actions"><button type="button" class="icon-button" data-state="settings" aria-label="项目设置">${icon('settings-2', 16)}</button><button type="button" class="icon-button danger-icon" data-state="delete" aria-label="删除项目">${icon('trash-2', 16)}</button><button type="button" class="button primary" data-state="node-create">${icon('plus', 16)}新建节点</button></div></header>`
+  return `<header class="project-topbar"><button type="button" class="icon-button desktop-back" data-page="projects" data-state="list" aria-label="返回项目列表">${icon('arrow-left')}</button><div class="project-heading"><span class="status green">进行中</span><h1>新房装修</h1><span class="count">28 个目录节点</span></div><div class="project-actions"><button type="button" class="icon-button" data-state="settings" aria-label="项目设置">${icon('settings-2', 16)}</button><button type="button" class="icon-button danger-icon" data-state="delete" aria-label="删除项目">${icon('trash-2', 16)}</button></div></header>`
 }
 
 function selectedContent(emptyNode = false) {
   return `<nav class="breadcrumbs" aria-label="节点路径"><button>新房装修</button><span>${icon('chevron-right', 12)}<button>家具家电</button></span><span>${icon('chevron-right', 12)}<button>大家电</button></span><span>${icon('chevron-right', 12)}<button>冰箱</button></span></nav>
-    <section class="node-header"><div class="node-copy"><h2>冰箱</h2><p>整理冰箱尺寸、散热方式、安装条件和候选型号。</p></div><div class="node-actions"><button type="button" class="button" data-state="node-edit">编辑</button><button type="button" class="button primary" data-state="node-create">${icon('plus', 15)}新建子节点</button></div></section>
-    <section class="children"><header class="section-head"><h3>子节点</h3><span>${emptyNode ? 0 : 2} 个</span></header>${emptyNode ? `<div class="inline-empty">${icon('folder', 21)}<div><strong>还没有子节点</strong><span>从这里继续拆分目录层级。</span></div><button type="button" class="button small" data-state="node-create">新建子节点</button></div>` : `<div class="child-list"><button class="child-row">${icon('folder', 17)}<span><strong>安装条件</strong><small>尺寸、散热和插座位置</small></span>${icon('chevron-right', 16)}</button><button class="child-row">${icon('folder', 17)}<span><strong>候选型号</strong><small>按容量和开门方式整理</small></span>${icon('chevron-right', 16)}</button></div>`}</section>`
+    <section class="node-header"><div class="node-copy"><h2>冰箱</h2><p>整理冰箱尺寸、散热方式、安装条件和候选型号。</p></div><div class="node-actions"><button type="button" class="button" data-state="node-edit">编辑节点</button><button type="button" class="button primary" data-state="node-create">${icon('plus', 15)}创建子节点</button></div></section>
+    <section class="children"><header class="section-head"><h3>子节点</h3><span>${emptyNode ? 0 : 2} 个</span></header>${emptyNode ? `<div class="inline-empty">${icon('folder', 21)}<div><strong>还没有子节点</strong><span>手动创建节点，不会自动采用 AI 目录。</span></div></div>` : `<div class="child-list"><button class="child-row">${icon('folder', 17)}<span><strong>安装条件</strong><small>尺寸、散热和插座位置</small></span>${icon('chevron-right', 16)}</button><button class="child-row">${icon('folder', 17)}<span><strong>候选型号</strong><small>按容量和开门方式整理</small></span>${icon('chevron-right', 16)}</button></div>`}</section>`
 }
 
 function overviewContent() {
@@ -208,24 +248,34 @@ function overviewContent() {
 }
 
 function mobileDirectory(state, emptyDirectory = false, emptyNode = false) {
-  const selected = state !== 'overview' && state !== 'settings' && !emptyDirectory
-  return `<main class="mobile-project-directory"><nav class="mobile-breadcrumb"><button class="mobile-back" data-page="projects" data-state="list">${icon('arrow-left', 16)}${selected ? '上一层' : '项目列表'}</button><span class="mobile-path">${selected ? '新房装修 / 家具家电 / 大家电 / 冰箱' : '新房装修'}</span></nav><section class="mobile-node-header"><h2>${selected ? '冰箱' : '新房装修'}</h2><p>${selected ? '整理冰箱尺寸、散热方式、安装条件和候选型号。' : '施工与采购阶段，重点整理家电参数和安装条件。'}</p>${selected ? '<button class="button small" data-state="node-edit">编辑节点</button>' : ''}</section><section class="mobile-level"><header class="mobile-level-head"><div><h3>${selected ? '子节点' : '根目录'}</h3><span>${emptyDirectory || emptyNode ? 0 : selected ? 2 : 3} 个节点</span></div><button type="button" class="icon-button" data-state="node-create" aria-label="新建子节点">${icon('plus')}</button></header>${emptyDirectory || emptyNode ? `<div class="mobile-empty-state"><div>${icon('folder', 24)}<strong>${emptyDirectory ? '知识目录为空' : '还没有子节点'}</strong><p>手动创建节点，不会自动采用 AI 目录。</p><button class="button primary" data-state="node-create">${emptyDirectory ? '创建第一个节点' : '新建子节点'}</button></div></div>` : `<div class="mobile-child-list">${(selected ? [['安装条件','尺寸、散热和插座位置'],['候选型号','按容量和开门方式整理']] : [['硬装施工','水电、墙面与地面'],['家具家电','大家电、家具'],['施工验收','验收标准和问题记录']]).map(([name,desc]) => `<button class="mobile-child" data-state="selected">${icon('folder', 18)}<span><strong>${name}</strong><small>${desc}</small></span>${icon('chevron-right', 17)}</button>`).join('')}</div>`}</section></main>`
+  const path = prototypeState.path
+  const inProject = path.length > 0
+  const current = nodeAtPath(path)
+  const children = childrenOf(path)
+  const isEmpty = emptyDirectory || emptyNode || children.length === 0
+  const title = current ? current.name : '新房装修'
+  const description = current ? current.description : '施工与采购阶段，重点整理家电参数和安装条件。'
+  const plusAria = current ? '创建子节点' : '创建根节点'
+  const childRows = children.map(child => `<button class="mobile-child" data-child="${child.name}">${icon('folder', 18)}<span><strong>${child.name}</strong><small>${child.description || ''}</small></span>${icon('chevron-right', 17)}</button>`).join('')
+  const emptyMarkup = `<div class="mobile-empty-state"><div>${icon('folder', 24)}<strong>${emptyDirectory ? '知识目录为空' : '还没有子节点'}</strong><p>手动创建节点，不会自动采用 AI 目录。</p><button class="button primary" data-state="node-create">${emptyDirectory ? '创建第一个节点' : '创建子节点'}</button></div></div>`
+  const nodeActions = inProject ? `<div class="mobile-node-actions"><button class="button small" data-state="node-edit">编辑节点</button><button type="button" class="icon-button" data-state="menu" aria-label="节点操作">${icon('ellipsis', 16)}</button></div>` : ''
+  return `<main class="mobile-project-directory"><nav class="mobile-breadcrumb"><button class="mobile-back" data-back>${icon('arrow-left', 16)}${inProject ? '上一层' : '项目列表'}</button><span class="mobile-path">${['新房装修', ...path].join(' / ')}</span></nav><section class="mobile-node-header"><h2>${title}</h2>${description ? `<p>${description}</p>` : ''}${nodeActions}</section><section class="mobile-level"><header class="mobile-level-head"><div><h3>${current ? '子节点' : '根目录'}</h3><span>${isEmpty ? 0 : children.length} ${current ? '个子节点' : '个一级目录'}</span></div>${isEmpty ? '' : `<button type="button" class="icon-button" data-state="node-create" aria-label="${plusAria}">${icon('plus')}</button>`}</header>${isEmpty ? emptyMarkup : `<div class="mobile-child-list">${childRows}</div>`}</section></main>`
 }
 
 function nodeMenu() {
-  return `<div class="menu tree-menu" role="menu"><button data-state="node-create">${icon('folder-plus', 15)}新建子节点</button><button data-state="node-edit">${icon('pencil', 15)}编辑节点</button><button data-state="node-move">${icon('move', 15)}移动到…</button><div class="menu-separator"></div><button class="danger-text" data-state="node-delete">${icon('trash-2', 15)}删除子树</button></div>`
+  return `<div class="menu tree-menu" role="menu"><button data-state="node-create">${icon('folder-plus', 15)}创建子节点</button><button data-state="node-edit">${icon('pencil', 15)}编辑节点</button><button data-state="node-move">${icon('move', 15)}移动到…</button><div class="menu-separator"></div><button class="danger-text" data-state="node-delete">${icon('trash-2', 15)}删除子树</button></div>`
 }
 
-function nodeDialog(editing = false) {
-  return `<div class="dialog-backdrop"><section class="dialog small-dialog" role="dialog" aria-modal="true" aria-label="${editing ? '编辑节点' : '创建节点'}"><header class="dialog-header"><div><h2>${editing ? '编辑节点' : '创建子节点'}</h2></div><button class="icon-button" data-close aria-label="关闭">${icon('x')}</button></header><div class="dialog-body"><p class="dialog-description">${editing ? '修改节点名称和说明不会影响后代节点。' : '上级节点：大家电'}</p><form class="form-stack"><label class="field"><span class="field-label">节点名称 <span class="field-hint">必填</span></span><input value="${editing ? '冰箱' : ''}" placeholder="例如：冰箱" /></label>${editing ? '<label class="field"><span class="field-label">节点说明 <span class="field-hint">选填，最多 1000 字</span></span><textarea placeholder="说明该节点包含的内容">整理冰箱尺寸、散热方式、安装条件和候选型号。</textarea></label>' : ''}<div class="dialog-actions"><button type="button" class="button" data-close>取消</button><button type="button" class="button primary">${editing ? '保存更改' : '创建节点'}</button></div></form></div></section></div>`
+function nodeDialog(editing = false, parentName = '大家电') {
+  return `<div class="dialog-backdrop"><section class="dialog small-dialog" role="dialog" aria-modal="true" aria-label="${editing ? '编辑节点' : '创建节点'}"><header class="dialog-header"><div><h2>${editing ? '编辑节点' : '创建子节点'}</h2></div><button class="icon-button" data-close aria-label="关闭">${icon('x')}</button></header><div class="dialog-body"><p class="dialog-description">${editing ? '修改节点名称不会影响后代节点。' : `上级节点：${parentName}`}</p><form class="form-stack"><label class="field"><span class="field-label">节点名称 <span class="field-hint">必填</span></span><input value="${editing ? '冰箱' : ''}" placeholder="例如：冰箱" /></label><div class="dialog-actions"><button type="button" class="button" data-close>取消</button><button type="button" class="button primary">${editing ? '保存更改' : '创建节点'}</button></div></form></div></section></div>`
 }
 
 function moveDialog() {
-  return `<div class="dialog-backdrop"><section class="dialog small-dialog" role="dialog" aria-modal="true" aria-label="移动节点"><header class="dialog-header"><div><span class="eyebrow">移动子树</span><h2>移动“冰箱”</h2></div><button class="icon-button" data-close aria-label="关闭">${icon('x')}</button></header><div class="dialog-body"><p class="dialog-description">选择新的上级节点。完整子树会一起移动，且最大深度不能超过 6 层。</p><div class="move-list"><button class="move-option">${icon('folder-root', 15)}项目根目录</button><button class="move-option">${icon('folder', 15)}硬装施工</button><button class="move-option">${icon('folder', 15)}家具家电</button><button class="move-option selected">${icon('folder-open', 15)}家具家电 / 大家电</button><button class="move-option">${icon('folder', 15)}预算与采购</button></div><div class="dialog-actions"><button class="button" data-close>取消</button><button class="button primary">确认移动</button></div></div></section></div>`
+  return `<div class="dialog-backdrop"><section class="dialog small-dialog" role="dialog" aria-modal="true" aria-label="移动节点"><header class="dialog-header"><div><h2>移动“冰箱”</h2></div><button class="icon-button" data-close aria-label="关闭">${icon('x')}</button></header><div class="dialog-body"><p class="dialog-description">选择新的上级节点。完整子树会一起移动，且最大深度不能超过 6 层。</p><div class="move-list"><button class="move-option">${icon('folder-root', 15)}项目根目录</button><button class="move-option">${icon('folder', 15)}硬装施工</button><button class="move-option">${icon('folder', 15)}家具家电</button><button class="move-option selected">${icon('folder-open', 15)}家具家电 / 大家电</button><button class="move-option">${icon('folder', 15)}预算与采购</button></div><div class="dialog-actions"><button class="button" data-close>取消</button><button class="button primary">确认移动</button></div></div></section></div>`
 }
 
 function deleteNodeDialog() {
-  return `<div class="dialog-backdrop"><section class="dialog small-dialog" role="dialog" aria-modal="true" aria-label="删除子树"><header class="dialog-header"><div class="danger-heading">${icon('trash-2')}<h2>删除“冰箱”子树？</h2></div><button class="icon-button" data-close aria-label="关闭">${icon('x')}</button></header><div class="dialog-body"><p class="dialog-description">将永久删除此节点及全部后代，当前版本无法恢复。</p><div class="danger-note"><strong>将删除 3 个目录节点</strong><span>冰箱、安装条件、候选型号</span></div><div class="dialog-actions"><button class="button" data-close>取消</button><button class="button danger">删除 3 个节点</button></div></div></section></div>`
+  return `<div class="dialog-backdrop"><section class="dialog small-dialog" role="dialog" aria-modal="true" aria-label="删除子树"><header class="dialog-header"><div class="danger-heading">${icon('trash-2')}<h2>删除“冰箱”子树？</h2></div><button class="icon-button" data-close aria-label="关闭">${icon('x')}</button></header><div class="dialog-body"><p class="dialog-description">将永久删除此节点及全部后代，当前版本无法恢复。</p><div class="danger-note"><strong>将删除 3 个节点</strong><span>冰箱、安装条件、候选型号</span></div><div class="dialog-actions"><button class="button" data-close>取消</button><button class="button danger">删除 3 个节点</button></div></div></section></div>`
 }
 
 function renderWorkspace() {
@@ -237,12 +287,13 @@ function renderWorkspace() {
   let desktopContent = selected ? selectedContent(emptyNode) : overviewContent()
   if (state === 'load-error') desktopContent = errorState('项目目录加载失败', '项目上下文已保留，当前结果不代表空目录。')
   const mobileDragNotice = dragState ? `<div class="workspace-alert mobile-drag-notice">${icon('info', 15)}移动端不提供拖拽，请从节点菜单使用“移动到…”操作。</div>` : ''
-  const directory = emptyDirectory ? `<div class="tree-empty"><div>${icon('folder', 24)}<strong>知识目录为空</strong><p>手动创建节点，当前不会自动采用 AI 目录。</p><button class="button small" data-state="node-create">创建第一个节点</button></div></div>` : directoryTree(state)
+  const directory = emptyDirectory ? `<div class="tree-empty"><div>${icon('folder', 24)}<strong>知识目录为空</strong><p>手动创建节点，不会自动采用 AI 目录。</p><button class="button primary" data-state="node-create">创建第一个节点</button></div></div>` : directoryTree(state)
   const alert = state === 'move-error' ? `<div class="workspace-alert" role="alert">${icon('triangle-alert', 16)}节点移动失败，目录已按服务端结果重新加载。请检查目标层级后重试。</div>` : mobileDragNotice
   const menu = state === 'menu' ? nodeMenu() : ''
-  const overlay = state === 'settings' ? projectDialog(true, true) : state === 'node-create' ? nodeDialog(false) : state === 'node-edit' ? nodeDialog(true) : state === 'node-move' ? moveDialog() : state === 'node-delete' ? deleteNodeDialog() : ''
+  const parentName = prototypeState.path.length ? prototypeState.path[prototypeState.path.length - 1] : '项目根目录'
+  const overlay = state === 'settings' ? projectDialog(true, true) : state === 'node-create' ? nodeDialog(false, parentName) : state === 'node-edit' ? nodeDialog(true) : state === 'node-move' ? moveDialog() : state === 'node-delete' ? deleteNodeDialog() : ''
   const toast = state === 'drag-done' ? `<div class="success-toast">${icon('circle-check', 16)}“洗衣机”已移动到项目根目录</div>` : ''
-  return appShell(`${projectTopbar()}${alert}<div class="workspace-grid"><aside class="directory-panel"><header class="directory-head"><div><strong>知识目录</strong></div><button class="icon-button" data-state="node-create" aria-label="新建根节点">${icon('plus')}</button></header>${directory}</aside><main class="workspace-content">${desktopContent}</main>${mobileDirectory(state, emptyDirectory, emptyNode)}</div>${menu}${overlay}${toast}`)
+  return appShell(`${projectTopbar()}${alert}<div class="workspace-grid"><aside class="directory-panel"><header class="directory-head"><div><strong>知识目录</strong></div><button class="icon-button" data-state="node-create" aria-label="创建根节点">${icon('plus')}</button></header>${directory}</aside><main class="workspace-content">${desktopContent}</main>${mobileDirectory(state, emptyDirectory, emptyNode)}</div>${menu}${overlay}${toast}`)
 }
 
 function renderLogin() {
@@ -261,7 +312,7 @@ function renderSpec() {
     <section class="spec-section"><h2>间距与圆角</h2><div class="spacing-demo">${[4,8,12,16,24,32].map(value => `<div class="space-item"><div class="space-box" style="height:${value}px"></div><span>${value}</span></div>`).join('')}</div><p class="muted" style="font-size:10px;margin:14px 0 0">基础间距 4px；控件圆角 5-6px；容器与弹窗最大 8px。</p></section>
     <section class="spec-section wide"><h2>按钮与状态标签</h2><div class="component-row"><button class="button primary">${icon('plus',15)}主要操作</button><button class="button">${icon('settings-2',15)}次要操作</button><button class="button ghost">文字操作</button><button class="button danger">危险操作</button><button class="button primary" disabled>处理中</button><span class="status blue">规划中</span><span class="status green">进行中</span><span class="status amber">已暂停</span><span class="status gray">已完成</span><span class="status red">失败</span></div></section>
     <section class="spec-section wide"><h2>输入框</h2><div class="field-samples"><label class="field"><span class="field-label">默认</span><input placeholder="请输入项目名称" /></label><label class="field"><span class="field-label">聚焦</span><input style="border-color:var(--primary);box-shadow:var(--focus)" value="新房装修" /></label><label class="field"><span class="field-label">错误</span><input class="invalid" value="" placeholder="项目名称不能为空" /><span class="field-error">请输入项目名称</span></label></div></section>
-    <section class="spec-section"><h2>菜单</h2><div class="menu mini-menu"><button>${icon('folder-plus',15)}新建子节点</button><button>${icon('pencil',15)}编辑节点</button><button>${icon('move',15)}移动到…</button><div class="menu-separator"></div><button class="danger-text">${icon('trash-2',15)}删除子树</button></div></section>
+    <section class="spec-section"><h2>菜单</h2><div class="menu mini-menu"><button>${icon('folder-plus',15)}创建子节点</button><button>${icon('pencil',15)}编辑节点</button><button>${icon('move',15)}移动到…</button><div class="menu-separator"></div><button class="danger-text">${icon('trash-2',15)}删除子树</button></div></section>
     <section class="spec-section"><h2>空状态与错误状态</h2><div class="state-samples"><div class="mini-state"><div>${icon('folder',22)}<strong>还没有项目</strong><span>先建立一个知识主题</span></div></div><div class="mini-state"><div style="color:var(--danger)">${icon('triangle-alert',22)}<strong>加载失败</strong><span>保留上下文并提供重试</span></div></div></div></section>
     <section class="spec-section wide"><h2>弹窗</h2><div class="component-row"><button class="button" data-page="projects" data-state="create">查看表单弹窗</button><button class="button danger" data-page="workspace" data-state="node-delete">查看危险确认</button><span class="muted" style="font-size:10px">桌面居中；390px 采用底部面板，操作区保持完整可见。</span></div></section>
   </div></main>`
@@ -279,11 +330,21 @@ function refreshStateOptions() {
   stateSelect.innerHTML = pageDefinitions[prototypeState.page].states.map(([value, label]) => `<option value="${value}" ${value === prototypeState.pageState ? 'selected' : ''}>${label}</option>`).join('')
 }
 
+function syncWorkspacePath(state) {
+  if (prototypeState.page !== 'workspace') return
+  if (['overview', 'empty-directory', 'settings'].includes(state)) {
+    prototypeState.path = []
+  } else if (['selected', 'empty-node'].includes(state)) {
+    prototypeState.path = ['家具家电', '大家电', '冰箱']
+  }
+}
+
 function setPage(page, pageState) {
   if (!pageDefinitions[page]) return
   prototypeState.page = page
   const validStates = pageDefinitions[page].states.map(([value]) => value)
   prototypeState.pageState = validStates.includes(pageState) ? pageState : validStates[0]
+  syncWorkspacePath(prototypeState.pageState)
   document.querySelector('#page-select').value = page
   refreshStateOptions()
   renderPrototype()
@@ -293,6 +354,7 @@ function setPageState(nextState) {
   const validStates = pageDefinitions[prototypeState.page].states.map(([value]) => value)
   if (!validStates.includes(nextState)) return
   prototypeState.pageState = nextState
+  syncWorkspacePath(nextState)
   document.querySelector('#state-select').value = nextState
   renderPrototype()
 }
@@ -331,6 +393,22 @@ document.addEventListener('keydown', event => {
 document.querySelector('#prototype-root').addEventListener('click', event => {
   const target = event.target.closest('button, tr, article, [data-node]')
   if (!target) return
+  if (target.dataset.back !== undefined) {
+    if (prototypeState.page === 'workspace' && prototypeState.path.length > 0) {
+      prototypeState.path.pop()
+      renderPrototype()
+    } else {
+      setPage('projects', 'list')
+    }
+    return
+  }
+  if (target.dataset.child !== undefined) {
+    if (prototypeState.page === 'workspace') {
+      prototypeState.path.push(target.dataset.child)
+      renderPrototype()
+    }
+    return
+  }
   if (target.dataset.close !== undefined) {
     setPageState(prototypeState.page === 'projects' ? 'list' : 'selected')
     return
