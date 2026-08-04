@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="KnowStruct 第一轮 UI 优化静态交互原型" />
+    <title>KnowStruct UI Refinement</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="review-toolbar" aria-label="设计稿评审控制台">
+      <div class="review-brand">
+        <span class="review-brand-mark">KS</span>
+        <div><strong>UI Refinement</strong><span>Round 01</span></div>
+      </div>
+      <label class="review-field">
+        <span>页面</span>
+        <select id="page-select" aria-label="选择页面"></select>
+      </label>
+      <label class="review-field state-field">
+        <span>状态</span>
+        <select id="state-select" aria-label="选择页面状态"></select>
+      </label>
+      <div class="viewport-switch" aria-label="切换预览视口">
+        <button type="button" data-viewport="1440" class="active">1440</button>
+        <button type="button" data-viewport="1280">1280</button>
+        <button type="button" data-viewport="390">390</button>
+      </div>
+      <button type="button" class="review-icon-button" id="focus-toggle" aria-label="切换沉浸预览" title="切换沉浸预览">
+        <i data-lucide="maximize-2" aria-hidden="true"></i>
+      </button>
+    </header>
+
+    <main class="review-stage">
+      <div class="viewport-meta" aria-live="polite">
+        <span id="viewport-name">桌面宽屏</span>
+        <code id="viewport-size">1440 x 900</code>
+      </div>
+      <div class="viewport-shell" data-viewport="1440">
+        <div id="prototype-root" class="prototype-root"></div>
+      </div>
+    </main>
+
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
