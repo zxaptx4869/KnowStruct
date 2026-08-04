@@ -1,64 +1,138 @@
+import { FolderKanban, MoreHorizontal, Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import ConfirmDialog from '../projects/ConfirmDialog'
+import ProjectDialog from '../projects/ProjectDialog'
+import {
+  useCreateProject,
+  useDeleteProject,
+  useProjects,
+  useUpdateProject,
+} from '../projects/queries'
+import { projectStatusLabel, type Project, type ProjectInput } from '../projects/types'
 
-interface Project {
-  id: string
-  name: string
-  goal: string
-  status: string
-  nodeCount: number
-  updatedAt: string
+function ProjectActions({ project, onEdit, onDelete }: { project: Project, onEdit: () => void, onDelete: () => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="row-actions" onClick={(event) => event.stopPropagation()}>
+      <button type="button" className="icon-action" aria-label={`管理 ${project.name}`} onClick={() => setOpen((value) => !value)}>
+        <MoreHorizontal size={18} />
+      </button>
+      {open && (
+        <div className="action-menu">
+          <button type="button" onClick={() => { setOpen(false); onEdit() }}>编辑项目</button>
+          <button type="button" className="danger-text" onClick={() => { setOpen(false); onDelete() }}>删除项目</button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const [projects] = useState<Project[]>([])
+  const projectsQuery = useProjects()
+  const createMutation = useCreateProject()
+  const [editing, setEditing] = useState<Project | 'new' | null>(null)
+  const [deleting, setDeleting] = useState<Project | null>(null)
+  const updateMutation = useUpdateProject(editing && editing !== 'new' ? editing.id : '')
+  const deleteMutation = useDeleteProject(deleting?.id ?? '')
 
+  async function saveProject(input: ProjectInput) {
+    try {
+      if (editing === 'new') {
+        const project = await createMutation.mutateAsync(input)
+        setEditing(null)
+        navigate(`/projects/${project.id}`)
+      } else if (editing) {
+        await updateMutation.mutateAsync(input)
+        setEditing(null)
+      }
+    } catch {
+      // Mutation state keeps the dialog open with the submitted values.
+    }
+  }
+
+  async function confirmDelete() {
+    try {
+      await deleteMutation.mutateAsync()
+      setDeleting(null)
+    } catch {
+      // Error remains visible in the confirmation dialog.
+    }
+  }
+
+  const projects = projectsQuery.data ?? []
   return (
-    <div className="p-4">
-      {/* 欢迎区域 */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">我的项目</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          管理你的知识经验项目
-        </p>
-      </div>
+    <div className="projects-page">
+      <header className="page-toolbar">
+        <div><span className="page-kicker">个人工作区</span><h1>项目</h1><p>每个项目独立维护知识目录。</p></div>
+        <button type="button" className="primary-button toolbar-button" onClick={() => setEditing('new')}><Plus size={17} />创建项目</button>
+      </header>
 
-      {/* 项目列表 */}
-      {projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-          <span className="text-6xl mb-4">📋</span>
-          <p className="text-base">还没有项目</p>
-          <p className="text-sm mt-1">点击下方按钮创建第一个项目</p>
-          <button
-            onClick={() => navigate('/projects/new')}
-            className="mt-6 px-6 py-3 bg-primary text-white rounded-xl text-sm font-medium"
-          >
-            创建新项目
-          </button>
+      {projectsQuery.isPending && <div className="state-panel" role="status"><span className="spin state-spinner" />正在加载项目</div>}
+      {projectsQuery.isError && (
+        <div className="state-panel state-error" role="alert">
+          <strong>项目加载失败</strong><span>请检查连接后重试，当前状态不代表工作区为空。</span>
+          <button type="button" className="secondary-button" onClick={() => void projectsQuery.refetch()}><RefreshCw size={16} />重试</button>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {projects.map((project) => (
-            <div
-              key={project.id}
-              onClick={() => navigate(`/projects/${project.id}`)}
-              className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 active:bg-gray-50"
-            >
-              <div className="flex items-center justify-between">
-                <h3 className="font-medium text-gray-900">{project.name}</h3>
-                <span className="text-xs text-gray-400">{project.status}</span>
-              </div>
-              <p className="text-sm text-gray-500 mt-1 line-clamp-2">
-                {project.goal}
-              </p>
-              <div className="flex items-center gap-3 mt-3 text-xs text-gray-400">
-                <span>{project.nodeCount} 个节点</span>
-                <span>{project.updatedAt}</span>
-              </div>
-            </div>
-          ))}
+      )}
+      {projectsQuery.isSuccess && projects.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-icon"><FolderKanban size={28} /></div>
+          <h2>还没有项目</h2>
+          <p>先建立一个知识主题，或继续从全局采集箱保存临时资料。</p>
+          <div className="empty-actions">
+            <button type="button" className="primary-button" onClick={() => setEditing('new')}><Plus size={17} />创建第一个项目</button>
+            <button type="button" className="secondary-button" onClick={() => navigate('/inbox')}>前往采集箱</button>
+          </div>
         </div>
+      )}
+      {projectsQuery.isSuccess && projects.length > 0 && (
+        <>
+          <div className="project-table-wrap desktop-projects">
+            <table className="project-table">
+              <thead><tr><th>项目</th><th>状态</th><th>目录节点</th><th>最近更新</th><th><span className="sr-only">操作</span></th></tr></thead>
+              <tbody>{projects.map((project) => (
+                <tr key={project.id} onClick={() => navigate(`/projects/${project.id}`)}>
+                  <td><strong>{project.name}</strong><span>{project.goal || '暂未填写项目目标'}</span></td>
+                  <td><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span></td>
+                  <td>{project.node_count} 个</td>
+                  <td>{new Date(project.updated_at).toLocaleDateString('zh-CN')}</td>
+                  <td><ProjectActions project={project} onEdit={() => setEditing(project)} onDelete={() => setDeleting(project)} /></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div className="mobile-projects">
+            {projects.map((project) => (
+              <article key={project.id} className="project-card" onClick={() => navigate(`/projects/${project.id}`)}>
+                <div className="project-card-head"><h2>{project.name}</h2><ProjectActions project={project} onEdit={() => setEditing(project)} onDelete={() => setDeleting(project)} /></div>
+                <p>{project.goal || '暂未填写项目目标'}</p>
+                <div className="project-card-meta"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><span>{project.node_count} 个节点</span><span>{new Date(project.updated_at).toLocaleDateString('zh-CN')}</span></div>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+
+      {editing && (
+        <ProjectDialog
+          project={editing === 'new' ? undefined : editing}
+          pending={editing === 'new' ? createMutation.isPending : updateMutation.isPending}
+          error={editing === 'new' ? createMutation.error : updateMutation.error}
+          onClose={() => { setEditing(null); createMutation.reset(); updateMutation.reset() }}
+          onSubmit={saveProject}
+        />
+      )}
+      {deleting && (
+        <ConfirmDialog
+          title={`删除“${deleting.name}”？`}
+          description="项目和其知识目录将被永久删除，当前版本无法恢复。"
+          pending={deleteMutation.isPending}
+          error={deleteMutation.error}
+          onClose={() => { setDeleting(null); deleteMutation.reset() }}
+          onConfirm={confirmDelete}
+        />
       )}
     </div>
   )

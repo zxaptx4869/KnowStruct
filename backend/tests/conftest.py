@@ -5,14 +5,14 @@ from urllib.parse import urlparse
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.api.auth import login_limiter
 from app.database import get_db
 from app.main import app
-from app.models import AuthSession, Base, User, Workspace
+from app.models import AuthSession, Base, Node, Project, User, Workspace
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -31,6 +31,14 @@ def assert_test_database(url: str) -> None:
 assert_test_database(TEST_DATABASE_URL)
 engine_options = {"poolclass": NullPool} if not TEST_DATABASE_URL.startswith("sqlite+") else {}
 test_engine = create_async_engine(TEST_DATABASE_URL, pool_pre_ping=True, **engine_options)
+
+if TEST_DATABASE_URL.startswith("sqlite+"):
+    @event.listens_for(test_engine.sync_engine, "connect")
+    def enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 TestSessionFactory = async_sessionmaker(test_engine, expire_on_commit=False)
 
 
@@ -48,6 +56,8 @@ async def database_schema() -> AsyncIterator[None]:
 @pytest_asyncio.fixture(autouse=True)
 async def clean_database() -> AsyncIterator[None]:
     async with TestSessionFactory.begin() as db:
+        await db.execute(delete(Node))
+        await db.execute(delete(Project))
         await db.execute(delete(AuthSession))
         await db.execute(delete(Workspace))
         await db.execute(delete(User))
