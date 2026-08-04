@@ -1,10 +1,4 @@
-# Project Management Specification
-
-## Purpose
-
-定义 P0 个人 Workspace 内项目的创建、维护、生命周期状态、受保护删除与响应式列表行为。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Workspace-scoped project management
 
@@ -45,22 +39,6 @@
 #### Scenario: Reject an unsupported project status
 - **WHEN** 用户提交不在四种允许值内的项目状态
 - **THEN** 系统拒绝更新，项目原状态和其他字段保持不变
-
-### Requirement: Protected permanent project deletion
-
-系统 SHALL 在用户明确确认后永久删除当前 Workspace 的项目及其知识目录。系统 MUST 在删除前检查受保护的 Source、Entry 或 Decision 引用，并在存在引用时拒绝删除。P0 MUST NOT 提供项目归档、回收站或恢复行为。
-
-#### Scenario: Delete a project containing only directory nodes
-- **WHEN** 用户在显示项目名的确认界面中确认删除，且项目没有受保护内容引用
-- **THEN** 系统在单个事务中删除项目和其全部目录节点，并将用户返回项目列表
-
-#### Scenario: Cancel project deletion
-- **WHEN** 用户关闭或取消项目删除确认
-- **THEN** 系统不发送删除请求，项目和目录保持不变
-
-#### Scenario: Block deletion of a referenced project
-- **WHEN** 项目存在受保护的 Source、Entry 或 Decision 引用时用户尝试删除
-- **THEN** 系统返回删除冲突及阻断原因，并保留项目、目录和所有引用关系
 
 ### Requirement: Responsive project list states
 

@@ -29,7 +29,7 @@ export default function MoveNodeDialog({ node, nodes, pending, error, onClose, o
     <div className="dialog-backdrop" role="presentation">
       <section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="move-dialog-title">
         <header className="dialog-header">
-          <div><span className="dialog-kicker">{node.name}</span><h2 id="move-dialog-title">移动节点</h2></div>
+          <h2 id="move-dialog-title">移动“{node.name}”</h2>
           <button type="button" className="icon-action" onClick={onClose} aria-label="关闭" disabled={pending}><X size={18} /></button>
         </header>
         <form className="form-stack" onSubmit={(event) => void submit(event)}>
