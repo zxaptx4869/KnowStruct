@@ -1,16 +1,19 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError, api, setUnauthorizedHandler } from '../lib/api'
 import { AuthContext } from './context'
 import type { AuthContextValue, AuthSession, AuthStatus, LoginInput } from './types'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient()
   const [status, setStatus] = useState<AuthStatus>('checking')
   const [session, setSession] = useState<AuthSession | null>(null)
 
   const clearSession = useCallback(() => {
+    queryClient.clear()
     setSession(null)
     setStatus('unauthenticated')
-  }, [])
+  }, [queryClient])
 
   const restore = useCallback(async () => {
     setStatus('checking')
@@ -36,9 +39,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (input: LoginInput) => {
     const current = await api.post<AuthSession>('/auth/login', input)
+    queryClient.clear()
     setSession(current)
     setStatus('authenticated')
-  }, [])
+  }, [queryClient])
 
   const logout = useCallback(async () => {
     try {

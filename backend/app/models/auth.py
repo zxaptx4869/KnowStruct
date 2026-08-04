@@ -1,11 +1,17 @@
 """Authentication and personal workspace models."""
 
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.projects import Project
 
 
 class User(UUIDMixin, TimestampMixin, Base):
@@ -14,12 +20,12 @@ class User(UUIDMixin, TimestampMixin, Base):
     login_name: Mapped[str] = mapped_column(String(191), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    workspace: Mapped["Workspace"] = relationship(
+    workspace: Mapped[Workspace] = relationship(
         back_populates="owner",
         cascade="all, delete-orphan",
         uselist=False,
     )
-    auth_sessions: Mapped[list["AuthSession"]] = relationship(
+    auth_sessions: Mapped[list[AuthSession]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -37,6 +43,11 @@ class Workspace(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(191), nullable=False, default="我的工作区")
 
     owner: Mapped[User] = relationship(back_populates="workspace")
+    projects: Mapped[list[Project]] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class AuthSession(UUIDMixin, Base):

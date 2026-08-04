@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 
 from app.api.auth import clear_session_cookie
 from app.api.auth import router as auth_router
-from app.api.errors import NotAuthenticatedError
+from app.api.errors import DomainError, NotAuthenticatedError
+from app.api.projects import router as projects_router
 from app.config import get_settings
 from app.database import dispose_engine
 from app.middleware.origin import TrustedOriginMiddleware
@@ -38,6 +39,7 @@ app.add_middleware(
 app.add_middleware(TrustedOriginMiddleware, settings=settings)
 
 app.include_router(auth_router)
+app.include_router(projects_router)
 
 
 @app.exception_handler(NotAuthenticatedError)
@@ -48,6 +50,13 @@ async def handle_not_authenticated(request: Request, exc: NotAuthenticatedError)
     )
     clear_session_cookie(response)
     return response
+
+
+@app.exception_handler(DomainError)
+async def handle_domain_error(request: Request, exc: DomainError):
+    detail: dict[str, object] = {"code": exc.code, "message": exc.message}
+    detail.update(exc.details)
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail})
 
 
 @app.get("/api/health")
