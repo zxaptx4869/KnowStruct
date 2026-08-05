@@ -14,11 +14,10 @@ interface Props {
 export default function ProjectDialog({ project, pending, error, onClose, onSubmit }: Props) {
   const [name, setName] = useState(project?.name ?? '')
   const [goal, setGoal] = useState(project?.goal ?? '')
-  const [background, setBackground] = useState(project?.background ?? '')
   const [status, setStatus] = useState<ProjectStatus>(project?.status ?? 'planning')
   const [validation, setValidation] = useState('')
 
-  useEffect(() => setValidation(''), [name, goal, background])
+  useEffect(() => setValidation(''), [name, goal])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -29,7 +28,6 @@ export default function ProjectDialog({ project, pending, error, onClose, onSubm
     await onSubmit({
       name: name.trim(),
       goal: goal.trim() || null,
-      background: background.trim() || null,
       status,
     })
   }
@@ -38,10 +36,7 @@ export default function ProjectDialog({ project, pending, error, onClose, onSubm
     <div className="dialog-backdrop" role="presentation">
       <section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="project-dialog-title">
         <header className="dialog-header">
-          <div>
-            <span className="dialog-kicker">项目</span>
-            <h2 id="project-dialog-title">{project ? '编辑项目' : '创建项目'}</h2>
-          </div>
+          <h2 id="project-dialog-title">{project ? '编辑项目' : '创建项目'}</h2>
           <button type="button" className="icon-action" onClick={onClose} aria-label="关闭" disabled={pending}>
             <X size={18} />
           </button>
@@ -52,12 +47,8 @@ export default function ProjectDialog({ project, pending, error, onClose, onSubm
             <input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} autoFocus />
           </label>
           <label className="form-field">
-            <span>项目目标</span>
-            <textarea value={goal} onChange={(event) => setGoal(event.target.value)} maxLength={500} rows={3} />
-          </label>
-          <label className="form-field">
-            <span>背景</span>
-            <textarea value={background} onChange={(event) => setBackground(event.target.value)} maxLength={2000} rows={4} />
+            <span>项目目标与背景</span>
+            <textarea value={goal} onChange={(event) => setGoal(event.target.value)} maxLength={500} rows={4} />
           </label>
           <label className="form-field">
             <span>状态</span>
@@ -72,7 +63,7 @@ export default function ProjectDialog({ project, pending, error, onClose, onSubm
           )}
           <footer className="dialog-actions">
             <button type="button" className="secondary-button" onClick={onClose} disabled={pending}>取消</button>
-            <button type="submit" className="primary-button" disabled={pending}>{pending ? '保存中' : '保存'}</button>
+            <button type="submit" className="primary-button" disabled={pending}>{pending ? '保存中' : project ? '保存更改' : '创建项目'}</button>
           </footer>
         </form>
       </section>

@@ -67,9 +67,10 @@ interface NodeMenuProps {
   onEdit: () => void
   onMove: () => void
   onDelete: () => void
+  ariaLabel?: string
 }
 
-function NodeMenu({ node, onAdd, onEdit, onMove, onDelete }: NodeMenuProps) {
+function NodeMenu({ node, onAdd, onEdit, onMove, onDelete, ariaLabel }: NodeMenuProps) {
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<{ top: number, left: number } | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -116,7 +117,7 @@ function NodeMenu({ node, onAdd, onEdit, onMove, onDelete }: NodeMenuProps) {
 
   return (
     <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-      <button ref={triggerRef} type="button" className="icon-action compact-action" aria-label={`管理 ${node.name}`} aria-expanded={open} onClick={toggleMenu}><MoreHorizontal size={16} /></button>
+      <button ref={triggerRef} type="button" className="icon-action compact-action" aria-label={ariaLabel ?? `管理 ${node.name}`} aria-expanded={open} onClick={toggleMenu}><MoreHorizontal size={16} /></button>
       {open && position && createPortal(
         <div
           className="action-menu tree-action-menu tree-action-menu-portal"
@@ -124,7 +125,7 @@ function NodeMenu({ node, onAdd, onEdit, onMove, onDelete }: NodeMenuProps) {
           style={{ top: position.top, left: position.left }}
           onClick={(event) => event.stopPropagation()}
         >
-          <button type="button" onClick={() => { setOpen(false); onAdd() }}>新建子节点</button>
+          <button type="button" onClick={() => { setOpen(false); onAdd() }}>创建子节点</button>
           <button type="button" onClick={() => { setOpen(false); onEdit() }}>编辑节点</button>
           <button type="button" onClick={() => { setOpen(false); onMove() }}>移动到…</button>
           <button type="button" className="danger-text" onClick={() => { setOpen(false); onDelete() }}>删除子树</button>
@@ -353,11 +354,10 @@ export default function ProjectDetailPage() {
     <div className="project-workspace">
       <header className="project-topbar">
         <button type="button" className="icon-action desktop-back" onClick={() => navigate('/')} aria-label="返回项目列表"><ArrowLeft size={18} /></button>
-        <div className="project-title"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><h1>{project.name}</h1><span>{project.node_count} 个节点</span></div>
+        <div className="project-title"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><h1>{project.name}</h1><span>{project.node_count} 个目录节点</span></div>
         <div className="project-top-actions">
-          <button type="button" className="secondary-button" onClick={() => setEditingProject(true)}><Settings2 size={16} />项目设置</button>
+          <button type="button" className="icon-action" onClick={() => setEditingProject(true)} aria-label="项目设置" title="项目设置"><Settings2 size={17} /></button>
           <button type="button" className="icon-action project-delete-action" onClick={() => setDeletingProject(true)} aria-label="删除项目" title="删除项目"><Trash2 size={17} /></button>
-          <button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: nid ?? null })}><Plus size={16} />新建节点</button>
         </div>
       </header>
 
@@ -365,9 +365,9 @@ export default function ProjectDetailPage() {
 
       <div className="desktop-directory">
         <aside className="directory-panel">
-          <div className="directory-panel-head"><div><strong>知识目录</strong><span>{nodes.length ? '边缘调整顺序，中部放入节点' : '从第一个节点开始'}</span></div><button type="button" className="icon-action" aria-label="新建根节点" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}><Plus size={17} /></button></div>
+          <div className="directory-panel-head"><div><strong>知识目录</strong></div><button type="button" className="icon-action" aria-label="创建根节点" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}><Plus size={17} /></button></div>
           {nodes.length === 0 ? (
-            <div className="tree-empty"><Folder size={24} /><strong>知识目录为空</strong><span>手动创建节点，当前不会自动采用 AI 目录。</span><button type="button" className="secondary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}>创建第一个节点</button></div>
+            <div className="tree-empty"><Folder size={24} /><strong>知识目录为空</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}>创建第一个节点</button></div>
           ) : (
             <DndContext
               sensors={sensors}
@@ -402,11 +402,11 @@ export default function ProjectDetailPage() {
           <nav className="breadcrumbs" aria-label="节点路径"><button type="button" onClick={() => navigate(`/projects/${id}`)}>{project.name}</button>{path.map((item) => <span key={item.id}><ChevronRight size={13} /><button type="button" onClick={() => openNode(item.id)}>{item.name}</button></span>)}</nav>
           {selectedNode ? (
             <>
-              <section className="node-hero"><div><span className="page-kicker">知识节点</span><h2>{selectedNode.name}</h2><p>{selectedNode.description || '还没有节点说明。'}</p></div><div className="node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑</button><button type="button" className="primary-button" onClick={nodeActions(selectedNode).onAdd}><Plus size={16} />新建子节点</button></div></section>
-              <section className="children-section"><header><h3>子节点</h3><span>{currentChildren.length} 个</span></header>{currentChildren.length ? <div className="child-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={18} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span><ChevronRight size={17} /></button>)}</div> : <div className="inline-empty"><Folder size={22} /><div><strong>还没有子节点</strong><span>从这里继续拆分目录层级。</span></div><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onAdd}>新建子节点</button></div>}</section>
+              <section className="node-hero"><div><h2>{selectedNode.name}</h2><p>{selectedNode.description || '还没有节点说明。'}</p></div><div className="node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><button type="button" className="primary-button" onClick={nodeActions(selectedNode).onAdd}><Plus size={16} />创建子节点</button></div></section>
+              <section className="children-section"><header><h3>子节点</h3><span>{currentChildren.length} 个</span></header>{currentChildren.length ? <div className="child-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={18} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span><ChevronRight size={17} /></button>)}</div> : <div className="inline-empty"><Folder size={22} /><div><strong>还没有子节点</strong><span>手动创建节点，不会自动采用 AI 目录。</span></div></div>}</section>
             </>
           ) : (
-            <section className="project-overview"><span className="page-kicker">项目目录</span><h2>{project.name}</h2><p>{project.goal || '还没有填写项目目标。'}</p><div className="overview-rule"><strong>{nodes.length} 个目录节点</strong><span>{nodes.length ? '从左侧选择节点查看或维护子目录。' : '创建第一个节点后，目录将在此处展开。'}</span></div></section>
+            <section className="project-overview"><h2>{project.name}</h2><p>{project.goal || '还没有填写项目目标。'}</p><div className="overview-rule"><strong>{nodes.length} 个目录节点</strong><span>{nodes.length ? '从左侧选择节点查看或维护子目录。' : '创建第一个节点后，目录将在此处展开。'}</span></div></section>
           )}
         </main>
       </div>
@@ -416,8 +416,8 @@ export default function ProjectDetailPage() {
           <button type="button" onClick={() => nid ? navigate(path.length > 1 ? `/projects/${id}/nodes/${path[path.length - 2].id}` : `/projects/${id}`) : navigate('/')}><ArrowLeft size={17} />{nid ? '上一层' : '项目列表'}</button>
           <span>{[project.name, ...path.map((item) => item.name)].join(' / ')}</span>
         </nav>
-        <section className="mobile-node-head"><span className="page-kicker">{selectedNode ? '知识节点' : '项目目录'}</span><h2>{selectedNode?.name ?? project.name}</h2><p>{selectedNode ? selectedNode.description || '还没有节点说明。' : project.goal || '还没有填写项目目标。'}</p>{selectedNode && <button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button>}</section>
-        <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} 个节点</span></div><button type="button" className="icon-action" aria-label="新建子节点" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
+        <section className="mobile-node-head"><h2>{selectedNode?.name ?? project.name}</h2><p>{selectedNode ? selectedNode.description || '还没有节点说明。' : project.goal || '还没有填写项目目标。'}</p>{selectedNode && <div className="mobile-node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><NodeMenu node={selectedNode} {...nodeActions(selectedNode)} ariaLabel="节点操作" /></div>}</section>
+        <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} {selectedNode ? '个子节点' : '个一级目录'}</span></div><button type="button" className="icon-action" aria-label={selectedNode ? '创建子节点' : '创建根节点'} onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
           {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span><ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
         </section>
       </main>
@@ -436,7 +436,7 @@ export default function ProjectDetailPage() {
       {movingNode && <MoveNodeDialog node={movingNode} nodes={nodes} pending={moveMutation.isPending} error={moveError} onClose={() => { setMovingNode(null); setMoveError(null); moveMutation.reset() }} onSubmit={(input) => moveNode(movingNode.id, input.parent_id, input.position)} />}
       {deletingNode && <ConfirmDialog title={`删除“${deletingNode.name}”子树？`} description={`将永久删除 ${descendants(deletingNode.id, nodes).length + 1} 个目录节点，当前版本无法恢复。`} pending={deleteNodeMutation.isPending} error={deleteNodeMutation.error} onClose={() => { setDeletingNode(null); deleteNodeMutation.reset() }} onConfirm={confirmDeleteNode} />}
       {editingProject && <ProjectDialog project={project} pending={updateProjectMutation.isPending} error={updateProjectMutation.error} onClose={() => { setEditingProject(false); updateProjectMutation.reset() }} onSubmit={saveProject} />}
-      {deletingProject && <ConfirmDialog title={`删除“${project.name}”？`} description="项目和全部目录节点将被永久删除。" pending={deleteProjectMutation.isPending} error={deleteProjectMutation.error} onClose={() => { setDeletingProject(false); deleteProjectMutation.reset() }} onConfirm={confirmDeleteProject} />}
+      {deletingProject && <ConfirmDialog title={`删除“${project.name}”项目？`} description="项目和全部目录节点将被永久删除。" confirmLabel="删除项目" pending={deleteProjectMutation.isPending} error={deleteProjectMutation.error} onClose={() => { setDeletingProject(false); deleteProjectMutation.reset() }} onConfirm={confirmDeleteProject} />}
     </div>
   )
 }

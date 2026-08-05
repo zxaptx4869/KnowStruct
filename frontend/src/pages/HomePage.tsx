@@ -65,8 +65,8 @@ export default function HomePage() {
   return (
     <div className="projects-page">
       <header className="page-toolbar">
-        <div><span className="page-kicker">个人工作区</span><h1>项目</h1><p>每个项目独立维护知识目录。</p></div>
-        <button type="button" className="primary-button toolbar-button" onClick={() => setEditing('new')}><Plus size={17} />创建项目</button>
+        <h1>项目</h1>
+        <button type="button" className="primary-button toolbar-button" onClick={() => setEditing('new')}><Plus size={16} />创建项目</button>
       </header>
 
       {projectsQuery.isPending && <div className="state-panel" role="status"><span className="spin state-spinner" />正在加载项目</div>}
@@ -80,11 +80,7 @@ export default function HomePage() {
         <div className="empty-state">
           <div className="empty-icon"><FolderKanban size={28} /></div>
           <h2>还没有项目</h2>
-          <p>先建立一个知识主题，或继续从全局采集箱保存临时资料。</p>
-          <div className="empty-actions">
-            <button type="button" className="primary-button" onClick={() => setEditing('new')}><Plus size={17} />创建第一个项目</button>
-            <button type="button" className="secondary-button" onClick={() => navigate('/inbox')}>前往采集箱</button>
-          </div>
+          <p>先建立一个知识主题，或从全局采集箱保存临时资料。点击右上角「创建项目」开始。</p>
         </div>
       )}
       {projectsQuery.isSuccess && projects.length > 0 && (
@@ -108,7 +104,7 @@ export default function HomePage() {
               <article key={project.id} className="project-card" onClick={() => navigate(`/projects/${project.id}`)}>
                 <div className="project-card-head"><h2>{project.name}</h2><ProjectActions project={project} onEdit={() => setEditing(project)} onDelete={() => setDeleting(project)} /></div>
                 <p>{project.goal || '暂未填写项目目标'}</p>
-                <div className="project-card-meta"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><span>{project.node_count} 个节点</span><span>{new Date(project.updated_at).toLocaleDateString('zh-CN')}</span></div>
+                <div className="project-card-meta"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><span>{project.node_count} 个目录节点</span><span>{new Date(project.updated_at).toLocaleDateString('zh-CN')}</span></div>
               </article>
             ))}
           </div>
@@ -126,8 +122,9 @@ export default function HomePage() {
       )}
       {deleting && (
         <ConfirmDialog
-          title={`删除“${deleting.name}”？`}
+          title={`删除“${deleting.name}”项目？`}
           description="项目和其知识目录将被永久删除，当前版本无法恢复。"
+          confirmLabel="删除项目"
           pending={deleteMutation.isPending}
           error={deleteMutation.error}
           onClose={() => { setDeleting(null); deleteMutation.reset() }}

@@ -104,9 +104,9 @@ describe('ProjectDetailPage directory experience', () => {
     renderRoute(<ProjectDetailPage />, '/projects/project-1', '/projects/:id')
     await screen.findAllByText('家具家电')
 
-    await userEvent.click(screen.getByRole('button', { name: '新建根节点' }))
+    await userEvent.click(screen.getAllByRole('button', { name: '创建根节点' })[0])
     await userEvent.type(screen.getByLabelText('节点名称'), '家具家电')
-    await userEvent.click(screen.getByRole('button', { name: '保存' }))
+    await userEvent.click(screen.getByRole('button', { name: '创建节点' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('同级目录中已存在同名节点')
     expect(screen.getByLabelText('节点名称')).toHaveValue('家具家电')
@@ -131,7 +131,7 @@ describe('ProjectDetailPage directory experience', () => {
     await userEvent.click(screen.getByRole('button', { name: '移动' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('知识目录最多支持 6 层')
-    expect(screen.getByRole('dialog', { name: '移动节点' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '移动“家具家电”' })).toBeInTheDocument()
   })
 
   it('shows descendant count before deleting a subtree', async () => {

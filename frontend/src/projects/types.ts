@@ -14,7 +14,6 @@ export interface Project {
 export interface ProjectInput {
   name: string
   goal?: string | null
-  background?: string | null
   status?: ProjectStatus
 }
 
