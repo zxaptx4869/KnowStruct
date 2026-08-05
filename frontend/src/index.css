@@ -376,6 +376,7 @@ a {
   margin: 0 0 18px;
   font-size: 24px;
   letter-spacing: 0;
+  font-weight: 700;
 }
 
 .account-summary {
@@ -435,6 +436,7 @@ a {
 .mobile-node-head h2 {
   margin: 0;
   letter-spacing: 0;
+  font-weight: 700;
 }
 
 .page-toolbar h1 {
@@ -492,6 +494,7 @@ a {
   margin: 0;
   color: var(--color-text-primary);
   font-size: 17px;
+  font-weight: 700;
 }
 
 .state-panel span,
@@ -535,6 +538,18 @@ a {
   gap: 9px;
 }
 
+.node-actions {
+  gap: 8px;
+}
+
+.dialog-actions {
+  gap: 8px;
+}
+
+.project-top-actions {
+  gap: 7px;
+}
+
 .desktop-projects {
   display: none;
 }
@@ -569,6 +584,7 @@ a {
   margin: 0;
   overflow-wrap: anywhere;
   font-size: 15px;
+  font-weight: 700;
 }
 
 .project-card > p {
@@ -733,6 +749,7 @@ a {
   margin: 0;
   font-size: 18px;
   letter-spacing: 0;
+  font-weight: 700;
 }
 
 .dialog-description {
@@ -939,6 +956,7 @@ a {
 .mobile-level h3 {
   margin: 0;
   font-size: 13px;
+  font-weight: 700;
 }
 
 .mobile-level header span {
@@ -1285,6 +1303,7 @@ a {
     order: 0;
     width: auto;
     margin-left: 4px;
+    font-size: 11px;
   }
 
   .desktop-directory {
@@ -1486,7 +1505,7 @@ a {
   }
 
   .tree-empty strong {
-    color: var(--color-text-ink2);
+    color: var(--color-text-primary);
     font-size: 12px;
   }
 
@@ -1585,7 +1604,7 @@ a {
   }
 
   .overview-rule strong {
-    font-size: 15px;
+    font-size: 18px;
     font-weight: 700;
   }
 
@@ -1596,13 +1615,14 @@ a {
   .children-section > header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 13px;
+    gap: 7px;
+    margin-bottom: 11px;
   }
 
   .children-section h3 {
     margin: 0;
     font-size: 13px;
+    font-weight: 700;
   }
 
   .children-section header span {
@@ -1636,7 +1656,7 @@ a {
   }
 
   .child-list strong {
-    color: var(--color-text-primary);
+    color: var(--color-text-ink2);
     font-size: 12px;
   }
 
