@@ -1,10 +1,4 @@
-# image-upload-and-ocr Specification
-
-## Purpose
-
-图片 Source 采集（拍照 / 相册 / 选文件，一条最多 3 张）、附件子表存储与鉴权预览、OCR 多图合并流水线、送审压缩副本与从失败步骤重试。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Image source upload with validated attachments
 
@@ -93,6 +87,8 @@
 #### Scenario: Preserve image selection after a failed upload
 - **WHEN** 图片采集明确失败（如校验错误或网络失败）
 - **THEN** 界面保留已选择的文件与项目选择，显示可执行的错误提示，并允许修正后重试
+
+## ADDED Requirements
 
 ### Requirement: Compressed inference copy before OCR
 

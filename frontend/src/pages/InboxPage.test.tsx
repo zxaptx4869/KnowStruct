@@ -60,7 +60,7 @@ describe('InboxPage capture and queue', () => {
     renderRoute(<InboxPage />, '/inbox', '/inbox')
 
     expect(await screen.findByText('暂无采集项')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /保存原始来源/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /开始提取/ })).toBeInTheDocument()
   })
 
   it('captures text and navigates to the source detail', async () => {
@@ -71,7 +71,7 @@ describe('InboxPage capture and queue', () => {
 
     const input = await screen.findByPlaceholderText(/粘贴或输入文字/)
     await user.type(input, '厨房插座定位现场记录')
-    await user.click(screen.getByRole('button', { name: /保存原始来源/ }))
+    await user.click(screen.getByRole('button', { name: /开始提取/ }))
 
     await waitFor(() => {
       const post = fetchMock.mock.calls.find(([url, init]) =>
@@ -95,7 +95,7 @@ describe('InboxPage capture and queue', () => {
 
     const input = await screen.findByPlaceholderText(/粘贴或输入文字/)
     await user.type(input, '保留这段输入')
-    await user.click(screen.getByRole('button', { name: /保存原始来源/ }))
+    await user.click(screen.getByRole('button', { name: /开始提取/ }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('采集失败')
     expect(input).toHaveValue('保留这段输入')
@@ -165,5 +165,30 @@ describe('InboxPage capture and queue', () => {
     expect((await screen.findAllByText('待处理')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('图片识别中').length).toBeGreaterThan(0)
     expect(screen.getAllByText('AI 提取中').length).toBeGreaterThan(0)
+  })
+
+  it('selects multiple images and starts extraction', async () => {
+    const fetchMock = inboxFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    renderRoute(<InboxPage />, '/inbox', '/inbox')
+
+    await user.click(screen.getByRole('tab', { name: '图片' }))
+    const input = document.querySelector(
+      'input[type="file"][multiple]',
+    ) as HTMLInputElement
+    const first = new File(['a'], 'a.png', { type: 'image/png' })
+    const second = new File(['b'], 'b.png', { type: 'image/png' })
+    await user.upload(input, [first, second])
+
+    expect(await screen.findByText('已选 2/3 张')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '开始提取' }))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url]) =>
+        String(url).endsWith('/sources/image'))
+      expect(call).toBeDefined()
+      expect((call![1]!.body as FormData).getAll('files').length).toBe(2)
+    })
   })
 })

@@ -72,7 +72,9 @@ export function useCreateImageSource() {
   return useMutation({
     mutationFn: (input: ImageSourceCreateInput) => {
       const form = new FormData()
-      form.append('file', input.file)
+      for (const file of input.files) {
+        form.append('files', file)
+      }
       if (input.project_id) form.append('project_id', input.project_id)
       if (input.note) form.append('note', input.note)
       return api.post<SourceDetail>('/inbox/sources/image', form)

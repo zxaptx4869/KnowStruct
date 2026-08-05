@@ -2,12 +2,48 @@
 
 import asyncio
 import shutil
+from io import BytesIO
+
+from PIL import Image
 
 from app.ai.base import AIProvider, AIProviderError
+
+OCR_MAX_SIDE = 2048
+OCR_QUALITY = 80
 
 
 def tesseract_available() -> bool:
     return shutil.which("tesseract") is not None
+
+
+def prepare_ocr_image(data: bytes) -> bytes:
+    """生成送审压缩副本：最长边 >2048 等比缩小，原格式 quality 80 重编码。"""
+    with Image.open(BytesIO(data)) as image:
+        image.load()
+        source_format = image.format
+        if image.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", image.size, "white")
+            mask = image.split()[-1] if image.mode in ("RGBA", "LA") else None
+            background.paste(image, mask=mask)
+            image = background
+        elif image.mode != "RGB":
+            image = image.convert("RGB")
+        width, height = image.size
+        if max(width, height) > OCR_MAX_SIDE:
+            ratio = OCR_MAX_SIDE / max(width, height)
+            image = image.resize(
+                (max(1, int(width * ratio)), max(1, int(height * ratio))),
+                Image.LANCZOS,
+            )
+        output_format = source_format or "JPEG"
+        if output_format not in {"JPEG", "PNG", "WEBP"}:
+            output_format = "JPEG"
+        buffer = BytesIO()
+        if output_format == "PNG":
+            image.save(buffer, format="PNG", optimize=True)
+        else:
+            image.save(buffer, format=output_format, quality=OCR_QUALITY)
+        return buffer.getvalue()
 
 
 async def _tesseract_ocr(image_data: bytes) -> str | None:

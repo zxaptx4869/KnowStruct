@@ -91,22 +91,6 @@ class Source(UUIDMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     link_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
-    attachment_object_key: Mapped[str | None] = mapped_column(
-        String(512),
-        nullable=True,
-    )
-    attachment_filename: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-    )
-    attachment_content_type: Mapped[str | None] = mapped_column(
-        String(100),
-        nullable=True,
-    )
-    attachment_size: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,
-    )
     content_status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -124,10 +108,47 @@ class Source(UUIDMixin, TimestampMixin, Base):
         back_populates="source",
         cascade="all, delete-orphan",
     )
+    attachments: Mapped[list[SourceAttachment]] = relationship(
+        back_populates="source",
+        cascade="all, delete-orphan",
+        order_by="SourceAttachment.sort_order",
+    )
     entries: Mapped[list[Entry]] = relationship(
         secondary="entry_sources",
         back_populates="sources",
     )
+
+
+class SourceAttachment(UUIDMixin, TimestampMixin, Base):
+    """图片 Source 的附件（一条 Source 最多 3 张）。"""
+
+    __tablename__ = "source_attachments"
+    __table_args__ = (
+        Index(
+            "ix_source_attachments_source_order",
+            "source_id",
+            "sort_order",
+        ),
+        Index("ix_source_attachments_workspace", "workspace_id"),
+    )
+
+    source_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("sources.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    source: Mapped[Source] = relationship(back_populates="attachments")
 
 
 class ProcessingTask(UUIDMixin, TimestampMixin, Base):

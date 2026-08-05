@@ -41,6 +41,7 @@ export interface SourceItem {
   content: string | null
   link_url: string | null
   attachment?: Attachment | null
+  attachments?: Attachment[]
   content_status: string
   project_id: string | null
   project_name: string | null
@@ -79,7 +80,7 @@ export interface SourceCreateInput {
 }
 
 export interface ImageSourceCreateInput {
-  file: File
+  files: File[]
   project_id?: string
   note?: string
 }

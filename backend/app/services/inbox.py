@@ -1,5 +1,6 @@
 """Workspace-scoped capture inbox and processing task operations."""
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -13,13 +14,14 @@ from app.models import (
     ProcessingTask,
     Project,
     Source,
+    SourceAttachment,
     SourceContentStatus,
     SourceType,
     TaskStage,
     TaskStatus,
 )
 from app.schemas.inbox import CandidateCounts, SourceCreate
-from app.services.ocr import run_ocr_with_fallback
+from app.services.ocr import prepare_ocr_image, run_ocr_with_fallback
 from app.services.projects import get_project
 from app.services.storage import get_attachment_storage
 
@@ -37,11 +39,13 @@ def derive_title(content: str) -> str:
 
 
 def derive_ocr_title(text: str) -> str:
-    """从 OCR 文本生成标题：取首个非空行，优先使用冒号后的内容。"""
-    line = next(
-        (line.strip() for line in text.splitlines() if line.strip()),
-        text.strip(),
-    )
+    """从 OCR 文本生成标题：取首个非空且非"图 N"标记的行，优先使用冒号后的内容。"""
+    line = text.strip()
+    for candidate in (item.strip() for item in text.splitlines() if item.strip()):
+        if re.fullmatch(r"图\s*\d+：?", candidate):
+            continue
+        line = candidate
+        break
     if "：" in line:
         after_colon = line.split("：", 1)[1].strip()
         if after_colon:
@@ -86,11 +90,11 @@ async def create_image_source(
     *,
     project_id: str | None,
     note: str | None,
-    filename: str,
-    content_type: str,
-    data: bytes,
+    files: list[tuple[str, str, bytes]],
 ) -> Source:
-    """创建 image Source：先建行，再落盘附件，失败时清理不留下残片。"""
+    """创建 image Source：先建行，再按序落盘附件，失败时清理不留下残片。"""
+    if not files or len(files) > 3:
+        raise ConflictError("invalid_image_batch", "图片数量必须在 1-3 张之间")
     resolved_project_id = None
     if project_id:
         project = await get_project(db, workspace_id, project_id)
@@ -109,19 +113,28 @@ async def create_image_source(
     await db.flush()
 
     storage = get_attachment_storage()
-    object_key: str | None = None
+    saved_keys: list[str] = []
     try:
-        object_key, size = await storage.save(
-            workspace_id=workspace_id,
-            source_id=source.id,
-            filename=filename,
-            content_type=content_type,
-            data=data,
-        )
-        source.attachment_object_key = object_key
-        source.attachment_filename = filename
-        source.attachment_content_type = content_type
-        source.attachment_size = size
+        for index, (filename, content_type, data) in enumerate(files):
+            object_key, size = await storage.save(
+                workspace_id=workspace_id,
+                source_id=source.id,
+                filename=filename,
+                content_type=content_type,
+                data=data,
+            )
+            saved_keys.append(object_key)
+            db.add(
+                SourceAttachment(
+                    source_id=source.id,
+                    workspace_id=workspace_id,
+                    object_key=object_key,
+                    filename=filename,
+                    content_type=content_type,
+                    size=size,
+                    sort_order=index,
+                )
+            )
         source.content_status = SourceContentStatus.SAVED.value
         db.add(
             ProcessingTask(
@@ -133,7 +146,7 @@ async def create_image_source(
         )
         await db.flush()
     except Exception:
-        if object_key is not None:
+        for object_key in saved_keys:
             await storage.delete(
                 workspace_id=workspace_id,
                 source_id=source.id,
@@ -169,6 +182,26 @@ class SourceListItemData:
 @dataclass(frozen=True)
 class SourceDetailData(SourceListItemData):
     extractions: list[Extraction]
+    attachments: list[SourceAttachment]
+
+
+async def _load_attachments(
+    db: AsyncSession,
+    source_ids: list[str],
+) -> dict[str, list[SourceAttachment]]:
+    if not source_ids:
+        return {}
+    rows = (
+        await db.scalars(
+            select(SourceAttachment)
+            .where(SourceAttachment.source_id.in_(source_ids))
+            .order_by(SourceAttachment.sort_order, SourceAttachment.id)
+        )
+    ).all()
+    grouped: dict[str, list[SourceAttachment]] = {}
+    for attachment in rows:
+        grouped.setdefault(attachment.source_id, []).append(attachment)
+    return grouped
 
 
 async def _load_tasks(
@@ -280,6 +313,7 @@ async def get_source_detail(
     if found is None:
         raise ResourceNotFoundError("source")
     source, project_name = found
+    attachments = await _load_attachments(db, [source.id])
     task = await db.scalar(
         select(ProcessingTask).where(ProcessingTask.source_id == source.id)
     )
@@ -310,6 +344,7 @@ async def get_source_detail(
         task=task,
         counts=counts,
         extractions=extractions,
+        attachments=attachments.get(source.id, []),
     )
 
 
@@ -386,14 +421,28 @@ async def process_source_ocr(
 ) -> None:
     """OCR 阶段：识别并写入正文，推进任务到 AI 提取阶段。"""
     storage = get_attachment_storage()
-    image_data = await storage.read(
-        workspace_id=source.workspace_id,
-        source_id=source.id,
-        object_key=source.attachment_object_key or "",
-    )
-    if image_data is None:
+    attachments = await _load_attachments(db, [source.id])
+    items = attachments.get(source.id, [])
+    if not items:
         raise AIProviderError("图片附件不存在，无法执行 OCR")
-    text = await run_ocr_with_fallback(provider, image_data)
+    parts: list[str] = []
+    for index, attachment in enumerate(items, start=1):
+        image_data = await storage.read(
+            workspace_id=source.workspace_id,
+            source_id=source.id,
+            object_key=attachment.object_key,
+        )
+        if image_data is None:
+            raise AIProviderError(f"第 {index} 张图片附件不存在，无法执行 OCR")
+        try:
+            text = await run_ocr_with_fallback(
+                provider,
+                prepare_ocr_image(image_data),
+            )
+        except AIProviderError as exc:
+            raise AIProviderError(f"第 {index} 张识别失败：{exc}") from exc
+        parts.append(f"图 {index}：\n{text}")
+    text = "\n\n".join(parts)
     source.content = text
     source.content_status = SourceContentStatus.SAVED.value
     if source.title in {"图片资料", "未命名记录"}:

@@ -125,6 +125,7 @@ class SourceListItem(BaseModel):
     content: str | None = None
     link_url: str | None = None
     attachment: AttachmentInfo | None = None
+    attachments: list[AttachmentInfo] = Field(default_factory=list)
     content_status: str
     project_id: str | None = None
     project_name: str | None = None

@@ -20,14 +20,16 @@ def make_png(width: int = 200, height: int = 100) -> bytes:
 async def upload_image(
     client: AsyncClient,
     *,
-    data: bytes | None = None,
-    filename: str = "photo.png",
-    content_type: str = "image/png",
+    files: list[tuple[str, str, str, bytes]] | None = None,
     **fields: str,
 ) -> dict:
-    payload = {"file": (filename, data if data is not None else make_png(), content_type)}
+    uploads = files or [("photo.png", "image/png", make_png())]
+    payload = [
+        ("files", (filename, data, content_type))
+        for filename, content_type, data in uploads
+    ]
     for key, value in fields.items():
-        payload[key] = (None, value)
+        payload.append((key, (None, value)))
     response = await client.post("/api/inbox/sources/image", files=payload)
     return response
 
@@ -48,7 +50,8 @@ async def test_upload_image_creates_source_with_ocr_task(
     assert source["attachment"]["filename"] == "photo.png"
     assert source["attachment"]["content_type"] == "image/png"
     assert source["attachment"]["size"] > 0
-    assert source["attachment"]["url"].endswith("/attachment")
+    assert "/attachments/" in source["attachment"]["url"]
+    assert len(source["attachments"]) == 1
     assert source["processing_state"] == "processing"
     assert source["task"]["stage"] == "ocr"
 
@@ -75,6 +78,68 @@ async def test_upload_image_without_note_uses_placeholder_title(
 
 
 @pytest.mark.asyncio
+async def test_upload_multiple_images_creates_sorted_attachments(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    response = await upload_image(
+        client,
+        files=[
+            ("first.png", "image/png", make_png(width=120, height=80)),
+            ("second.png", "image/png", make_png(width=200, height=100)),
+            ("third.png", "image/png", make_png(width=300, height=150)),
+        ],
+    )
+    assert response.status_code == 201
+    source = response.json()
+    assert len(source["attachments"]) == 3
+    assert [item["filename"] for item in source["attachments"]] == [
+        "first.png",
+        "second.png",
+        "third.png",
+    ]
+    assert source["attachment"]["filename"] == "first.png"
+    assert source["task"]["stage"] == "ocr"
+
+    stored = await db.scalar(select(Source).where(Source.id == source["id"]))
+    assert stored is not None
+
+
+@pytest.mark.asyncio
+async def test_reject_batch_over_limit_or_with_invalid_member(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+
+    too_many = await upload_image(
+        client,
+        files=[
+            ("a.png", "image/png", make_png()),
+            ("b.png", "image/png", make_png()),
+            ("c.png", "image/png", make_png()),
+            ("d.png", "image/png", make_png()),
+        ],
+    )
+    assert too_many.status_code == 422
+    assert "1-3" in too_many.json()["detail"]["message"]
+
+    bad_member = await upload_image(
+        client,
+        files=[
+            ("ok.png", "image/png", make_png()),
+            ("bad.png", "image/png", b"not an image"),
+        ],
+    )
+    assert bad_member.status_code == 422
+    assert "第 2 张" in bad_member.json()["detail"]["message"]
+
+    count = await db.scalar(select(func.count(Source.id)))
+    assert count == 0
+
+
+@pytest.mark.asyncio
 async def test_upload_image_with_project(
     client: AsyncClient,
     db: AsyncSession,
@@ -95,23 +160,25 @@ async def test_reject_invalid_image_uploads(
 ) -> None:
     await login_owner(client, db)
 
-    empty = await upload_image(client, data=b"")
+    empty = await upload_image(client, files=[("empty.png", "image/png", b"")])
     assert empty.status_code == 422
 
     wrong_type = await upload_image(
         client,
-        data=b"not an image",
-        content_type="text/plain",
+        files=[("bad.txt", "text/plain", b"not an image")],
     )
     assert wrong_type.status_code == 422
 
-    oversized = await upload_image(client, data=b"\x00" * (10 * 1024 * 1024 + 1))
+    oversized = await upload_image(
+        client,
+        files=[("big.png", "image/png", b"\x00" * (10 * 1024 * 1024 + 1))],
+    )
     assert oversized.status_code == 422
     assert "10MB" in oversized.json()["detail"]["message"]
 
     huge_dimension = await upload_image(
         client,
-        data=make_png(width=5000, height=100),
+        files=[("wide.png", "image/png", make_png(width=5000, height=100))],
     )
     assert huge_dimension.status_code == 422
     assert "4096" in huge_dimension.json()["detail"]["message"]

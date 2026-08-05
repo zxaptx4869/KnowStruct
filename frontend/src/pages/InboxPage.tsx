@@ -1,5 +1,5 @@
 import { FileText, Image, Link2, Plus, RefreshCw } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { processingDetailLabel, sourceTypeLabels } from '../inbox/labels'
 import {
@@ -71,9 +71,11 @@ export default function InboxPage() {
   const [content, setContent] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
   const [imageNote, setImageNote] = useState('')
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [previewUrls, setPreviewUrls] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const previewUrlsRef = useRef<string[]>([])
   const [projectId, setProjectId] = useState<string>(preselectProject ?? '')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [filterState, setFilterState] = useState<FilterState>('all')
@@ -94,27 +96,58 @@ export default function InboxPage() {
     setMode(next)
     setSubmitError(null)
     setImageNote('')
-    setPreviewUrl(null)
+    clearSelection()
   }
 
-  async function handleImageSelected(file: File | undefined) {
-    if (!file) return
+  function clearSelection() {
+    for (const url of previewUrls) URL.revokeObjectURL(url)
+    setSelectedFiles([])
+    setPreviewUrls([])
+  }
+
+  function addFiles(incoming: File[]) {
     setSubmitError(null)
-    const localUrl = URL.createObjectURL(file)
-    setPreviewUrl(localUrl)
+    const room = 3 - selectedFiles.length
+    const accepted = incoming.slice(0, room)
+    if (incoming.length > room) {
+      setSubmitError(`最多选择 3 张，已忽略 ${incoming.length - room} 张`)
+    }
+    setSelectedFiles((prev) => [...prev, ...accepted])
+    setPreviewUrls((prev) => [
+      ...prev,
+      ...accepted.map((file) => URL.createObjectURL(file)),
+    ])
+  }
+
+  function removeSelected(index: number) {
+    URL.revokeObjectURL(previewUrls[index])
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index))
+    setPreviewUrls((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  useEffect(() => {
+    previewUrlsRef.current = previewUrls
+  }, [previewUrls])
+
+  useEffect(() => {
+    return () => {
+      for (const url of previewUrlsRef.current) URL.revokeObjectURL(url)
+    }
+  }, [])
+
+  async function submitImageCapture() {
+    if (selectedFiles.length === 0) return
+    setSubmitError(null)
     try {
       const source = await createImageMutation.mutateAsync({
-        file,
+        files: selectedFiles,
         project_id: projectId || undefined,
         note: imageNote || undefined,
       })
-      URL.revokeObjectURL(localUrl)
-      setPreviewUrl(null)
+      clearSelection()
       setImageNote('')
       navigate(`/inbox/${source.id}`)
     } catch (error) {
-      URL.revokeObjectURL(localUrl)
-      setPreviewUrl(null)
       setSubmitError(mutationMessage(error, '图片上传失败，请重试'))
     }
   }
@@ -225,9 +258,14 @@ export default function InboxPage() {
                   <input
                     ref={fileInputRef}
                     type="file"
+                    multiple
                     accept="image/jpeg,image/png,image/webp"
                     className="visually-hidden"
-                    onChange={(event) => void handleImageSelected(event.target.files?.[0])}
+                    onChange={(event) => {
+                      const picked = Array.from(event.target.files ?? [])
+                      addFiles(picked)
+                      event.target.value = ''
+                    }}
                   />
                   <input
                     ref={cameraInputRef}
@@ -235,7 +273,11 @@ export default function InboxPage() {
                     accept="image/*"
                     capture="environment"
                     className="visually-hidden"
-                    onChange={(event) => void handleImageSelected(event.target.files?.[0])}
+                    onChange={(event) => {
+                      const picked = Array.from(event.target.files ?? [])
+                      addFiles(picked)
+                      event.target.value = ''
+                    }}
                   />
                   <button
                     type="button"
@@ -259,16 +301,28 @@ export default function InboxPage() {
                     从相册选择
                   </button>
                 </div>
-                {previewUrl && (
-                  <img
-                    className="image-preview"
-                    src={previewUrl}
-                    alt="待上传图片预览"
-                  />
+                {previewUrls.length > 0 && (
+                  <div className="image-selection-strip" role="list" aria-label="待上传图片">
+                    {previewUrls.map((url, index) => (
+                      <div key={url} className="image-selection-item" role="listitem">
+                        <img src={url} alt={`待上传图片 ${index + 1}`} />
+                        <button
+                          type="button"
+                          className="image-remove-btn"
+                          aria-label={`移除第 ${index + 1} 张`}
+                          onClick={() => removeSelected(index)}
+                          disabled={createImageMutation.isPending}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
-                {createImageMutation.isPending && (
-                  <small className="field-hint" role="status">图片上传中…</small>
-                )}
+                <small className="field-hint" role="status">
+                  已选 {selectedFiles.length}/3 张
+                  {createImageMutation.isPending ? ' · 提交中…' : ''}
+                </small>
               </div>
               <div className="form-field">
                 <span>补充说明（可选，将作为标题）</span>
@@ -291,16 +345,22 @@ export default function InboxPage() {
             </select>
           </div>
           {submitError && <div className="inline-error" role="alert">{submitError}</div>}
-          {mode !== 'image' && (
-            <button
-              type="submit"
-              className="primary-button toolbar-button"
-              disabled={createMutation.isPending}
-            >
-              <Plus size={16} />
-              {createMutation.isPending ? '保存中…' : '保存原始来源'}
-            </button>
-          )}
+          <button
+            type="submit"
+            className="primary-button toolbar-button"
+            disabled={
+              createMutation.isPending
+              || (mode === 'image'
+                ? selectedFiles.length === 0 || createImageMutation.isPending
+                : false)
+            }
+            onClick={mode === 'image' ? () => void submitImageCapture() : undefined}
+          >
+            <Plus size={16} />
+            {createMutation.isPending || createImageMutation.isPending
+              ? '提交中…'
+              : '开始提取'}
+          </button>
         </form>
       </section>
 

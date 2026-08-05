@@ -168,6 +168,11 @@ function SourcePane({ source }: { source: SourceDetail }) {
     ocr: '图片识别',
     ai_extraction: 'AI 提取',
   }
+  const attachmentItems = source.attachments?.length
+    ? source.attachments
+    : source.attachment
+      ? [source.attachment]
+      : []
   return (
     <aside className="source-pane">
       <div className="section-heading">
@@ -178,12 +183,17 @@ function SourcePane({ source }: { source: SourceDetail }) {
       {source.source_type === 'link' && source.link_url && (
         <a className="source-link" href={source.link_url} target="_blank" rel="noreferrer">{source.link_url}</a>
       )}
-      {source.source_type === 'image' && source.attachment && (
-        <img
-          className="source-image-preview"
-          src={source.attachment.url}
-          alt={source.title}
-        />
+      {source.source_type === 'image' && attachmentItems.length > 0 && (
+        <div className="source-attachments-strip">
+          {attachmentItems.map((item) => (
+            <img
+              key={item.url}
+              className="source-image-preview"
+              src={item.url}
+              alt={source.title}
+            />
+          ))}
+        </div>
       )}
       {source.content ? (
         <p className="source-content">{source.content}</p>
