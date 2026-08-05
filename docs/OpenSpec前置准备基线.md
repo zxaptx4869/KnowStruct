@@ -592,7 +592,7 @@ Decision
 
 状态：已确认。
 
-说明：Source / Extraction / Entry / Decision 的知识分层已经确认；Processing Task 是支撑异步处理和重试的技术对象，其字段和持久化方式仍需在相关 Change 中确认。
+说明：Source / Extraction / Entry / Decision 的知识分层已经确认；Processing Task 的字段与持久化方式已在 `capture-text-to-entry` 中确认（MySQL 表 + 乐观领取的进程内 worker）。
 
 ### 8.2 关键关系
 
@@ -651,6 +651,8 @@ Decision
 - 属于 P1，具体变更历史规则在 Decision Change 中明确。
 
 状态：草案。状态名称已根据低保真原型收敛，但删除、恢复、历史版本和并发重试规则仍需在对应 Change 中定义。
+
+已确认范围（`capture-text-to-entry`，2026-08-05）：Source 内容状态（保存中 / 已保存）与处理状态分离；Processing Task 为待处理 / 处理中 / 处理成功 / 处理失败（单行状态机、attempt_count、失败步骤重试、stale running 超时恢复）；Extraction 待确认 / 已接受 / 已拒绝；Entry 由接受候选创建，默认已归档，保留 extraction 与 entry_sources 关联。删除、恢复、历史版本、Entry 常规编辑和冲突状态仍需在后续 Entry 相关 Change 中明确。
 
 ### 8.5 数据保留与删除规则
 

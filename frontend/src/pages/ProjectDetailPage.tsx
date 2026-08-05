@@ -356,6 +356,9 @@ export default function ProjectDetailPage() {
         <button type="button" className="icon-action desktop-back" onClick={() => navigate('/')} aria-label="返回项目列表"><ArrowLeft size={18} /></button>
         <div className="project-title"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><h1>{project.name}</h1><span>{project.node_count} 个目录节点</span></div>
         <div className="project-top-actions">
+          <button type="button" className="add-source-button" onClick={() => navigate(`/inbox?project=${id}`)}>
+            <Plus size={15} />添加资料
+          </button>
           <button type="button" className="icon-action" onClick={() => setEditingProject(true)} aria-label="项目设置" title="项目设置"><Settings2 size={17} /></button>
           <button type="button" className="icon-action project-delete-action" onClick={() => setDeletingProject(true)} aria-label="删除项目" title="删除项目"><Trash2 size={17} /></button>
         </div>

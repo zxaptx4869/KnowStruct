@@ -12,6 +12,7 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.auth import Workspace
+    from app.models.capture import Source
 
 
 class ProjectStatus(StrEnum):
@@ -53,6 +54,7 @@ class Project(UUIDMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    sources: Mapped[list[Source]] = relationship(back_populates="project")
 
 
 class Node(UUIDMixin, TimestampMixin, Base):

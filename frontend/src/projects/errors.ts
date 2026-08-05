@@ -9,6 +9,12 @@ const messages: Record<string, string> = {
   node_has_protected_content: '目录包含受保护内容，无法删除',
   project_not_found: '项目不存在或已被删除',
   node_not_found: '目录节点不存在或已被删除',
+  task_not_failed: '只有失败的任务可以从失败步骤重试',
+  task_not_completed: '资料仍在处理中或处理失败，无法完成',
+  project_required: '接受候选前必须确认项目',
+  invalid_node_for_project: '归档节点不属于所选项目',
+  extraction_already_decided: '该候选已决定，不能重复更改',
+  pending_extractions: '还有候选未决定，请先逐条确认',
 }
 
 export function mutationMessage(error: unknown, fallback: string) {

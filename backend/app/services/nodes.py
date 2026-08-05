@@ -2,12 +2,12 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ConflictError, ResourceNotFoundError
-from app.models import Node, Project
+from app.models import Entry, Node, Project
 from app.schemas.projects import NodeCreate, NodeMove, NodeUpdate
 from app.services.projects import get_project
 from app.utils.tree import (
@@ -197,8 +197,12 @@ async def count_protected_node_references(
     project_id: str,
     node_ids: list[str],
 ) -> int:
-    # Future Entry services register their reference checks here.
-    return 0
+    if not node_ids:
+        return 0
+    count = await db.scalar(
+        select(func.count(Entry.id)).where(Entry.node_id.in_(node_ids))
+    )
+    return int(count or 0)
 
 
 async def delete_node_subtree(

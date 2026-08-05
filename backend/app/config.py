@@ -39,11 +39,16 @@ class Settings(BaseSettings):
     OSS_BUCKET_NAME: str = ""
 
     # AI Providers
+    AI_PROVIDER: str = "deepseek"
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-chat"
 
     DOUBAO_API_KEY: str = ""
     DOUBAO_BASE_URL: str = ""
+
+    # 异步任务
+    TASK_STALE_SECONDS: int = 600
 
     @property
     def trusted_origins(self) -> list[str]:

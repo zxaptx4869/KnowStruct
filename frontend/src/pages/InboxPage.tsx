@@ -1,69 +1,329 @@
+import { FileText, Image, Link2, Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { processingStateLabels, sourceTypeLabels } from '../inbox/labels'
+import {
+  useCreateSource,
+  useInboxSources,
+  useRetrySource,
+} from '../inbox/queries'
+import type { ProcessingState, SourceItem, SourceType } from '../inbox/types'
+import { mutationMessage } from '../projects/errors'
+import { useProjects } from '../projects/queries'
+
+type Mode = SourceType | 'image'
+type FilterState = 'all' | ProcessingState
+
+const stateChips: Array<{ value: FilterState, label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'pending_confirm', label: '待确认' },
+  { value: 'processing', label: '处理中' },
+  { value: 'failed', label: '失败' },
+  { value: 'done', label: '已处理' },
+]
+
+function statusClass(state: SourceItem['processing_state']) {
+  return `status-pill status-${state}`
+}
+
+function SourceActions({
+  source,
+  onOpen,
+}: {
+  source: SourceItem
+  onOpen: () => void
+}) {
+  const retryMutation = useRetrySource(source.id)
+  if (source.processing_state === 'pending_confirm') {
+    return (
+      <button type="button" className="btn small primary" onClick={onOpen}>确认</button>
+    )
+  }
+  if (source.processing_state === 'failed') {
+    return (
+      <button
+        type="button"
+        className="btn small"
+        onClick={(event) => {
+          event.stopPropagation()
+          void retryMutation.mutateAsync()
+        }}
+        disabled={retryMutation.isPending}
+      >
+        {retryMutation.isPending ? '重试中…' : '重试'}
+      </button>
+    )
+  }
+  return (
+    <button type="button" className="btn small" onClick={onOpen}>
+      {source.processing_state === 'processing' ? '查看状态' : '查看'}
+    </button>
+  )
+}
 
 export default function InboxPage() {
-  const [activeMode, setActiveMode] = useState<'text' | 'link' | 'image'>('text')
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const preselectProject = searchParams.get('project') ?? undefined
+
+  const [mode, setMode] = useState<Mode>('text')
+  const [content, setContent] = useState('')
+  const [linkUrl, setLinkUrl] = useState('')
+  const [projectId, setProjectId] = useState<string>(preselectProject ?? '')
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [filterState, setFilterState] = useState<FilterState>('all')
+  const [filterType, setFilterType] = useState<'all' | SourceType>('all')
+  const [keyword, setKeyword] = useState('')
+  const [appliedKeyword, setAppliedKeyword] = useState('')
+
+  const projectsQuery = useProjects()
+  const sourcesQuery = useInboxSources({
+    state: filterState === 'all' ? undefined : filterState,
+    source_type: filterType === 'all' ? undefined : filterType,
+    q: appliedKeyword || undefined,
+  })
+  const createMutation = useCreateSource()
+
+  function switchMode(next: Mode) {
+    setMode(next)
+    setSubmitError(null)
+  }
+
+  async function submitCapture(event: React.FormEvent) {
+    event.preventDefault()
+    setSubmitError(null)
+    try {
+      const sourceType: SourceType = mode === 'image' ? 'text' : mode
+      const source = await createMutation.mutateAsync({
+        source_type: sourceType,
+        content,
+        link_url: mode === 'link' ? linkUrl : undefined,
+        project_id: projectId || undefined,
+      })
+      setContent('')
+      setLinkUrl('')
+      navigate(`/inbox/${source.id}`)
+    } catch (error) {
+      setSubmitError(mutationMessage(error, '采集失败，请检查输入后重试'))
+    }
+  }
+
+  const sources = sourcesQuery.data ?? []
+  const anyProcessing = sources.some((item) => item.processing_state === 'processing')
 
   return (
-    <div className="p-4">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">采集箱</h2>
-      <p className="text-sm text-gray-500 mb-4">
-        快速收集截图、链接、文字，稍后统一整理
-      </p>
+    <div className="projects-page inbox-page">
+      <header className="page-toolbar">
+        <div>
+          <h1>采集箱</h1>
+          <p>快速收集文字和链接，稍后统一整理。生成正式记录前必须确认项目。</p>
+        </div>
+      </header>
 
-      {/* 输入模式切换 */}
-      <div className="flex gap-2 mb-4">
-        {[
-          { key: 'text', label: '✏️ 文字' },
-          { key: 'link', label: '🔗 链接' },
-          { key: 'image', label: '📷 图片' },
-        ].map((mode) => (
+      <section className="capture-panel">
+        <div className="capture-modes" role="tablist" aria-label="采集类型">
           <button
-            key={mode.key}
-            onClick={() => setActiveMode(mode.key as typeof activeMode)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              activeMode === mode.key
-                ? 'bg-primary text-white'
-                : 'bg-gray-100 text-gray-600'
-            }`}
+            type="button"
+            role="tab"
+            aria-selected={mode === 'text'}
+            className={`capture-mode${mode === 'text' ? ' active' : ''}`}
+            onClick={() => switchMode('text')}
           >
-            {mode.label}
+            <FileText size={15} />文字
           </button>
-        ))}
-      </div>
-
-      {/* 输入区域 */}
-      {activeMode === 'text' && (
-        <textarea
-          className="w-full h-32 p-3 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:border-primary"
-          placeholder="粘贴或输入文字..."
-        />
-      )}
-      {activeMode === 'link' && (
-        <input
-          className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary"
-          placeholder="粘贴网页链接..."
-        />
-      )}
-      {activeMode === 'image' && (
-        <div className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50">
-          <span className="text-4xl mb-2">📷</span>
-          <p className="text-sm text-gray-400">点击上传截图或图片</p>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'link'}
+            className={`capture-mode${mode === 'link' ? ' active' : ''}`}
+            onClick={() => switchMode('link')}
+          >
+            <Link2 size={15} />链接
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'image'}
+            className="capture-mode"
+            disabled
+            title="图片采集在下一阶段上线"
+          >
+            <Image size={15} />图片
+            <span className="coming-soon">下一阶段</span>
+          </button>
         </div>
-      )}
 
-      <button className="mt-4 w-full py-3 bg-primary text-white rounded-xl text-sm font-medium">
-        提交采集
-      </button>
+        <form className="capture-form" onSubmit={submitCapture}>
+          {mode === 'text' && (
+            <div className="form-field">
+              <span>文字内容</span>
+              <textarea
+                rows={4}
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                placeholder="粘贴或输入文字，例如：零嵌冰箱要看底部散热…"
+              />
+            </div>
+          )}
+          {mode === 'link' && (
+            <>
+              <div className="form-field">
+                <span>网页链接</span>
+                <input
+                  type="url"
+                  value={linkUrl}
+                  onChange={(event) => setLinkUrl(event.target.value)}
+                  placeholder="https://example.com/product/123"
+                />
+              </div>
+              <div className="form-field">
+                <span>补充说明（必填）</span>
+                <textarea
+                  rows={3}
+                  value={content}
+                  onChange={(event) => setContent(event.target.value)}
+                  placeholder="一句话说明这条链接为什么值得记录，例如：洗烘套装商品参数页"
+                />
+                <small className="field-hint">本阶段不会抓取网页正文，说明会作为可提取内容。</small>
+              </div>
+            </>
+          )}
+          <div className="form-field">
+            <span>所属项目（可选）</span>
+            <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+              <option value="">暂不选择，保存到未分配</option>
+              {(projectsQuery.data ?? []).map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
+          </div>
+          {submitError && <div className="inline-error" role="alert">{submitError}</div>}
+          <button
+            type="submit"
+            className="primary-button toolbar-button"
+            disabled={createMutation.isPending}
+          >
+            <Plus size={16} />
+            {createMutation.isPending ? '保存中…' : '保存原始来源'}
+          </button>
+        </form>
+      </section>
 
-      {/* 已采集列表 */}
-      <div className="mt-8">
-        <h3 className="font-medium text-gray-900 mb-3">待整理</h3>
-        <div className="bg-white rounded-xl p-4 border border-gray-100">
-          <p className="text-gray-400 text-sm text-center py-6">
-            暂无采集项
-          </p>
+      <section className="inbox-queue" aria-label="已采集资料">
+        <div className="inbox-filter-row">
+          <div className="filter-chips" role="group" aria-label="按状态筛选">
+            {stateChips.map((chip) => (
+              <button
+                key={chip.value}
+                type="button"
+                className={`chip${filterState === chip.value ? ' active' : ''}`}
+                onClick={() => setFilterState(chip.value)}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+          <div className="filter-tools">
+            <select
+              aria-label="按类型筛选"
+              value={filterType}
+              onChange={(event) => setFilterType(event.target.value as 'all' | SourceType)}
+            >
+              <option value="all">全部来源</option>
+              <option value="text">文字</option>
+              <option value="link">链接</option>
+            </select>
+            <form
+              className="queue-search"
+              onSubmit={(event) => {
+                event.preventDefault()
+                setAppliedKeyword(keyword)
+              }}
+            >
+              <input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="搜索标题或原文"
+              />
+              <button type="submit" className="secondary-button">搜索</button>
+            </form>
+          </div>
         </div>
-      </div>
+
+        {sourcesQuery.isPending && (
+          <div className="state-panel" role="status"><span className="spin state-spinner" />正在加载采集箱</div>
+        )}
+        {sourcesQuery.isError && (
+          <div className="state-panel state-error" role="alert">
+            <strong>采集箱加载失败</strong>
+            <span>当前状态不代表没有资料，请重试。</span>
+            <button type="button" className="secondary-button" onClick={() => void sourcesQuery.refetch()}>
+              <RefreshCw size={16} />重试
+            </button>
+          </div>
+        )}
+        {sourcesQuery.isSuccess && sources.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-icon"><FileText size={26} /></div>
+            <h2>暂无采集项</h2>
+            <p>先用上方表单保存文字或链接，AI 处理后会进入待确认队列。</p>
+          </div>
+        )}
+        {sourcesQuery.isSuccess && sources.length > 0 && (
+          <>
+            {anyProcessing && (
+              <p className="queue-live-hint" role="status">
+                有资料正在处理中，列表会自动刷新。
+              </p>
+            )}
+            <div className="desktop-projects">
+              <div className="project-table-wrap">
+                <table className="project-table source-table">
+                  <thead>
+                    <tr><th>原始来源</th><th>所属项目</th><th>处理状态</th><th>候选</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    {sources.map((source) => (
+                      <tr key={source.id} onClick={() => navigate(`/inbox/${source.id}`)}>
+                        <td>
+                          <strong>{source.title}</strong>
+                          <span>{sourceTypeLabels[source.source_type]} · {new Date(source.created_at).toLocaleString('zh-CN')}</span>
+                        </td>
+                        <td>{source.project_name ?? '未分配'}</td>
+                        <td><span className={statusClass(source.processing_state)}>{processingStateLabels[source.processing_state]}</span></td>
+                        <td>
+                          {source.candidates.pending_confirm + source.candidates.accepted + source.candidates.rejected > 0
+                            ? `${source.candidates.pending_confirm} 待确认 · ${source.candidates.accepted} 接受 · ${source.candidates.rejected} 拒绝`
+                            : '—'}
+                        </td>
+                        <td><SourceActions source={source} onOpen={() => navigate(`/inbox/${source.id}`)} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="mobile-projects">
+              {sources.map((source) => (
+                <article key={source.id} className="project-card" onClick={() => navigate(`/inbox/${source.id}`)}>
+                  <div className="project-card-head">
+                    <h2>{source.title}</h2>
+                    <SourceActions source={source} onOpen={() => navigate(`/inbox/${source.id}`)} />
+                  </div>
+                  <p>{sourceTypeLabels[source.source_type]} · {new Date(source.created_at).toLocaleString('zh-CN')}</p>
+                  <div className="project-card-meta">
+                    <span className={statusClass(source.processing_state)}>{processingStateLabels[source.processing_state]}</span>
+                    <span>{source.project_name ?? '未分配'}</span>
+                    {source.candidates.pending_confirm + source.candidates.accepted + source.candidates.rejected > 0 && (
+                      <span>{source.candidates.pending_confirm} 待确认 · {source.candidates.accepted} 接受 · {source.candidates.rejected} 拒绝</span>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
     </div>
   )
 }

@@ -12,7 +12,19 @@ from sqlalchemy.pool import NullPool
 from app.api.auth import login_limiter
 from app.database import get_db
 from app.main import app
-from app.models import AuthSession, Base, Node, Project, User, Workspace
+from app.models import (
+    AuthSession,
+    Base,
+    Entry,
+    EntrySource,
+    Extraction,
+    Node,
+    ProcessingTask,
+    Project,
+    Source,
+    User,
+    Workspace,
+)
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -56,6 +68,11 @@ async def database_schema() -> AsyncIterator[None]:
 @pytest_asyncio.fixture(autouse=True)
 async def clean_database() -> AsyncIterator[None]:
     async with TestSessionFactory.begin() as db:
+        await db.execute(delete(EntrySource))
+        await db.execute(delete(Entry))
+        await db.execute(delete(Extraction))
+        await db.execute(delete(ProcessingTask))
+        await db.execute(delete(Source))
         await db.execute(delete(Node))
         await db.execute(delete(Project))
         await db.execute(delete(AuthSession))

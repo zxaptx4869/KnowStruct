@@ -20,6 +20,7 @@ class ExtractionResult:
     key_params: dict | None = None
     risk_points: list[str] = field(default_factory=list)
     applicable_conditions: list[str] = field(default_factory=list)
+    confidence: float | None = None
 
 
 @dataclass
@@ -30,6 +31,14 @@ class ReviewResult:
     related_entry_ids: list[str] = field(default_factory=list)
     suggestion: str = ""
     severity: str = "info"  # info / warning / error
+
+
+class AIProviderError(Exception):
+    """可重试的 AI Provider 调用或解析错误。"""
+
+
+class AIProviderNotConfiguredError(AIProviderError):
+    """AI Provider 未配置或配置无效。"""
 
 
 class AIProvider(ABC):
@@ -47,6 +56,13 @@ class AIProvider(ABC):
         self, content: str, content_type: str = "text"
     ) -> ExtractionResult:
         """从文本/图片中提取关键信息"""
+        ...
+
+    @abstractmethod
+    async def extract_candidates(
+        self, content: str, content_type: str = "text"
+    ) -> list[ExtractionResult]:
+        """生成多条待确认的提取候选。"""
         ...
 
     @abstractmethod

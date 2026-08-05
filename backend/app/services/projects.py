@@ -6,7 +6,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ConflictError, ResourceNotFoundError
-from app.models import Node, Project
+from app.models import Entry, Node, Project, Source
 from app.schemas.projects import ProjectCreate, ProjectUpdate
 
 
@@ -89,8 +89,13 @@ async def update_project(
 
 
 async def count_project_content_references(db: AsyncSession, project_id: str) -> int:
-    # Future Source / Entry / Decision services register their reference checks here.
-    return 0
+    source_count = await db.scalar(
+        select(func.count(Source.id)).where(Source.project_id == project_id)
+    )
+    entry_count = await db.scalar(
+        select(func.count(Entry.id)).where(Entry.project_id == project_id)
+    )
+    return int(source_count or 0) + int(entry_count or 0)
 
 
 async def delete_project(db: AsyncSession, workspace_id: str, project_id: str) -> None:

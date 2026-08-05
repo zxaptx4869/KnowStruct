@@ -9,6 +9,7 @@ import SearchPage from './pages/SearchPage'
 import ReviewPage from './pages/ReviewPage'
 import LoginPage from './pages/LoginPage'
 import MePage from './pages/MePage'
+import SourceConfirmPage from './pages/SourceConfirmPage'
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
           <Route path="/projects/:id/nodes/:nid" element={<NodeDetailPage />} />
           <Route path="/inbox" element={<InboxPage />} />
+          <Route path="/inbox/:sourceId" element={<SourceConfirmPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/me" element={<MePage />} />

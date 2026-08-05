@@ -1,5 +1,6 @@
 """FastAPI 应用入口"""
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,18 +9,26 @@ from fastapi.responses import JSONResponse
 from app.api.auth import clear_session_cookie
 from app.api.auth import router as auth_router
 from app.api.errors import DomainError, NotAuthenticatedError
+from app.api.inbox import router as inbox_router
 from app.api.projects import router as projects_router
 from app.config import get_settings
 from app.database import dispose_engine
 from app.middleware.origin import TrustedOriginMiddleware
+from app.services.task_worker import run_task_worker
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield
-    await dispose_engine()
+    worker_task = asyncio.create_task(run_task_worker())
+    try:
+        yield
+    finally:
+        worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker_task
+        await dispose_engine()
 
 
 app = FastAPI(
@@ -40,6 +49,7 @@ app.add_middleware(TrustedOriginMiddleware, settings=settings)
 
 app.include_router(auth_router)
 app.include_router(projects_router)
+app.include_router(inbox_router)
 
 
 @app.exception_handler(NotAuthenticatedError)

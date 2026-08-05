@@ -172,3 +172,4 @@ Nginx (SSL 终止, 静态资源)
 | 2026-07-05 | PostgreSQL → MySQL | 阿里云 RDS MySQL 更便宜、运维更简单 |
 | 2026-07-05 | 移除 Docker | 不需要，直接部署到 ECS |
 | 2026-07-05 | 移除 Redis | 当前阶段不需要缓存，后续按需加 |
+| 2026-08-05 | 实现采集箱与 AI 提取（`capture-text-to-entry`） | 新增 sources / processing_tasks / extractions / entries / entry_sources 表；MySQL 建表作为队列（乐观领取 + 进程内 worker）；`ai/deepseek.py`（OpenAI 兼容 SDK）与可选 `AI_PROVIDER=demo` 本地验收 Provider |
