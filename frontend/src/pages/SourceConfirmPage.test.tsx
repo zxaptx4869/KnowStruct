@@ -150,6 +150,8 @@ describe('SourceConfirmPage confirmation flow', () => {
     await waitFor(() => expect(complete).not.toBeDisabled())
     await user.click(complete)
     expect(await screen.findByText(/完成：接受 1 条，拒绝 1 条/)).toBeInTheDocument()
+    expect(screen.queryByText(/Extraction 不是正式知识/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '已完成' })).toBeDisabled()
   })
 
   it('flags low-confidence candidates', async () => {

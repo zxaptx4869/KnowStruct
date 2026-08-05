@@ -226,6 +226,7 @@ export default function SourceConfirmPage() {
   const [projectId, setProjectId] = useState('')
   const [completeMessage, setCompleteMessage] = useState<string | null>(null)
   const [completeError, setCompleteError] = useState<string | null>(null)
+  const [completed, setCompleted] = useState(false)
   const [mobileIndex, setMobileIndex] = useState(0)
   const completeMutation = useCompleteSource(sourceId)
 
@@ -251,6 +252,7 @@ export default function SourceConfirmPage() {
     setCompleteMessage(null)
     try {
       const result = await completeMutation.mutateAsync()
+      setCompleted(true)
       setCompleteMessage(`完成：接受 ${result.accepted} 条，拒绝 ${result.rejected} 条`)
     } catch (error) {
       setCompleteError(mutationMessage(error, '完成失败，请重试'))
@@ -273,9 +275,9 @@ export default function SourceConfirmPage() {
           type="button"
           className="primary-button toolbar-button"
           onClick={() => void finishSource()}
-          disabled={!allDecided || completeMutation.isPending}
+          disabled={!allDecided || completeMutation.isPending || completed}
         >
-          {completeMutation.isPending ? '提交中…' : '完成本资料'}
+          {completed ? '已完成' : completeMutation.isPending ? '提交中…' : '完成本资料'}
         </button>
       </header>
 
@@ -311,9 +313,11 @@ export default function SourceConfirmPage() {
       )}
       {source && extractions.length > 0 && (
         <>
-          <div className="confirm-object-note">
-            Extraction 不是正式知识。请逐条检查类型、内容、适用条件和归档节点；接受后才生成 Entry。
-          </div>
+          {!completed && (
+            <div className="confirm-object-note">
+              Extraction 不是正式知识。请逐条检查类型、内容、适用条件和归档节点；接受后才生成 Entry。
+            </div>
+          )}
           <div className="confirm-toolbar-row">
             <div className="confirm-progress">
               <strong>确认进度 {decidedCount} / {extractions.length}</strong>
