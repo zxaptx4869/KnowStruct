@@ -12,8 +12,10 @@
   --color-surface-muted: #f1f3f5;
   --color-navigation: #fbfcfd;
   --color-text-primary: #1d242c;
+  --color-text-ink2: #3f4a56;
   --color-text-secondary: #6b7682;
   --color-text-muted: #929ba5;
+  --color-primary-active: #2059bb;
   --color-border: #d9dee4;
   --color-border-strong: #c7ced6;
   --color-success: #287a4b;
@@ -118,7 +120,7 @@ a {
 .login-heading p,
 .auth-status-message p {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.65;
 }
@@ -134,7 +136,7 @@ a {
 }
 
 .form-field > span:first-child {
-  color: var(--color-text-secondary);
+  color: var(--color-text-ink2);
   font-size: 11px;
   font-weight: 680;
 }
@@ -180,7 +182,7 @@ a {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
@@ -193,7 +195,7 @@ a {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-ink2);
   font-size: 13px;
 }
 
@@ -255,6 +257,7 @@ a {
 
 .login-button {
   width: 100%;
+  min-height: 44px;
 }
 
 .login-boundary {
@@ -277,7 +280,7 @@ a {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
@@ -339,8 +342,8 @@ a {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  color: var(--color-text-muted);
-  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-size: 9px;
   text-decoration: none;
 }
 
@@ -390,8 +393,8 @@ a {
 }
 
 .account-summary span {
-  color: var(--color-text-muted);
-  font-size: 13px;
+  color: var(--color-text-ink2);
+  font-size: 12px;
 }
 
 .logout-wide {
@@ -445,7 +448,7 @@ a {
 .project-overview p,
 .mobile-node-head p {
   margin: 7px 0 0;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.65;
 }
@@ -454,9 +457,9 @@ a {
 .dialog-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 750;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -480,7 +483,7 @@ a {
   border-radius: 8px;
   padding: 32px 20px;
   background: #fff;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
@@ -520,7 +523,7 @@ a {
   border: 1px solid var(--color-border-strong);
   border-radius: 7px;
   background: var(--color-surface-muted);
-  color: var(--color-text-secondary);
+  color: var(--color-text-ink2);
 }
 
 .empty-actions,
@@ -570,7 +573,7 @@ a {
 
 .project-card > p {
   margin: 8px 0 14px;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -580,8 +583,8 @@ a {
   flex-wrap: wrap;
   align-items: center;
   gap: 9px;
-  color: var(--color-text-muted);
-  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-size: 10px;
 }
 
 .status-pill {
@@ -591,7 +594,7 @@ a {
   border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 2px 8px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-ink2);
   font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
@@ -636,7 +639,7 @@ a {
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
@@ -677,7 +680,7 @@ a {
   border-radius: 4px;
   padding: 0 9px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-text-ink2);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -734,7 +737,7 @@ a {
 
 .dialog-description {
   margin: 0 0 17px;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.65;
 }
@@ -850,7 +853,7 @@ a {
 .project-title > span:last-child {
   order: 3;
   width: 100%;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 10px;
 }
 
@@ -888,16 +891,21 @@ a {
   background: transparent;
   color: var(--color-primary-dark);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 680;
   text-align: left;
 }
 
 .mobile-breadcrumbs span {
   overflow: hidden;
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mobile-node-head p {
+  color: var(--color-text-secondary);
+  font-size: 11px;
 }
 
 .mobile-node-head {
@@ -934,7 +942,7 @@ a {
 }
 
 .mobile-level header span {
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 9px;
 }
 
@@ -954,7 +962,7 @@ a {
   border-bottom: 1px solid var(--color-border);
   padding: 9px 2px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-text-ink2);
   text-align: left;
 }
 
@@ -975,12 +983,12 @@ a {
 }
 
 .mobile-level-list strong {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: 12px;
 }
 
 .mobile-level-list small {
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 10px;
 }
 
@@ -992,16 +1000,18 @@ a {
   justify-content: center;
   gap: 8px;
   padding: 24px 12px;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
 .mobile-empty strong {
-  color: var(--color-text-secondary);
+  color: var(--color-text-ink2);
+  font-size: 13px;
 }
 
 .mobile-empty span {
   max-width: 290px;
+  color: var(--color-text-secondary);
   font-size: 10px;
   line-height: 1.55;
 }
@@ -1092,7 +1102,7 @@ a {
     border-radius: 5px;
     padding: 0 11px;
     background: transparent;
-    color: var(--color-text-secondary);
+    color: var(--color-text-ink2);
     font-size: 13px;
     text-decoration: none;
   }
@@ -1103,7 +1113,7 @@ a {
 
   .desktop-nav-item.active {
     background: var(--color-primary-soft);
-    color: var(--color-primary-dark);
+    color: var(--color-primary-active);
     font-weight: 680;
   }
 
@@ -1125,8 +1135,8 @@ a {
     align-items: center;
     gap: 10px;
     padding: 0 11px;
-    color: var(--color-text-muted);
-    font-size: 13px;
+    color: var(--color-text-ink2);
+    font-size: 12px;
   }
 
   .logout-button {
@@ -1185,7 +1195,7 @@ a {
     border-bottom: 1px solid var(--color-border);
     padding: 0 15px;
     background: var(--color-surface-muted);
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     font-size: 10px;
     font-weight: 750;
     text-align: left;
@@ -1203,7 +1213,7 @@ a {
     height: 72px;
     border-bottom: 1px solid var(--color-border);
     padding: 9px 15px;
-    color: var(--color-text-muted);
+    color: var(--color-text-ink2);
     font-size: 12px;
     vertical-align: middle;
   }
@@ -1234,12 +1244,12 @@ a {
   }
 
   .project-table td:first-child strong {
-    color: var(--color-text-secondary);
+    color: var(--color-text-primary);
     font-size: 13px;
   }
 
   .project-table td:first-child span {
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     font-size: 11px;
   }
 
@@ -1329,7 +1339,7 @@ a {
     border-radius: 5px;
     padding: 0 10px;
     background: #fff;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     font-size: 10px;
   }
 
@@ -1365,6 +1375,10 @@ a {
   .tree-row.selected {
     border-color: #bfd1ee;
     background: var(--color-primary-soft);
+  }
+
+  .tree-row.selected .tree-label {
+    color: var(--color-primary-active);
   }
 
   .tree-row.dragging {
@@ -1438,7 +1452,7 @@ a {
     border: 0;
     padding: 0 4px;
     background: transparent;
-    color: var(--color-text-secondary);
+    color: var(--color-text-ink2);
     font-size: 12px;
     text-align: left;
   }
@@ -1467,16 +1481,17 @@ a {
     justify-content: center;
     gap: 8px;
     padding: 24px 18px;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     text-align: center;
   }
 
   .tree-empty strong {
-    color: var(--color-text-secondary);
+    color: var(--color-text-ink2);
     font-size: 12px;
   }
 
   .tree-empty span {
+    color: var(--color-text-secondary);
     font-size: 10px;
     line-height: 1.55;
   }
@@ -1502,7 +1517,7 @@ a {
     overflow: hidden;
     border-bottom: 1px solid var(--color-border);
     padding: 0 24px;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     white-space: nowrap;
   }
 
@@ -1519,7 +1534,7 @@ a {
     border: 0;
     padding: 0 3px;
     background: transparent;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1545,6 +1560,7 @@ a {
   .node-hero p,
   .project-overview p {
     max-width: 680px;
+    color: var(--color-text-secondary);
   }
 
   .project-overview {
@@ -1564,7 +1580,7 @@ a {
   }
 
   .overview-rule span {
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     font-size: 12px;
   }
 
@@ -1590,7 +1606,7 @@ a {
   }
 
   .children-section header span {
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     font-size: 10px;
   }
 
@@ -1610,7 +1626,7 @@ a {
     border-bottom: 1px solid #e2e6ea;
     padding: 8px 6px;
     background: transparent;
-    color: var(--color-text-secondary);
+    color: var(--color-text-ink2);
     text-align: left;
     cursor: pointer;
   }
@@ -1620,12 +1636,12 @@ a {
   }
 
   .child-list strong {
-    color: var(--color-text-secondary);
+    color: var(--color-text-primary);
     font-size: 12px;
   }
 
   .child-list small {
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     font-size: 10px;
   }
 
@@ -1637,7 +1653,7 @@ a {
     border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 18px;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
   }
 
   .inline-empty > div {
@@ -1648,11 +1664,12 @@ a {
   }
 
   .inline-empty strong {
-    color: var(--color-text-secondary);
+    color: var(--color-text-ink2);
     font-size: 12px;
   }
 
   .inline-empty span {
+    color: var(--color-text-secondary);
     font-size: 10px;
   }
 
