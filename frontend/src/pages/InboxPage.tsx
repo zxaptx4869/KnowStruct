@@ -1,9 +1,10 @@
 import { FileText, Image, Link2, Plus, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { processingStateLabels, sourceTypeLabels } from '../inbox/labels'
 import {
   useCreateSource,
+  useCreateImageSource,
   useInboxSources,
   useRetrySource,
 } from '../inbox/queries'
@@ -69,6 +70,10 @@ export default function InboxPage() {
   const [mode, setMode] = useState<Mode>('text')
   const [content, setContent] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
+  const [imageNote, setImageNote] = useState('')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const [projectId, setProjectId] = useState<string>(preselectProject ?? '')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [filterState, setFilterState] = useState<FilterState>('all')
@@ -83,17 +88,43 @@ export default function InboxPage() {
     q: appliedKeyword || undefined,
   })
   const createMutation = useCreateSource()
+  const createImageMutation = useCreateImageSource()
 
   function switchMode(next: Mode) {
     setMode(next)
     setSubmitError(null)
+    setImageNote('')
+    setPreviewUrl(null)
+  }
+
+  async function handleImageSelected(file: File | undefined) {
+    if (!file) return
+    setSubmitError(null)
+    const localUrl = URL.createObjectURL(file)
+    setPreviewUrl(localUrl)
+    try {
+      const source = await createImageMutation.mutateAsync({
+        file,
+        project_id: projectId || undefined,
+        note: imageNote || undefined,
+      })
+      URL.revokeObjectURL(localUrl)
+      setPreviewUrl(null)
+      setImageNote('')
+      navigate(`/inbox/${source.id}`)
+    } catch (error) {
+      URL.revokeObjectURL(localUrl)
+      setPreviewUrl(null)
+      setSubmitError(mutationMessage(error, '图片上传失败，请重试'))
+    }
   }
 
   async function submitCapture(event: React.FormEvent) {
     event.preventDefault()
+    if (mode === 'image') return
     setSubmitError(null)
     try {
-      const sourceType: SourceType = mode === 'image' ? 'text' : mode
+      const sourceType: SourceType = mode
       const source = await createMutation.mutateAsync({
         source_type: sourceType,
         content,
@@ -144,12 +175,10 @@ export default function InboxPage() {
             type="button"
             role="tab"
             aria-selected={mode === 'image'}
-            className="capture-mode"
-            disabled
-            title="图片采集在下一阶段上线"
+            className={`capture-mode${mode === 'image' ? ' active' : ''}`}
+            onClick={() => switchMode('image')}
           >
             <Image size={15} />图片
-            <span className="coming-soon">下一阶段</span>
           </button>
         </div>
 
@@ -188,6 +217,70 @@ export default function InboxPage() {
               </div>
             </>
           )}
+          {mode === 'image' && (
+            <>
+              <div className="form-field">
+                <span>图片（JPG / PNG / WebP，不超过 10MB）</span>
+                <div className="image-upload-actions">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="visually-hidden"
+                    onChange={(event) => void handleImageSelected(event.target.files?.[0])}
+                  />
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="visually-hidden"
+                    onChange={(event) => void handleImageSelected(event.target.files?.[0])}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    选择文件
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button mobile-capture-entry"
+                    onClick={() => cameraInputRef.current?.click()}
+                  >
+                    拍照
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button mobile-capture-entry"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    从相册选择
+                  </button>
+                </div>
+                {previewUrl && (
+                  <img
+                    className="image-preview"
+                    src={previewUrl}
+                    alt="待上传图片预览"
+                  />
+                )}
+                {createImageMutation.isPending && (
+                  <small className="field-hint" role="status">图片上传中…</small>
+                )}
+              </div>
+              <div className="form-field">
+                <span>补充说明（可选，将作为标题）</span>
+                <textarea
+                  rows={2}
+                  value={imageNote}
+                  onChange={(event) => setImageNote(event.target.value)}
+                  placeholder="例如：晶蕾洗碗机烘干设置截图"
+                />
+              </div>
+            </>
+          )}
           <div className="form-field">
             <span>所属项目（可选）</span>
             <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
@@ -198,14 +291,16 @@ export default function InboxPage() {
             </select>
           </div>
           {submitError && <div className="inline-error" role="alert">{submitError}</div>}
-          <button
-            type="submit"
-            className="primary-button toolbar-button"
-            disabled={createMutation.isPending}
-          >
-            <Plus size={16} />
-            {createMutation.isPending ? '保存中…' : '保存原始来源'}
-          </button>
+          {mode !== 'image' && (
+            <button
+              type="submit"
+              className="primary-button toolbar-button"
+              disabled={createMutation.isPending}
+            >
+              <Plus size={16} />
+              {createMutation.isPending ? '保存中…' : '保存原始来源'}
+            </button>
+          )}
         </form>
       </section>
 

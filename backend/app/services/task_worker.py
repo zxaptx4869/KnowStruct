@@ -11,8 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import AIProvider, get_ai_provider
 from app.config import get_settings
 from app.database import AsyncSessionFactory
-from app.models import ProcessingTask, Source, TaskStatus
-from app.services.inbox import process_source_extraction, utc_now
+from app.models import ProcessingTask, Source, TaskStage, TaskStatus
+from app.services.inbox import (
+    process_source_extraction,
+    process_source_ocr,
+    utc_now,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +82,16 @@ async def process_next_task(
         await db.commit()
         return True
     try:
-        provider = provider or get_ai_provider()
-        await process_source_extraction(db, source, task, provider)
-        await db.commit()
-        logger.info("source %s extraction succeeded", source_id)
+        provider = provider or await get_ai_provider(db, source.workspace_id)
+        if task.stage == TaskStage.OCR.value:
+            await process_source_ocr(db, source, task, provider)
+            await db.commit()  # OCR 结果先持久化，提取失败重试不重跑 OCR
+            await process_source_extraction(db, source, task, provider)
+            await db.commit()
+        else:
+            await process_source_extraction(db, source, task, provider)
+            await db.commit()
+        logger.info("source %s processing succeeded", source_id)
     except Exception as exc:  # noqa: BLE001 - 任何失败都落库并可重试
         await db.rollback()
         failed_task = await db.get(ProcessingTask, task_id)
@@ -90,7 +100,7 @@ async def process_next_task(
             failed_task.last_error = str(exc)[:2000]
             failed_task.finished_at = utc_now()
             await db.commit()
-        logger.warning("source %s extraction failed: %s", source_id, exc)
+        logger.warning("source %s processing failed: %s", source_id, exc)
     return True
 
 

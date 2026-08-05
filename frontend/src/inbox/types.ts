@@ -1,4 +1,4 @@
-export type SourceType = 'text' | 'link'
+export type SourceType = 'text' | 'link' | 'image'
 export type ProcessingState = 'processing' | 'failed' | 'pending_confirm' | 'done'
 export type ExtractionStatus = 'pending_confirm' | 'accepted' | 'rejected'
 export type EntryType =
@@ -27,12 +27,20 @@ export interface TaskInfo {
   finished_at: string | null
 }
 
+export interface Attachment {
+  filename: string
+  content_type: string
+  size: number
+  url: string
+}
+
 export interface SourceItem {
   id: string
   source_type: SourceType
   title: string
-  content: string
+  content: string | null
   link_url: string | null
+  attachment?: Attachment | null
   content_status: string
   project_id: string | null
   project_name: string | null
@@ -68,6 +76,26 @@ export interface SourceCreateInput {
   content?: string
   link_url?: string
   project_id?: string
+}
+
+export interface ImageSourceCreateInput {
+  file: File
+  project_id?: string
+  note?: string
+}
+
+export interface AiConfig {
+  provider: string
+  base_url: string | null
+  model: string | null
+  api_key_masked: string
+}
+
+export interface AiConfigUpdate {
+  provider: 'deepseek' | 'doubao'
+  api_key?: string
+  base_url?: string
+  model?: string
 }
 
 export interface DecideInput {

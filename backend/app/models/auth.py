@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -48,6 +48,36 @@ class Workspace(UUIDMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    ai_provider_config: Mapped[AiProviderConfig | None] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class AiProviderConfig(UUIDMixin, TimestampMixin, Base):
+    """按 Workspace 保存的 AI Provider 配置（API Key 加密存储）。"""
+
+    __tablename__ = "ai_provider_configs"
+    __table_args__ = (
+        CheckConstraint(
+            "provider IN ('deepseek', 'doubao')",
+            name="ck_ai_provider_configs_provider",
+        ),
+    )
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    workspace: Mapped[Workspace] = relationship(back_populates="ai_provider_config")
 
 
 class AuthSession(UUIDMixin, Base):

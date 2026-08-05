@@ -10,6 +10,7 @@ export const processingStateLabels: Record<ProcessingState, string> = {
 export const sourceTypeLabels: Record<SourceType, string> = {
   text: '文字',
   link: '链接',
+  image: '图片',
 }
 
 export const entryTypeLabels: Record<EntryType, string> = {

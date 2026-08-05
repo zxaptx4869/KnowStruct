@@ -32,3 +32,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# 本地附件存储
+backend/data/

@@ -1,35 +1,4 @@
-# inbox-processing Specification
-
-## Purpose
-TBD - created by archiving change capture-text-to-entry. Update Purpose after archive.
-## Requirements
-### Requirement: Workspace-scoped text and link source capture
-
-系统 SHALL 允许已认证用户在其当前默认 Workspace 内采集文字和链接 Source。采集时项目可选：未选择项目时 Source 保存为"未分配"，客户端 MUST NOT 自行指定 Workspace 归属。文字 Source SHALL 包含自动生成的标题与正文内容；链接 Source SHALL 包含合法 http(s) 链接与用户补充说明（作为本切片可提取内容，网页正文抓取不在 P0 范围）。
-
-#### Scenario: Capture text without a project
-- **WHEN** 已认证用户在采集箱提交去除首尾空白后非空的文字内容且未选择项目
-- **THEN** 系统在当前 Workspace 创建标题自动取自内容首行的 Source，项目归属为未分配，并创建待处理的 Processing Task，返回 Source 身份
-
-#### Scenario: Capture text with a project
-- **WHEN** 用户提交文字内容并选择当前 Workspace 内的项目
-- **THEN** 系统创建归属于该项目的 Source，其余行为与未分配采集一致
-
-#### Scenario: Reject invalid text input
-- **WHEN** 用户提交空白、超过 20000 字符的文字内容
-- **THEN** 系统拒绝请求并返回可定位到字段的验证错误，不写入任何 Source 或任务数据
-
-#### Scenario: Capture a link with a note
-- **WHEN** 用户提交合法 http(s) 链接及非空补充说明，且可选选择项目
-- **THEN** 系统创建 link 类型 Source，保存链接、补充说明与项目归属，并创建待处理任务
-
-#### Scenario: Reject an invalid link input
-- **WHEN** 用户提交非法链接、缺失补充说明或超过 2000 字符的补充说明
-- **THEN** 系统拒绝请求并返回可定位到字段的验证错误，不写入部分数据
-
-#### Scenario: Reject a project from another workspace
-- **WHEN** 用户采集时选择其他 Workspace 的项目标识
-- **THEN** 系统按项目不存在处理，拒绝创建 Source，不修改任何项目数据
+## MODIFIED Requirements
 
 ### Requirement: Derived inbox queue states
 
@@ -41,7 +10,7 @@ TBD - created by archiving change capture-text-to-entry. Update Purpose after ar
 
 #### Scenario: Show a processing source
 - **WHEN** Source 存在待处理或执行中的 Processing Task
-- **THEN** 采集箱显示该 Source 为处理中并展示当前处理步骤，用户可离开页面
+- **THEN** 采集箱显示该 Source 为处理中并展示当前处理步骤（如 OCR 或 AI 提取），用户可离开页面
 
 #### Scenario: Show a failed source
 - **WHEN** Source 的 Processing Task 处理失败
@@ -105,7 +74,7 @@ TBD - created by archiving change capture-text-to-entry. Update Purpose after ar
 
 #### Scenario: Capture with a preselected project
 - **WHEN** 用户从项目页的"添加资料"入口进入采集箱
-- **THEN** 采集表单预选该项目，提交后 Source 归属于该项目，且不出现第二套采集数据
+- **THEN** 采集表单预选该项目，Source 归属于该项目，且不出现第二套采集数据
 
 #### Scenario: Prevent duplicate capture submission
 - **WHEN** 一个采集请求仍在处理中

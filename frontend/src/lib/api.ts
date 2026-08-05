@@ -46,8 +46,9 @@ async function request<T = unknown>(
     if (qs) url += `?${qs}`
   }
 
+  const isFormData = init.body instanceof FormData
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(init.headers as Record<string, string>),
   }
 
@@ -84,7 +85,11 @@ export const api = {
     request<T>(path, { ...opts, method: 'GET' }),
 
   post: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) =>
-    request<T>(path, { ...opts, method: 'POST', body: JSON.stringify(body) }),
+    request<T>(path, {
+      ...opts,
+      method: 'POST',
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
 
   put: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) =>
     request<T>(path, { ...opts, method: 'PUT', body: JSON.stringify(body) }),

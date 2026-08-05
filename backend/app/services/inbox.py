@@ -13,12 +13,15 @@ from app.models import (
     ProcessingTask,
     Project,
     Source,
+    SourceContentStatus,
     SourceType,
     TaskStage,
     TaskStatus,
 )
 from app.schemas.inbox import CandidateCounts, SourceCreate
+from app.services.ocr import run_ocr_with_fallback
 from app.services.projects import get_project
+from app.services.storage import get_attachment_storage
 
 
 def utc_now() -> datetime:
@@ -61,6 +64,69 @@ async def create_source(
         )
     )
     await db.flush()
+    return source
+
+
+async def create_image_source(
+    db: AsyncSession,
+    workspace_id: str,
+    *,
+    project_id: str | None,
+    note: str | None,
+    filename: str,
+    content_type: str,
+    data: bytes,
+) -> Source:
+    """创建 image Source：先建行，再落盘附件，失败时清理不留下残片。"""
+    resolved_project_id = None
+    if project_id:
+        project = await get_project(db, workspace_id, project_id)
+        resolved_project_id = project.id
+
+    title = derive_title(note or "") or "图片资料"
+    source = Source(
+        workspace_id=workspace_id,
+        project_id=resolved_project_id,
+        source_type=SourceType.IMAGE.value,
+        title=title,
+        content=None,
+        content_status=SourceContentStatus.SAVING.value,
+    )
+    db.add(source)
+    await db.flush()
+
+    storage = get_attachment_storage()
+    object_key: str | None = None
+    try:
+        object_key, size = await storage.save(
+            workspace_id=workspace_id,
+            source_id=source.id,
+            filename=filename,
+            content_type=content_type,
+            data=data,
+        )
+        source.attachment_object_key = object_key
+        source.attachment_filename = filename
+        source.attachment_content_type = content_type
+        source.attachment_size = size
+        source.content_status = SourceContentStatus.SAVED.value
+        db.add(
+            ProcessingTask(
+                source_id=source.id,
+                workspace_id=workspace_id,
+                stage=TaskStage.OCR.value,
+                status=TaskStatus.PENDING.value,
+            )
+        )
+        await db.flush()
+    except Exception:
+        if object_key is not None:
+            await storage.delete(
+                workspace_id=workspace_id,
+                source_id=source.id,
+                object_key=object_key,
+            )
+        raise
     return source
 
 
@@ -296,4 +362,26 @@ async def process_source_extraction(
         )
     task.status = TaskStatus.SUCCEEDED.value
     task.finished_at = utc_now()
+    await db.flush()
+
+
+async def process_source_ocr(
+    db: AsyncSession,
+    source: Source,
+    task: ProcessingTask,
+    provider: AIProvider,
+) -> None:
+    """OCR 阶段：识别并写入正文，推进任务到 AI 提取阶段。"""
+    storage = get_attachment_storage()
+    image_data = await storage.read(
+        workspace_id=source.workspace_id,
+        source_id=source.id,
+        object_key=source.attachment_object_key or "",
+    )
+    if image_data is None:
+        raise AIProviderError("图片附件不存在，无法执行 OCR")
+    text = await run_ocr_with_fallback(provider, image_data)
+    source.content = text
+    source.content_status = SourceContentStatus.SAVED.value
+    task.stage = TaskStage.AI_EXTRACTION.value
     await db.flush()

@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SourceTypeValue = Literal["text", "link"]
+SourceTypeValue = Literal["text", "link", "image"]
 ProcessingStateValue = Literal["processing", "failed", "pending_confirm", "done"]
 DecisionValue = Literal["accepted", "rejected"]
 EntryTypeValue = Literal[
@@ -70,6 +70,8 @@ class SourceCreate(BaseModel):
                 raise ValueError("请补充这条链接的说明，作为可提取内容")
             if len(self.content) > 2000:
                 raise ValueError("补充说明不能超过 2000 字符")
+        elif self.source_type == "image":
+            raise ValueError("图片请通过图片上传入口采集")
         return self
 
 
@@ -77,6 +79,13 @@ class CandidateCounts(BaseModel):
     pending_confirm: int = 0
     accepted: int = 0
     rejected: int = 0
+
+
+class AttachmentInfo(BaseModel):
+    filename: str
+    content_type: str
+    size: int
+    url: str
 
 
 class TaskInfo(BaseModel):
@@ -113,8 +122,9 @@ class SourceListItem(BaseModel):
     id: str
     source_type: str
     title: str
-    content: str
+    content: str | None = None
     link_url: str | None = None
+    attachment: AttachmentInfo | None = None
     content_status: str
     project_id: str | None = None
     project_name: str | None = None

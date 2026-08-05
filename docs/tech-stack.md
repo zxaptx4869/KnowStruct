@@ -125,13 +125,24 @@ projects
 
 ## 4. AI Provider 抽象层
 
-同前，略。
+统一 `AIProvider` 接口（提取候选 / OCR / 目录 / 审查等），实现可替换：
+
+- `deepseek.py`：DeepSeek（OpenAI 兼容 SDK），文本候选提取。
+- `doubao.py`：豆包视觉（火山方舟，OpenAI 兼容接口，默认 `https://ark.cn-beijing.volces.com/api/v3`），图片 OCR + 文本候选提取。
+- `demo.py`：确定性本地验收 Provider（`AI_PROVIDER=demo`），OCR 返回固定演示文本。
+- 本地 OCR 兜底：系统检测到 tesseract 二进制时，在 AI OCR 失败或返回空文本后自动回退。
+
+Provider 解析按 Workspace 进行：用户可在"我的"页配置 Provider / API Key（Fernet 加密入库、掩码回显、可更新删除），未配置时回退部署环境变量（`DEEPSEEK_*` / `DOUBAO_*`）。AI 输出始终为待确认候选，不直接写入正式记录。
 
 ---
 
 ## 5. 文件存储
 
-### 阿里云 OSS
+### P0：本地目录（鉴权访问）
+
+P0 图片附件落在 `backend/data/attachments/{workspace_id}/{source_id}/`，通过鉴权端点 `/api/inbox/sources/{source_id}/attachment` 访问（校验 Workspace 归属），不挂公开静态目录。存储层保留 `AttachmentStorage` 抽象，OSS 接入位不变。
+
+### 目标：阿里云 OSS
 
 ```
 attachments/
@@ -173,3 +184,4 @@ Nginx (SSL 终止, 静态资源)
 | 2026-07-05 | 移除 Docker | 不需要，直接部署到 ECS |
 | 2026-07-05 | 移除 Redis | 当前阶段不需要缓存，后续按需加 |
 | 2026-08-05 | 实现采集箱与 AI 提取（`capture-text-to-entry`） | 新增 sources / processing_tasks / extractions / entries / entry_sources 表；MySQL 建表作为队列（乐观领取 + 进程内 worker）；`ai/deepseek.py`（OpenAI 兼容 SDK）与可选 `AI_PROVIDER=demo` 本地验收 Provider |
+| 2026-08-05 | 图片 OCR 与用户级 AI 配置（`upload-image-and-ocr`） | sources 增加 image 类型与附件列；任务阶段扩展 `ocr → ai_extraction`（失败从失败步骤重试）；`ai/doubao.py` 豆包视觉 OCR + tesseract 兜底；`ai_provider_configs` 表加密保存用户 API Key，运行时按 Workspace 解析 |

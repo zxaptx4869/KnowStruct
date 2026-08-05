@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type {
+  AiConfig,
+  AiConfigUpdate,
   CompleteResponse,
   DecideInput,
   DecideResponse,
+  ImageSourceCreateInput,
   SourceCreateInput,
   SourceDetail,
   SourceItem,
@@ -65,6 +68,20 @@ export function useCreateSource() {
   })
 }
 
+export function useCreateImageSource() {
+  const invalidate = useInvalidateInbox()
+  return useMutation({
+    mutationFn: (input: ImageSourceCreateInput) => {
+      const form = new FormData()
+      form.append('file', input.file)
+      if (input.project_id) form.append('project_id', input.project_id)
+      if (input.note) form.append('note', input.note)
+      return api.post<SourceDetail>('/inbox/sources/image', form)
+    },
+    onSuccess: invalidate,
+  })
+}
+
 export function useRetrySource(sourceId: string) {
   const invalidate = useInvalidateInbox()
   return useMutation({
@@ -88,6 +105,29 @@ export function useDecideExtraction(sourceId: string) {
         input,
       ),
     onSettled: invalidate,
+  })
+}
+
+export function useAiConfig() {
+  return useQuery({
+    queryKey: ['ai-config'],
+    queryFn: () => api.get<AiConfig>('/ai-config'),
+  })
+}
+
+export function useSaveAiConfig() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: AiConfigUpdate) => api.put<AiConfig>('/ai-config', input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-config'] }),
+  })
+}
+
+export function useDeleteAiConfig() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.delete<void>('/ai-config'),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-config'] }),
   })
 }
 

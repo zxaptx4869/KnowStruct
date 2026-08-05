@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.ai_config import router as ai_config_router
 from app.api.auth import clear_session_cookie
 from app.api.auth import router as auth_router
 from app.api.errors import DomainError, NotAuthenticatedError
@@ -50,6 +51,7 @@ app.add_middleware(TrustedOriginMiddleware, settings=settings)
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(inbox_router)
+app.include_router(ai_config_router)
 
 
 @app.exception_handler(NotAuthenticatedError)

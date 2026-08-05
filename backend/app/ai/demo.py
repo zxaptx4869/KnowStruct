@@ -120,7 +120,21 @@ class DemoProvider(AIProvider):
         return [OutlineNode(title="家具家电")]
 
     async def ocr(self, image_data: bytes) -> str:
-        raise NotImplementedError("demo provider 不提供 OCR")
+        """确定性演示 OCR：不产生真实识别，供本地验收。"""
+        try:
+            from io import BytesIO
+
+            from PIL import Image
+
+            with Image.open(BytesIO(image_data)) as image:
+                width, height = image.size
+        except Exception:  # noqa: BLE001 - 图片解析失败时使用占位尺寸
+            width = height = 0
+        return (
+            f"演示 OCR 识别文本（图片 {width}x{height}）："
+            "西门子晶蕾洗碗机使用注意事项：晶蕾烘干不是默认开启的，"
+            "每次需要手动勾选晶蕾烘干，否则只是普通烘干。"
+        )
 
     async def suggest_archive(
         self, entry: dict, nodes: list[dict]

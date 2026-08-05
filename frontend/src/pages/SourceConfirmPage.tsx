@@ -160,6 +160,10 @@ function CandidateCard({
 function SourcePane({ source }: { source: SourceDetail }) {
   const retryMutation = useRetrySource(source.id)
   const failed = source.processing_state === 'failed'
+  const stageLabels: Record<string, string> = {
+    ocr: '图片识别',
+    ai_extraction: 'AI 提取',
+  }
   return (
     <aside className="source-pane">
       <div className="section-heading">
@@ -170,13 +174,24 @@ function SourcePane({ source }: { source: SourceDetail }) {
       {source.source_type === 'link' && source.link_url && (
         <a className="source-link" href={source.link_url} target="_blank" rel="noreferrer">{source.link_url}</a>
       )}
-      <p className="source-content">{source.content}</p>
+      {source.source_type === 'image' && source.attachment && (
+        <img
+          className="source-image-preview"
+          src={source.attachment.url}
+          alt={source.title}
+        />
+      )}
+      {source.content ? (
+        <p className="source-content">{source.content}</p>
+      ) : (
+        <p className="source-content source-empty">图片正文待识别，识别完成后自动进入 AI 提取。</p>
+      )}
       <dl className="source-meta">
         <div><dt>所属项目</dt><dd>{source.project_name ?? '未分配'}</dd></div>
         <div><dt>处理状态</dt><dd>{processingStateLabels[source.processing_state]}</dd></div>
         {source.task && (
           <>
-            <div><dt>处理步骤</dt><dd>{source.task.stage === 'ai_extraction' ? 'AI 提取' : source.task.stage}</dd></div>
+            <div><dt>处理步骤</dt><dd>{stageLabels[source.task.stage] ?? source.task.stage}</dd></div>
             <div><dt>尝试次数</dt><dd>{source.task.attempt_count}</dd></div>
           </>
         )}

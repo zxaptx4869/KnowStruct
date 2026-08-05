@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     OSS_ACCESS_KEY_SECRET: str = ""
     OSS_BUCKET_NAME: str = ""
 
+    # 附件本地存储
+    STORAGE_DIR: str = "data/attachments"
+    MAX_IMAGE_UPLOAD_BYTES: int = 10 * 1024 * 1024
+    MAX_IMAGE_DIMENSION: int = 4096
+
     # AI Providers
     AI_PROVIDER: str = "deepseek"
     DEEPSEEK_API_KEY: str = ""
@@ -46,6 +51,11 @@ class Settings(BaseSettings):
 
     DOUBAO_API_KEY: str = ""
     DOUBAO_BASE_URL: str = ""
+    DOUBAO_MODEL: str = "doubao-seed-2-0-lite-260428"
+
+    # 用户级 AI 配置加密（生产建议显式配置；缺省由 SECRET_KEY 派生）
+    AI_CONFIG_ENCRYPTION_KEY: str = ""
+    SECRET_KEY: str = "dev-secret-key-change-in-production"
 
     # 异步任务
     TASK_STALE_SECONDS: int = 600

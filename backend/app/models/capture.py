@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 class SourceType(StrEnum):
     TEXT = "text"
     LINK = "link"
+    IMAGE = "image"
 
 
 class SourceContentStatus(StrEnum):
@@ -48,6 +49,7 @@ class TaskStatus(StrEnum):
 
 
 class TaskStage(StrEnum):
+    OCR = "ocr"
     AI_EXTRACTION = "ai_extraction"
 
 
@@ -63,7 +65,10 @@ _ENTRY_TYPES_SQL = ", ".join(f"'{value}'" for value in EntryType)
 class Source(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "sources"
     __table_args__ = (
-        CheckConstraint("source_type IN ('text', 'link')", name="ck_sources_type"),
+        CheckConstraint(
+            "source_type IN ('text', 'link', 'image')",
+            name="ck_sources_type",
+        ),
         CheckConstraint(
             "content_status IN ('saving', 'saved', 'unavailable', 'pending_delete')",
             name="ck_sources_content_status",
@@ -84,8 +89,24 @@ class Source(UUIDMixin, TimestampMixin, Base):
     )
     source_type: Mapped[str] = mapped_column(String(10), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
     link_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    attachment_object_key: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+    )
+    attachment_filename: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    attachment_content_type: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    attachment_size: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
     content_status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -118,7 +139,7 @@ class ProcessingTask(UUIDMixin, TimestampMixin, Base):
             name="ck_processing_tasks_status",
         ),
         CheckConstraint(
-            "stage IN ('ai_extraction')",
+            "stage IN ('ocr', 'ai_extraction')",
             name="ck_processing_tasks_stage",
         ),
         CheckConstraint(
