@@ -1,7 +1,9 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models import AiProviderConfig
 from app.services.accounts import create_account
 from tests.test_inbox_api import login_owner
 
@@ -132,6 +134,26 @@ async def test_switching_provider_requires_new_key(
     assert with_key.status_code == 200
     assert with_key.json()["provider"] == "doubao"
     assert with_key.json()["api_key_masked"] == "sk-***5678"
+
+
+@pytest.mark.asyncio
+async def test_corrupted_config_prompts_reconfigure(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    await client.put(
+        "/api/ai-config",
+        json={"provider": "deepseek", "api_key": "sk-test-12345678"},
+    )
+    config = await db.scalar(select(AiProviderConfig))
+    assert config is not None
+    config.api_key_encrypted = "not-a-valid-fernet-token"
+    await db.commit()
+
+    fetched = (await client.get("/api/ai-config")).json()
+    assert fetched["provider"] == "deepseek"
+    assert fetched["api_key_masked"] == "配置损坏，请重新配置"
 
 
 @pytest.mark.asyncio

@@ -20,7 +20,7 @@ def _masked(config) -> str:
     try:
         return mask_secret(decrypt_secret(config.api_key_encrypted))
     except SecretDecryptionError:
-        return "***"
+        return "配置损坏，请重新配置"
 
 
 @router.get("", response_model=AiConfigResponse)

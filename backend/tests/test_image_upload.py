@@ -120,6 +120,36 @@ async def test_source_list_includes_attachments(
 
 
 @pytest.mark.asyncio
+async def test_legacy_first_attachment_endpoint(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    source = (
+        await upload_image(
+            client,
+            files=[
+                ("first.png", "image/png", make_png()),
+                ("second.png", "image/png", make_png()),
+            ],
+        )
+    ).json()
+
+    legacy = await client.get(f"/api/inbox/sources/{source['id']}/attachment")
+    assert legacy.status_code == 200
+    assert legacy.headers["content-type"] == "image/png"
+
+    async with db.begin():
+        await create_account(db, "other", "another valid password")
+    await client.post(
+        "/api/auth/login",
+        json={"account": "other", "password": "another valid password"},
+    )
+    hidden = await client.get(f"/api/inbox/sources/{source['id']}/attachment")
+    assert hidden.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_reject_batch_over_limit_or_with_invalid_member(
     client: AsyncClient,
     db: AsyncSession,
