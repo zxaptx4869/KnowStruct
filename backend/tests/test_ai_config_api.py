@@ -108,6 +108,33 @@ async def test_ai_config_is_workspace_scoped(
 
 
 @pytest.mark.asyncio
+async def test_switching_provider_requires_new_key(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    await client.put(
+        "/api/ai-config",
+        json={"provider": "deepseek", "api_key": "sk-test-12345678"},
+    )
+
+    switched = await client.put(
+        "/api/ai-config",
+        json={"provider": "doubao"},
+    )
+    assert switched.status_code == 409
+    assert switched.json()["detail"]["code"] == "api_key_required"
+
+    with_key = await client.put(
+        "/api/ai-config",
+        json={"provider": "doubao", "api_key": "sk-doubao-12345678"},
+    )
+    assert with_key.status_code == 200
+    assert with_key.json()["provider"] == "doubao"
+    assert with_key.json()["api_key_masked"] == "sk-***5678"
+
+
+@pytest.mark.asyncio
 async def test_ai_config_requires_authentication(client: AsyncClient) -> None:
     assert (await client.get("/api/ai-config")).status_code == 401
     assert (await client.put("/api/ai-config", json={})).status_code == 401

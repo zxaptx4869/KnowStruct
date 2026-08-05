@@ -48,6 +48,11 @@ async def upsert_ai_config(
         )
         db.add(config)
     else:
+        if config.provider != provider and not api_key:
+            raise ConflictError(
+                "api_key_required",
+                f"切换提供商到 {provider} 时必须提供新的 API Key",
+            )
         config.provider = provider
         if api_key:
             config.api_key_encrypted = encrypt_secret(api_key)

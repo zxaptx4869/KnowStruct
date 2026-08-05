@@ -107,6 +107,19 @@ async def test_upload_multiple_images_creates_sorted_attachments(
 
 
 @pytest.mark.asyncio
+async def test_source_list_includes_attachments(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    source = (await upload_image(client)).json()
+    listed = (await client.get("/api/inbox/sources")).json()
+    item = next(item for item in listed if item["id"] == source["id"])
+    assert len(item["attachments"]) == 1
+    assert item["attachment"]["filename"] == "photo.png"
+
+
+@pytest.mark.asyncio
 async def test_reject_batch_over_limit_or_with_invalid_member(
     client: AsyncClient,
     db: AsyncSession,

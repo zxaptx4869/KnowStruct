@@ -1,7 +1,7 @@
 """Workspace-scoped capture inbox and processing task operations."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select
@@ -100,7 +100,7 @@ async def create_image_source(
         project = await get_project(db, workspace_id, project_id)
         resolved_project_id = project.id
 
-    title = derive_title(note or "") or "图片资料"
+    title = derive_title(note or "")
     source = Source(
         workspace_id=workspace_id,
         project_id=resolved_project_id,
@@ -177,6 +177,7 @@ class SourceListItemData:
     project_name: str | None
     task: ProcessingTask | None
     counts: CandidateCounts
+    attachments: list[SourceAttachment] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -281,6 +282,7 @@ async def list_sources(
     project_names = {row[0].id: row[1] for row in rows}
     tasks = await _load_tasks(db, [source.id for source in sources])
     counts = await _load_counts(db, [source.id for source in sources])
+    attachments = await _load_attachments(db, [source.id for source in sources])
 
     items: list[SourceListItemData] = []
     for source in sources:
@@ -294,6 +296,7 @@ async def list_sources(
                 project_name=project_names[source.id],
                 task=task,
                 counts=source_counts,
+                attachments=attachments.get(source.id, []),
             )
         )
     return items

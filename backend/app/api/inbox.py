@@ -63,7 +63,7 @@ def _attachment_info(
 
 
 def _list_item(item: SourceListItemData) -> SourceListItem:
-    attachments = getattr(item, "attachments", [])
+    attachments = item.attachments
     first = attachments[0] if attachments else None
     return SourceListItem(
         id=item.source.id,

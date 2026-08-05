@@ -191,4 +191,21 @@ describe('InboxPage capture and queue', () => {
       expect((call![1]!.body as FormData).getAll('files').length).toBe(2)
     })
   })
+
+  it('caps image selection at three files', async () => {
+    vi.stubGlobal('fetch', inboxFetch())
+    const user = userEvent.setup()
+    renderRoute(<InboxPage />, '/inbox', '/inbox')
+
+    await user.click(screen.getByRole('tab', { name: '图片' }))
+    const input = document.querySelector(
+      'input[type="file"][multiple]',
+    ) as HTMLInputElement
+    const files = [0, 1, 2, 3].map((i) =>
+      new File([`${i}`], `f${i}.png`, { type: 'image/png' }))
+    await user.upload(input, files)
+
+    expect(await screen.findByText('已选 3/3 张')).toBeInTheDocument()
+    expect(screen.getByText(/最多选择 3 张，已忽略 1 张/)).toBeInTheDocument()
+  })
 })

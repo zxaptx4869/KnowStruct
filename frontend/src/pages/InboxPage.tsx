@@ -75,6 +75,7 @@ export default function InboxPage() {
   const [previewUrls, setPreviewUrls] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const selectedFilesRef = useRef<File[]>([])
   const previewUrlsRef = useRef<string[]>([])
   const [projectId, setProjectId] = useState<string>(preselectProject ?? '')
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -101,29 +102,35 @@ export default function InboxPage() {
 
   function clearSelection() {
     for (const url of previewUrls) URL.revokeObjectURL(url)
+    selectedFilesRef.current = []
     setSelectedFiles([])
     setPreviewUrls([])
   }
 
   function addFiles(incoming: File[]) {
     setSubmitError(null)
-    const room = 3 - selectedFiles.length
+    const room = 3 - selectedFilesRef.current.length
     const accepted = incoming.slice(0, room)
     if (incoming.length > room) {
       setSubmitError(`最多选择 3 张，已忽略 ${incoming.length - room} 张`)
     }
+    if (accepted.length === 0) return
+    selectedFilesRef.current = [...selectedFilesRef.current, ...accepted]
+    const urls = accepted.map((file) => URL.createObjectURL(file))
     setSelectedFiles((prev) => [...prev, ...accepted])
-    setPreviewUrls((prev) => [
-      ...prev,
-      ...accepted.map((file) => URL.createObjectURL(file)),
-    ])
+    setPreviewUrls((prev) => [...prev, ...urls])
   }
 
   function removeSelected(index: number) {
     URL.revokeObjectURL(previewUrls[index])
+    selectedFilesRef.current = selectedFilesRef.current.filter((_, i) => i !== index)
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index))
     setPreviewUrls((prev) => prev.filter((_, i) => i !== index))
   }
+
+  useEffect(() => {
+    selectedFilesRef.current = selectedFiles
+  }, [selectedFiles])
 
   useEffect(() => {
     previewUrlsRef.current = previewUrls
@@ -346,7 +353,7 @@ export default function InboxPage() {
           </div>
           {submitError && <div className="inline-error" role="alert">{submitError}</div>}
           <button
-            type="submit"
+            type={mode === 'image' ? 'button' : 'submit'}
             className="primary-button toolbar-button"
             disabled={
               createMutation.isPending
