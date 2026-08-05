@@ -32,6 +32,8 @@ export function useInboxSources(params: SourceListParams = {}) {
           q: params.q,
         },
       }),
+    // 切换状态/类型/关键词标签时立即重新拉取，避免显示 5 分钟缓存里的旧状态
+    staleTime: 0,
     refetchInterval: (query) =>
       query.state.data?.some((item) => item.processing_state === 'processing')
         ? POLL_WHILE_PROCESSING
