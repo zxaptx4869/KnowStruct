@@ -1,24 +1,242 @@
-export default function SearchPage() {
+import { ArrowRight, ExternalLink, RefreshCw, Search, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { entryTypeLabel, sourceTypeLabels } from '../inbox/labels'
+import { useSearch } from '../search/queries'
+import type { SearchEntryHit, SearchSourceHit } from '../search/types'
+
+const DEBOUNCE_MS = 300
+
+function EntryCard({
+  entry,
+  onOpenNode,
+  onOpenSource,
+}: {
+  entry: SearchEntryHit
+  onOpenNode: (entry: SearchEntryHit) => void
+  onOpenSource: (sourceId: string) => void
+}) {
+  const pathLabel = [entry.project_name, ...entry.node_path].join(' / ')
   return (
-    <div className="p-4">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">搜索</h2>
+    <article className="search-result-card">
+      <div className="search-result-main">
+        <div className="search-result-head">
+          <span className="badge">{entryTypeLabel(entry.entry_type)} · Entry</span>
+          <h3>{entry.title}</h3>
+        </div>
+        <p className="search-snippet">{entry.content}</p>
+        <div className="search-result-path">
+          {pathLabel}
+          <span>· 来源 {entry.sources.length} 个</span>
+        </div>
+        {entry.sources.length > 0 && (
+          <div className="search-source-chips">
+            {entry.sources.map((source) => (
+              <button
+                key={source.id}
+                type="button"
+                className="search-source-chip"
+                onClick={() => onOpenSource(source.id)}
+              >
+                {sourceTypeLabels[source.source_type]} · {source.title}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="search-result-actions">
+        <button
+          type="button"
+          className="btn small primary"
+          onClick={() => onOpenNode(entry)}
+          aria-label={`回到节点：${entry.title}`}
+        >
+          {entry.node_id ? '回到节点' : '回到项目'}
+          <ArrowRight size={13} />
+        </button>
+      </div>
+    </article>
+  )
+}
 
-      <div className="relative">
+function SourceCard({
+  source,
+  onOpenSource,
+}: {
+  source: SearchSourceHit
+  onOpenSource: (sourceId: string) => void
+}) {
+  const snippet = source.content ?? source.link_url ?? '（无正文）'
+  return (
+    <article className="search-result-card">
+      <div className="search-result-main">
+        <div className="search-result-head">
+          <span className="badge">{sourceTypeLabels[source.source_type]} · Source</span>
+          <h3>{source.title}</h3>
+        </div>
+        <p className="search-snippet">{snippet}</p>
+        <div className="search-result-path">
+          {source.project_name ?? '未分配项目'}
+          <span>· 关联 {source.entry_count} 条正式记录</span>
+        </div>
+      </div>
+      <div className="search-result-actions">
+        <button
+          type="button"
+          className="btn small"
+          onClick={() => onOpenSource(source.id)}
+          aria-label={`打开来源：${source.title}`}
+        >
+          <ExternalLink size={13} />
+          打开来源
+        </button>
+      </div>
+    </article>
+  )
+}
+
+export default function SearchPage() {
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlKeyword = searchParams.get('q') ?? ''
+  const [input, setInput] = useState(urlKeyword)
+  const [keyword, setKeyword] = useState(urlKeyword)
+  const lastWrittenRef = useRef(urlKeyword)
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const next = input.trim()
+      setKeyword(next)
+      lastWrittenRef.current = next
+      setSearchParams(next ? { q: next } : {}, { replace: true })
+    }, DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [input, setSearchParams])
+
+  useEffect(() => {
+    if (urlKeyword !== lastWrittenRef.current) {
+      lastWrittenRef.current = urlKeyword
+      setInput(urlKeyword)
+      setKeyword(urlKeyword)
+    }
+  }, [urlKeyword])
+
+  const searchQuery = useSearch(keyword)
+  const hasKeyword = keyword.length > 0
+  const entries = searchQuery.data?.entries ?? []
+  const sources = searchQuery.data?.sources ?? []
+  const noResults = searchQuery.isSuccess && entries.length === 0 && sources.length === 0
+
+  function clearKeyword() {
+    setInput('')
+  }
+
+  return (
+    <div className="projects-page search-page">
+      <header className="page-toolbar">
+        <h1>搜索</h1>
+      </header>
+
+      <div className="search-box">
+        <Search size={17} aria-hidden="true" />
         <input
-          className="w-full p-3 pl-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary"
-          placeholder="搜索节点、记录、经验..."
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="搜索正式记录和来源内容"
+          aria-label="搜索关键词"
         />
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-          🔍
-        </span>
+        {input && (
+          <button
+            type="button"
+            className="search-clear"
+            onClick={clearKeyword}
+            aria-label="清除关键词"
+          >
+            <X size={15} />
+          </button>
+        )}
       </div>
 
-      {/* 搜索结果占位 */}
-      <div className="mt-8">
-        <p className="text-gray-400 text-sm text-center py-10">
-          输入关键词开始搜索
-        </p>
-      </div>
+      {!hasKeyword && (
+        <div className="state-panel search-guidance" role="status">
+          <Search size={22} />
+          <strong>输入关键词开始搜索</strong>
+          <span>搜索范围包含全部项目中的正式记录，以及原始文字、链接和图片识别内容。</span>
+        </div>
+      )}
+
+      {hasKeyword && searchQuery.isPending && (
+        <div className="state-panel" role="status">
+          <span className="spin state-spinner" />
+          正在搜索“{keyword}”
+        </div>
+      )}
+
+      {hasKeyword && searchQuery.isError && (
+        <div className="state-panel state-error" role="alert">
+          <strong>搜索失败</strong>
+          <span>已保留关键词“{keyword}”，请检查连接后重试。</span>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void searchQuery.refetch()}
+          >
+            <RefreshCw size={16} />重试
+          </button>
+        </div>
+      )}
+
+      {hasKeyword && noResults && (
+        <div className="state-panel search-no-results" role="status">
+          <strong>没有找到“{keyword}”</strong>
+          <span>换个关键词试试，或清除后重新输入。</span>
+          <button type="button" className="secondary-button" onClick={clearKeyword}>
+            清除并重新输入
+          </button>
+        </div>
+      )}
+
+      {hasKeyword && searchQuery.isSuccess && !noResults && (
+        <div className="search-results">
+          {entries.length > 0 && (
+            <section className="search-section">
+              <header>
+                <h2>正式记录</h2>
+                <span>{entries.length} 条</span>
+              </header>
+              <div className="search-result-list">
+                {entries.map((entry) => (
+                  <EntryCard
+                    key={entry.id}
+                    entry={entry}
+                    onOpenNode={(item) => navigate(item.node_id
+                      ? `/projects/${item.project_id}/nodes/${item.node_id}`
+                      : `/projects/${item.project_id}`)}
+                    onOpenSource={(sourceId) => navigate(`/inbox/${sourceId}`)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+          {sources.length > 0 && (
+            <section className="search-section">
+              <header>
+                <h2>来源命中</h2>
+                <span>{sources.length} 条</span>
+              </header>
+              <div className="search-result-list">
+                {sources.map((source) => (
+                  <SourceCard
+                    key={source.id}
+                    source={source}
+                    onOpenSource={(sourceId) => navigate(`/inbox/${sourceId}`)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
     </div>
   )
 }
