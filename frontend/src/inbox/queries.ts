@@ -3,7 +3,6 @@ import { api } from '../lib/api'
 import type {
   AiConfig,
   AiConfigUpdate,
-  CompleteResponse,
   DecideInput,
   DecideResponse,
   ImageSourceCreateInput,
@@ -128,14 +127,5 @@ export function useDeleteAiConfig() {
   return useMutation({
     mutationFn: () => api.delete<void>('/ai-config'),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-config'] }),
-  })
-}
-
-export function useCompleteSource(sourceId: string) {
-  const invalidate = useInvalidateInbox()
-  return useMutation({
-    mutationFn: () =>
-      api.post<CompleteResponse>(`/inbox/sources/${sourceId}/complete`),
-    onSettled: invalidate,
   })
 }

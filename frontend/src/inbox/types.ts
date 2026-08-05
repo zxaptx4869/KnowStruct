@@ -124,14 +124,6 @@ export interface DecideResponse {
   entry: EntrySummary | null
 }
 
-export interface CompleteResponse {
-  total: number
-  pending_confirm: number
-  accepted: number
-  rejected: number
-  completed: boolean
-}
-
 export interface SourceListParams {
   state?: ProcessingState
   source_type?: SourceType

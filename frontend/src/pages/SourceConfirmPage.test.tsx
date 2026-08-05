@@ -95,20 +95,6 @@ function confirmFetch(overrides: { state?: SourceDetail } = {}) {
       extraction.status = 'rejected'
       return Promise.resolve(jsonResponse({ decision: 'rejected', extraction_id: extractionId, entry: null }))
     }
-    if (method === 'POST' && url.endsWith('/complete')) {
-      const counts = state.extractions.reduce(
-        (acc, item) => {
-          acc[item.status] += 1
-          return acc
-        },
-        { pending_confirm: 0, accepted: 0, rejected: 0 },
-      )
-      return Promise.resolve(jsonResponse({
-        total: state.extractions.length,
-        ...counts,
-        completed: counts.pending_confirm === 0,
-      }))
-    }
     return Promise.resolve(jsonResponse({ detail: { code: 'not_found', message: '未找到' } }, 404))
   })
 }
@@ -150,12 +136,9 @@ describe('SourceConfirmPage confirmation flow', () => {
     })
 
     await user.click((await screen.findAllByRole('button', { name: '拒绝' }))[0])
-    const complete = await screen.findByRole('button', { name: '完成本资料' })
-    await waitFor(() => expect(complete).not.toBeDisabled())
-    await user.click(complete)
-    expect(await screen.findByText(/完成：接受 1 条，拒绝 1 条/)).toBeInTheDocument()
+    expect(await screen.findByText(/已处理完成：接受 1 条，拒绝 1 条/)).toBeInTheDocument()
     expect(screen.queryByText(/Extraction 不是正式知识/)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '已完成' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '完成本资料' })).not.toBeInTheDocument()
   })
 
   it('flags low-confidence candidates', async () => {

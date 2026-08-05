@@ -4,7 +4,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../components/useToast'
 import { entryTypeOptions, processingStateLabels, sourceTypeLabels } from '../inbox/labels'
 import {
-  useCompleteSource,
   useDecideExtraction,
   useRetrySource,
   useSourceDetail,
@@ -241,17 +240,16 @@ export default function SourceConfirmPage() {
   const detailQuery = useSourceDetail(sourceId)
   const projectsQuery = useProjects()
   const [projectId, setProjectId] = useState('')
-  const [completeMessage, setCompleteMessage] = useState<string | null>(null)
   const [projectFieldError, setProjectFieldError] = useState(false)
-  const [completed, setCompleted] = useState(false)
   const [mobileIndex, setMobileIndex] = useState(0)
   const projectSelectRef = useRef<HTMLSelectElement>(null)
-  const completeMutation = useCompleteSource(sourceId)
 
   const source = detailQuery.data
   const extractions = source?.extractions ?? []
   const decidedCount = extractions.filter((item) => item.status !== 'pending_confirm').length
   const allDecided = extractions.length > 0 && decidedCount === extractions.length
+  const acceptedCount = extractions.filter((item) => item.status === 'accepted').length
+  const rejectedCount = extractions.filter((item) => item.status === 'rejected').length
   const effectiveProjectId = projectId || source?.project_id || ''
 
   const nextUndecidedIndex = useMemo(() => {
@@ -264,17 +262,6 @@ export default function SourceConfirmPage() {
     }
     return -1
   }, [source, mobileIndex])
-
-  async function finishSource() {
-    setCompleteMessage(null)
-    try {
-      const result = await completeMutation.mutateAsync()
-      setCompleted(true)
-      setCompleteMessage(`完成：接受 ${result.accepted} 条，拒绝 ${result.rejected} 条`)
-    } catch (error) {
-      toast.error(mutationMessage(error, '完成失败，请重试'))
-    }
-  }
 
   function requestProjectSelection() {
     setProjectFieldError(true)
@@ -294,17 +281,13 @@ export default function SourceConfirmPage() {
             <p>{source ? `${source.title} · ${extractions.length} 条候选` : '正在加载…'}</p>
           </div>
         </div>
-        <button
-          type="button"
-          className="primary-button toolbar-button"
-          onClick={() => void finishSource()}
-          disabled={!allDecided || completeMutation.isPending || completed}
-        >
-          {completed ? '已完成' : completeMutation.isPending ? '提交中…' : '完成本资料'}
-        </button>
       </header>
 
-      {completeMessage && <div className="success-box" role="status">{completeMessage}</div>}
+      {source && allDecided && (
+        <div className="success-box" role="status">
+          已处理完成：接受 {acceptedCount} 条，拒绝 {rejectedCount} 条
+        </div>
+      )}
 
       {detailQuery.isPending && (
         <div className="state-panel" role="status"><span className="spin state-spinner" />正在加载资料</div>
@@ -335,7 +318,7 @@ export default function SourceConfirmPage() {
       )}
       {source && extractions.length > 0 && (
         <>
-          {!completed && (
+          {!allDecided && (
             <div className="confirm-object-note">
               Extraction 不是正式知识。请逐条检查类型、内容、适用条件和归档节点；接受后才生成 Entry。
             </div>
