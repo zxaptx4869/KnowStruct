@@ -11,6 +11,7 @@ import type { AiConfigUpdate } from '../inbox/types'
 import { mutationMessage } from '../projects/errors'
 
 function AiProviderConfigSection() {
+  const auth = useAuth()
   const aiConfigQuery = useAiConfig()
   const saveMutation = useSaveAiConfig()
   const deleteMutation = useDeleteAiConfig()
@@ -69,7 +70,8 @@ function AiProviderConfigSection() {
         <strong>AI 服务配置</strong>
       </div>
       <p className="field-hint">
-        用于文字 / 图片的 AI 提取。配置后优先使用你的 Key；未配置时使用部署环境变量。
+        当前账号：{auth.user?.login_name}（{auth.workspace?.name}）——配置仅对当前账号生效。
+        每个账号只保留一个 Provider，保存新配置会覆盖旧配置；未配置时使用部署环境变量。
       </p>
       <form className="capture-form" onSubmit={handleSave}>
         <div className="form-field">
@@ -81,6 +83,11 @@ function AiProviderConfigSection() {
             <option value="deepseek">DeepSeek</option>
             <option value="doubao">豆包（火山方舟）</option>
           </select>
+          <small className="field-hint">
+            {provider === 'doubao'
+              ? '豆包同时支持图片 OCR 与文本提取，一条配置即可覆盖所有采集类型。'
+              : 'DeepSeek 仅用于文本提取；图片采集需要本机 tesseract 兜底，否则图片任务会失败。'}
+          </small>
         </div>
         <div className="form-field">
           <span>API Key</span>
