@@ -14,6 +14,7 @@ const navigation = [
   { path: '/', label: '项目', icon: FolderKanban, end: true },
   { path: '/inbox', label: '采集', icon: Inbox },
   { path: '/search', label: '搜索', icon: Search },
+  { path: '/me', label: '我的', icon: UserRound },
   { path: '/review', label: 'Review', icon: ShieldCheck, p1: true },
 ]
 
@@ -70,10 +71,6 @@ export default function Layout() {
               <span>{label}</span>
             </NavLink>
           ))}
-          <NavLink to="/me" className={({ isActive }) => `mobile-tab${isActive ? ' active' : ''}`}>
-            <UserRound size={20} aria-hidden="true" />
-            <span>我的</span>
-          </NavLink>
         </nav>
       </div>
     </div>
