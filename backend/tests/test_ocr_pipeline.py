@@ -38,6 +38,8 @@ async def test_ocr_pipeline_writes_content_then_extracts(
     assert detail["task"]["stage"] == "ai_extraction"
     assert detail["content"].startswith("演示 OCR 识别文本")
     assert detail["content_status"] == "saved"
+    assert detail["title"].startswith("西门子晶蕾洗碗机使用注意事项")
+    assert detail["title"] != "图片资料"
     assert detail["processing_state"] == "pending_confirm"
     assert len(detail["extractions"]) == 2
 
@@ -92,6 +94,7 @@ async def test_ai_extraction_failure_retries_without_reocr(
     assert detail["task"]["status"] == "failed"
     assert detail["task"]["stage"] == "ai_extraction"
     assert detail["content"] == "识别文本：晶蕾烘干需手动勾选"
+    assert detail["title"] == "晶蕾烘干需手动勾选"
 
     # 失败后先不重试：提取失败时不应留下候选
     extractions = await db.scalar(select(func.count(Extraction.id)))

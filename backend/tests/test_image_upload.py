@@ -63,6 +63,18 @@ async def test_upload_image_creates_source_with_ocr_task(
 
 
 @pytest.mark.asyncio
+async def test_upload_image_without_note_uses_placeholder_title(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    response = await upload_image(client)
+    assert response.status_code == 201
+    source = response.json()
+    assert source["title"] == "未命名记录"
+
+
+@pytest.mark.asyncio
 async def test_upload_image_with_project(
     client: AsyncClient,
     db: AsyncSession,

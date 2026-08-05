@@ -3,7 +3,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Entry, EntrySource, Extraction, Project
+from app.models import Entry, EntrySource, Extraction, Project, Source
 from app.services.accounts import create_account
 from app.services.task_worker import process_next_task
 from tests.fakes import FakeAIProvider
@@ -60,6 +60,10 @@ async def test_accept_creates_traceable_entry(
     detail_after = (await client.get(f"/api/inbox/sources/{detail['id']}")).json()
     assert detail_after["candidates"]["accepted"] == 1
     assert detail_after["processing_state"] == "pending_confirm"
+    assert detail_after["project_id"] == project["id"]
+
+    source = await db.scalar(select(Source).where(Source.id == detail["id"]))
+    assert source is not None and source.project_id == project["id"]
 
 
 @pytest.mark.asyncio

@@ -130,6 +130,8 @@ async def decide_extraction(
     db.add(entry)
     await db.flush()
     db.add(EntrySource(entry_id=entry.id, source_id=source.id))
+    # 归档到某项目后，Source 归属该项目，详情页与采集箱同步显示
+    source.project_id = project.id
 
     extraction.status = "accepted"
     extraction.decided_at = now

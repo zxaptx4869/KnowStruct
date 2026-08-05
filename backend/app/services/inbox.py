@@ -36,6 +36,19 @@ def derive_title(content: str) -> str:
     return (first_line or "未命名记录")[:100]
 
 
+def derive_ocr_title(text: str) -> str:
+    """从 OCR 文本生成标题：取首个非空行，优先使用冒号后的内容。"""
+    line = next(
+        (line.strip() for line in text.splitlines() if line.strip()),
+        text.strip(),
+    )
+    if "：" in line:
+        after_colon = line.split("：", 1)[1].strip()
+        if after_colon:
+            line = after_colon
+    return line[:80] or "未命名记录"
+
+
 async def create_source(
     db: AsyncSession,
     workspace_id: str,
@@ -383,5 +396,7 @@ async def process_source_ocr(
     text = await run_ocr_with_fallback(provider, image_data)
     source.content = text
     source.content_status = SourceContentStatus.SAVED.value
+    if source.title in {"图片资料", "未命名记录"}:
+        source.title = derive_ocr_title(text)
     task.stage = TaskStage.AI_EXTRACTION.value
     await db.flush()
