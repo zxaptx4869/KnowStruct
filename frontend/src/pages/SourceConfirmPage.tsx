@@ -2,7 +2,11 @@ import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../components/useToast'
-import { entryTypeOptions, processingStateLabels, sourceTypeLabels } from '../inbox/labels'
+import {
+  entryTypeOptions,
+  processingDetailLabel,
+  sourceTypeLabels,
+} from '../inbox/labels'
 import {
   useDecideExtraction,
   useRetrySource,
@@ -188,7 +192,7 @@ function SourcePane({ source }: { source: SourceDetail }) {
       )}
       <dl className="source-meta">
         <div><dt>所属项目</dt><dd>{source.project_name ?? '未分配'}</dd></div>
-        <div><dt>处理状态</dt><dd>{processingStateLabels[source.processing_state]}</dd></div>
+        <div><dt>处理状态</dt><dd>{processingDetailLabel(source)}</dd></div>
         {source.task && (
           <>
             <div><dt>处理步骤</dt><dd>{stageLabels[source.task.stage] ?? source.task.stage}</dd></div>
@@ -303,7 +307,7 @@ export default function SourceConfirmPage() {
       {source && source.processing_state === 'processing' && extractions.length === 0 && (
         <div className="state-panel" role="status">
           <span className="spin state-spinner" />
-          <strong>AI 提取中</strong>
+          <strong>{processingDetailLabel(source)}</strong>
           <span>原始来源已保存，可以离开此页，处理完成后会自动刷新。</span>
         </div>
       )}

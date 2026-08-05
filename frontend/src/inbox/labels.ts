@@ -1,4 +1,4 @@
-import type { EntryType, ProcessingState, SourceType } from './types'
+import type { EntryType, ProcessingState, SourceItem, SourceType } from './types'
 
 export const processingStateLabels: Record<ProcessingState, string> = {
   processing: '处理中',
@@ -11,6 +11,18 @@ export const sourceTypeLabels: Record<SourceType, string> = {
   text: '文字',
   link: '链接',
   image: '图片',
+}
+
+export function processingDetailLabel(
+  item: Pick<SourceItem, 'processing_state' | 'task'>,
+): string {
+  if (item.processing_state !== 'processing') {
+    return processingStateLabels[item.processing_state]
+  }
+  if (!item.task) return '处理中'
+  if (item.task.status === 'pending') return '待处理'
+  if (item.task.stage === 'ocr') return '图片识别中'
+  return 'AI 提取中'
 }
 
 export const entryTypeLabels: Record<EntryType, string> = {

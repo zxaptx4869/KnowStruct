@@ -1,7 +1,7 @@
 import { FileText, Image, Link2, Plus, RefreshCw } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { processingStateLabels, sourceTypeLabels } from '../inbox/labels'
+import { processingDetailLabel, sourceTypeLabels } from '../inbox/labels'
 import {
   useCreateSource,
   useCreateImageSource,
@@ -385,7 +385,7 @@ export default function InboxPage() {
                           <span>{sourceTypeLabels[source.source_type]} · {new Date(source.created_at).toLocaleString('zh-CN')}</span>
                         </td>
                         <td>{source.project_name ?? '未分配'}</td>
-                        <td><span className={statusClass(source.processing_state)}>{processingStateLabels[source.processing_state]}</span></td>
+                        <td><span className={statusClass(source.processing_state)}>{processingDetailLabel(source)}</span></td>
                         <td>
                           {source.candidates.pending_confirm + source.candidates.accepted + source.candidates.rejected > 0
                             ? `${source.candidates.pending_confirm} 待确认 · ${source.candidates.accepted} 接受 · ${source.candidates.rejected} 拒绝`
@@ -407,7 +407,7 @@ export default function InboxPage() {
                   </div>
                   <p>{sourceTypeLabels[source.source_type]} · {new Date(source.created_at).toLocaleString('zh-CN')}</p>
                   <div className="project-card-meta">
-                    <span className={statusClass(source.processing_state)}>{processingStateLabels[source.processing_state]}</span>
+                    <span className={statusClass(source.processing_state)}>{processingDetailLabel(source)}</span>
                     <span>{source.project_name ?? '未分配'}</span>
                     {source.candidates.pending_confirm + source.candidates.accepted + source.candidates.rejected > 0 && (
                       <span>{source.candidates.pending_confirm} 待确认 · {source.candidates.accepted} 接受 · {source.candidates.rejected} 拒绝</span>

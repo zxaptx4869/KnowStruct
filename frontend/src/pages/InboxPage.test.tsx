@@ -137,4 +137,33 @@ describe('InboxPage capture and queue', () => {
         String(url) === '/api/inbox/sources/src-1/retry' && init?.method === 'POST')).toBe(true)
     })
   })
+
+  it('shows stage-aware labels for processing sources', async () => {
+    const pending: SourceItem = {
+      ...source,
+      id: 'src-pending',
+      processing_state: 'processing',
+      task: { ...source.task!, status: 'pending', stage: 'ocr' },
+    }
+    const runningOcr: SourceItem = {
+      ...source,
+      id: 'src-ocr',
+      processing_state: 'processing',
+      task: { ...source.task!, status: 'running', stage: 'ocr' },
+    }
+    const runningExtract: SourceItem = {
+      ...source,
+      id: 'src-extract',
+      processing_state: 'processing',
+      task: { ...source.task!, status: 'running', stage: 'ai_extraction' },
+    }
+    vi.stubGlobal('fetch', inboxFetch({
+      sources: [pending, runningOcr, runningExtract],
+    }))
+    renderRoute(<InboxPage />, '/inbox', '/inbox')
+
+    expect((await screen.findAllByText('待处理')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('图片识别中').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('AI 提取中').length).toBeGreaterThan(0)
+  })
 })
