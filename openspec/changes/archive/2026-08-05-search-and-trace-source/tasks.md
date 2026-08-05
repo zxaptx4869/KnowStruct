@@ -18,4 +18,4 @@
 - [x] 3.2 前端全量验证：`cd frontend && npm test -- --run && npm run lint && npm run build`。
 - [x] 3.3 OpenSpec 校验：`openspec validate --all --strict`。
 - [x] 3.4 浏览器真实验收（playwright-core + 系统 Chrome）：桌面与 390px 视口搜索真实数据，验证结果跳转节点/来源、无结果与失败状态。
-- [ ] 3.5 同步主规格（sync-specs）、归档 Change（archive），并在分支提交；推送/合并前先询问用户。
+- [x] 3.5 同步主规格（sync-specs）、归档 Change（archive），并在分支提交；推送/合并前先询问用户。
