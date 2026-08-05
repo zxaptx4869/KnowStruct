@@ -2323,3 +2323,82 @@ a {
   flex-wrap: wrap;
   gap: 10px;
 }
+
+/* ===== Toast 提示 ===== */
+
+.toast-host {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: grid;
+  gap: 8px;
+  width: min(92vw, 420px);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  line-height: 1.4;
+  animation: toast-in 0.18s ease-out;
+}
+
+.toast-error {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.toast-success {
+  background: #1e7e46;
+  color: #fff;
+}
+
+.toast-info {
+  background: #333;
+  color: #fff;
+}
+
+.toast-close {
+  flex: none;
+  border: 0;
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  padding: 2px 4px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  opacity: 1;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ===== 表单字段错误高亮 ===== */
+
+select.field-error,
+input.field-error,
+textarea.field-error {
+  border-color: var(--color-danger) !important;
+  background-color: var(--color-danger-soft);
+}

@@ -1,6 +1,7 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useToast } from '../components/useToast'
 import { entryTypeOptions, processingStateLabels, sourceTypeLabels } from '../inbox/labels'
 import {
   useCompleteSource,
@@ -236,13 +237,15 @@ function FailedState({ source }: { source: SourceDetail }) {
 export default function SourceConfirmPage() {
   const { sourceId = '' } = useParams<{ sourceId: string }>()
   const navigate = useNavigate()
+  const toast = useToast()
   const detailQuery = useSourceDetail(sourceId)
   const projectsQuery = useProjects()
   const [projectId, setProjectId] = useState('')
   const [completeMessage, setCompleteMessage] = useState<string | null>(null)
-  const [completeError, setCompleteError] = useState<string | null>(null)
+  const [projectFieldError, setProjectFieldError] = useState(false)
   const [completed, setCompleted] = useState(false)
   const [mobileIndex, setMobileIndex] = useState(0)
+  const projectSelectRef = useRef<HTMLSelectElement>(null)
   const completeMutation = useCompleteSource(sourceId)
 
   const source = detailQuery.data
@@ -263,15 +266,20 @@ export default function SourceConfirmPage() {
   }, [source, mobileIndex])
 
   async function finishSource() {
-    setCompleteError(null)
     setCompleteMessage(null)
     try {
       const result = await completeMutation.mutateAsync()
       setCompleted(true)
       setCompleteMessage(`完成：接受 ${result.accepted} 条，拒绝 ${result.rejected} 条`)
     } catch (error) {
-      setCompleteError(mutationMessage(error, '完成失败，请重试'))
+      toast.error(mutationMessage(error, '完成失败，请重试'))
     }
+  }
+
+  function requestProjectSelection() {
+    setProjectFieldError(true)
+    toast.error('接受前请先选择归档项目')
+    projectSelectRef.current?.focus()
   }
 
   return (
@@ -297,7 +305,6 @@ export default function SourceConfirmPage() {
       </header>
 
       {completeMessage && <div className="success-box" role="status">{completeMessage}</div>}
-      {completeError && <div className="inline-error" role="alert">{completeError}</div>}
 
       {detailQuery.isPending && (
         <div className="state-panel" role="status"><span className="spin state-spinner" />正在加载资料</div>
@@ -344,9 +351,15 @@ export default function SourceConfirmPage() {
             <div className="form-field compact-project-field">
               <span>归档项目（接受时必选）</span>
               <select
+                ref={projectSelectRef}
                 aria-label="归档项目"
+                aria-invalid={projectFieldError || undefined}
+                className={projectFieldError ? 'field-error' : undefined}
                 value={effectiveProjectId}
-                onChange={(event) => setProjectId(event.target.value)}
+                onChange={(event) => {
+                  setProjectId(event.target.value)
+                  setProjectFieldError(false)
+                }}
               >
                 <option value="">请选择项目</option>
                 {(projectsQuery.data ?? []).map((project) => (
@@ -366,7 +379,7 @@ export default function SourceConfirmPage() {
                     sourceId={source.id}
                     extraction={extraction}
                     projectId={effectiveProjectId}
-                    onProjectNeeded={() => setCompleteError('接受前请先选择归档项目')}
+                    onProjectNeeded={requestProjectSelection}
                   />
                 ))}
               </div>
@@ -398,7 +411,7 @@ export default function SourceConfirmPage() {
                   sourceId={source.id}
                   extraction={extractions[mobileIndex]}
                   projectId={effectiveProjectId}
-                  onProjectNeeded={() => setCompleteError('接受前请先选择归档项目')}
+                  onProjectNeeded={requestProjectSelection}
                 />
               </div>
             </section>

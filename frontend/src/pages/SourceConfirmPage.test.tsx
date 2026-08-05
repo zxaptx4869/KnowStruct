@@ -124,6 +124,10 @@ describe('SourceConfirmPage confirmation flow', () => {
     const acceptButtons = await screen.findAllByRole('button', { name: '接受并生成正式记录' })
     await user.click(acceptButtons[0])
     expect(await screen.findByText('接受前请先选择归档项目')).toBeInTheDocument()
+    const projectSelect = await screen.findByLabelText(/归档项目/)
+    expect(projectSelect).toHaveAttribute('aria-invalid', 'true')
+    expect(projectSelect).toHaveClass('field-error')
+    expect(projectSelect).toHaveFocus()
   })
 
   it('accepts a candidate with a selected project and enables completion', async () => {

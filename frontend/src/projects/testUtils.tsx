@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { ToastProvider } from '../components/Toast'
 
 export function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -20,9 +21,11 @@ export function renderRoute(element: ReactElement, initialEntry = '/', path = '*
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
-        <Routes>
-          <Route path={path} element={element} />
-        </Routes>
+        <ToastProvider>
+          <Routes>
+            <Route path={path} element={element} />
+          </Routes>
+        </ToastProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   )
