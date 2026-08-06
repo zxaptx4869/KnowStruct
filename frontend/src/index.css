@@ -22,6 +22,7 @@
   --color-warning: #8a5a11;
   --color-danger: #b33a32;
   --color-danger-soft: #fff2f1;
+  --color-highlight: #ea580c;
 }
 
 * {
@@ -2594,11 +2595,8 @@ textarea.field-error {
 }
 
 mark.search-highlight {
-  padding: 0 1px;
-  border-radius: 3px;
-  background: var(--color-primary-soft);
-  color: var(--color-primary-dark);
-  font-weight: 600;
+  color: var(--color-highlight);
+  background: transparent;
 }
 
 .search-result-path {
