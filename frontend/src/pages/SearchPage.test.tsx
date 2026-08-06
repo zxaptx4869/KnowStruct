@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -88,10 +88,19 @@ function searchFetchMock(
   return fetchMock
 }
 
+function searchCallCount(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/search')).length
+}
+
 async function typeKeyword(keyword: string) {
   const input = screen.getByLabelText('搜索关键词')
   await userEvent.type(input, keyword)
   return input
+}
+
+async function submitByButton(keyword: string) {
+  await typeKeyword(keyword)
+  await userEvent.click(screen.getByRole('button', { name: '搜索' }))
 }
 
 describe('SearchPage', () => {
@@ -109,22 +118,76 @@ describe('SearchPage', () => {
     renderSearchPage()
 
     expect(screen.getByText('输入关键词开始搜索')).toBeInTheDocument()
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/search'))).toBe(false)
+    expect(searchCallCount(fetchMock)).toBe(0)
   })
 
-  it('searches after debounce and renders entry and source hits', async () => {
+  it('does not search while typing and searches on submit', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('冰箱')
+    expect(input).toHaveValue('冰箱')
+    expect(searchCallCount(fetchMock)).toBe(0)
+
+    await userEvent.click(screen.getByRole('button', { name: '搜索' }))
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+    expect(searchCallCount(fetchMock)).toBe(1)
+  })
+
+  it('submits with the Enter key', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('冰箱')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+    expect(searchCallCount(fetchMock)).toBe(1)
+  })
+
+  it('ignores Enter while the IME is composing', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('xiwanji')
+    fireEvent.compositionStart(input)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(searchCallCount(fetchMock)).toBe(0)
+
+    fireEvent.compositionEnd(input)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+    expect(searchCallCount(fetchMock)).toBe(1)
+  })
+
+  it('ignores Enter reported as composing by the browser', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('xiwanji')
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(searchCallCount(fetchMock)).toBe(0)
+  })
+
+  it('shows a hint and does not request on an empty submit', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+
+    await userEvent.click(screen.getByRole('button', { name: '搜索' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('请输入搜索关键词')
+    expect(searchCallCount(fetchMock)).toBe(0)
+  })
+
+  it('renders entry and source hits after submit with highlight and URL', async () => {
     const fetchMock = searchFetchMock()
     const { container } = renderSearchPage()
 
-    await typeKeyword('冰箱')
+    await submitByButton('冰箱')
 
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
     expect(screen.getByText('避坑 · Entry')).toBeInTheDocument()
     expect(screen.getByText('新房装修 / 家具家电 / 冰箱')).toBeInTheDocument()
     expect(screen.getByText('图片 · 零嵌冰箱安装避坑截图')).toBeInTheDocument()
-    expect(screen.getByText('链接 · 品牌官网商品页')).toBeInTheDocument()
     expect(screen.getByText('来源命中')).toBeInTheDocument()
-    expect(screen.getByText('候选型号 A 品牌官网商品页')).toBeInTheDocument()
     expect(screen.getByText(/关联 2 条正式记录/)).toBeInTheDocument()
     const marks = Array.from(container.querySelectorAll('mark.search-highlight'))
     expect(marks.length).toBeGreaterThan(0)
@@ -135,22 +198,22 @@ describe('SearchPage', () => {
     expect(decodeURIComponent(String(searchCall![0]))).toContain('q=冰箱')
   })
 
-  it('navigates from an entry result to its node and from a source chip to the source', async () => {
+  it('navigates from an entry result to its node', async () => {
     searchFetchMock()
     renderSearchPage()
 
-    await typeKeyword('冰箱')
+    await submitByButton('冰箱')
     await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
 
     await userEvent.click(screen.getByRole('button', { name: '回到节点：零嵌冰箱需要先确认散热方式' }))
     expect(await screen.findByTestId('node-page')).toBeInTheDocument()
   })
 
-  it('opens the source detail page from a source chip', async () => {
+  it('opens the source detail page from a source hit', async () => {
     searchFetchMock()
     renderSearchPage()
 
-    await typeKeyword('冰箱')
+    await submitByButton('冰箱')
     await screen.findByText('候选型号 A 品牌官网商品页')
 
     await userEvent.click(screen.getByRole('button', { name: /打开来源：候选型号 A/ }))
@@ -165,9 +228,9 @@ describe('SearchPage', () => {
     )
     renderSearchPage()
 
-    const input = await typeKeyword('不存在的关键词')
+    await submitByButton('不存在的关键词')
     expect(await screen.findByText('没有找到“不存在的关键词”')).toBeInTheDocument()
-    expect(input).toHaveValue('不存在的关键词')
+    expect(screen.getByLabelText('搜索关键词')).toHaveValue('不存在的关键词')
 
     await userEvent.click(screen.getByRole('button', { name: '清除并重新输入' }))
     expect(await screen.findByRole('heading', { name: '最近搜索' })).toBeInTheDocument()
@@ -189,52 +252,13 @@ describe('SearchPage', () => {
     })
     renderSearchPage()
 
-    const input = await typeKeyword('冰箱')
+    await submitByButton('冰箱')
     expect(await screen.findByRole('alert')).toHaveTextContent('搜索失败')
-    expect(input).toHaveValue('冰箱')
+    expect(screen.getByLabelText('搜索关键词')).toHaveValue('冰箱')
 
     await userEvent.click(screen.getByRole('button', { name: '重试' }))
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/search')).length).toBe(2)
-  })
-
-  it('restores the keyword from the URL query parameter on load', async () => {
-    searchFetchMock()
-    renderSearchPage('/search?q=冰箱')
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('搜索关键词')).toHaveValue('冰箱')
-    })
-    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
-  })
-
-  it('shows recent history after a successful search and clearing the keyword', async () => {
-    searchFetchMock()
-    renderSearchPage()
-
-    const input = await typeKeyword('冰箱')
-    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
-
-    await userEvent.clear(input)
-    expect(await screen.findByRole('heading', { name: '最近搜索' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '冰箱' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '清空' })).toBeInTheDocument()
-  })
-
-  it('records a search with no results and shows it in history', async () => {
-    searchFetchMock((url) =>
-      url.includes('/api/search')
-        ? Promise.resolve(jsonResponse({ entries: [], sources: [] }))
-        : Promise.resolve(jsonResponse({})),
-    )
-    renderSearchPage()
-
-    const input = await typeKeyword('不存在的关键词')
-    await screen.findByText('没有找到“不存在的关键词”')
-
-    await userEvent.clear(input)
-    expect(await screen.findByRole('heading', { name: '最近搜索' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '不存在的关键词' })).toBeInTheDocument()
+    expect(searchCallCount(fetchMock)).toBe(2)
   })
 
   it('does not record a failed search', async () => {
@@ -244,36 +268,76 @@ describe('SearchPage', () => {
     )))
     renderSearchPage()
 
-    const input = await typeKeyword('冰箱')
+    await submitByButton('冰箱')
     await screen.findByRole('alert')
+    await userEvent.clear(screen.getByLabelText('搜索关键词'))
 
-    await userEvent.clear(input)
     expect(await screen.findByText('输入关键词开始搜索')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '最近搜索' })).not.toBeInTheDocument()
   })
 
-  it('re-runs a search when a history item is clicked', async () => {
+  it('restores and searches the keyword from the URL query parameter on load', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage('/search?q=冰箱')
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('搜索关键词')).toHaveValue('冰箱')
+    })
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+    expect(searchCallCount(fetchMock)).toBe(1)
+  })
+
+  it('keeps previous results while editing without a new request', async () => {
     const fetchMock = searchFetchMock()
     renderSearchPage()
 
-    const input = await typeKeyword('冰箱')
+    await submitByButton('冰箱')
     await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
-    await userEvent.clear(input)
+
+    const input = screen.getByLabelText('搜索关键词')
+    await userEvent.type(input, '柜')
+    expect(input).toHaveValue('冰箱柜')
+    expect(screen.getByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+    expect(searchCallCount(fetchMock)).toBe(1)
+  })
+
+  it('resets to idle when the input is cleared', async () => {
+    searchFetchMock()
+    renderSearchPage()
+
+    await submitByButton('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+
+    await userEvent.clear(screen.getByLabelText('搜索关键词'))
+    expect(await screen.findByRole('heading', { name: '最近搜索' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).not.toBeInTheDocument()
+  })
+
+  it('shows history chips after a search and re-runs a search from a chip', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+
+    await submitByButton('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+    await userEvent.clear(screen.getByLabelText('搜索关键词'))
     await screen.findByRole('heading', { name: '最近搜索' })
+
+    expect(screen.getByRole('button', { name: '冰箱' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '清空' })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '冰箱' }))
     expect(screen.getByLabelText('搜索关键词')).toHaveValue('冰箱')
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/search')).length).toBe(2)
+    expect(searchCallCount(fetchMock)).toBe(2)
   })
 
-  it('deletes a single history item and keeps the guidance state', async () => {
+  it('deletes a single history chip', async () => {
     searchFetchMock()
     renderSearchPage()
 
-    const input = await typeKeyword('冰箱')
+    await submitByButton('冰箱')
     await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
-    await userEvent.clear(input)
+    await userEvent.clear(screen.getByLabelText('搜索关键词'))
     await screen.findByRole('heading', { name: '最近搜索' })
 
     await userEvent.click(screen.getByRole('button', { name: '删除最近搜索：冰箱' }))
@@ -281,13 +345,13 @@ describe('SearchPage', () => {
     expect(screen.getByText('输入关键词开始搜索')).toBeInTheDocument()
   })
 
-  it('clears all history back to guidance', async () => {
+  it('clears all history chips back to guidance', async () => {
     searchFetchMock()
     renderSearchPage()
 
-    const input = await typeKeyword('冰箱')
+    await submitByButton('冰箱')
     await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
-    await userEvent.clear(input)
+    await userEvent.clear(screen.getByLabelText('搜索关键词'))
     await screen.findByRole('heading', { name: '最近搜索' })
 
     await userEvent.click(screen.getByRole('button', { name: '清空' }))
@@ -305,11 +369,11 @@ describe('SearchPage', () => {
     const fetchMock = searchFetchMock()
     renderSearchPage()
 
-    const input = await typeKeyword('冰箱')
+    await submitByButton('冰箱')
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/search'))).toBe(true)
+    expect(searchCallCount(fetchMock)).toBe(1)
 
-    await userEvent.clear(input)
+    await userEvent.clear(screen.getByLabelText('搜索关键词'))
     expect(await screen.findByText('输入关键词开始搜索')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '最近搜索' })).not.toBeInTheDocument()
   })

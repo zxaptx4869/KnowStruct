@@ -1,5 +1,6 @@
 import { ArrowRight, ExternalLink, History, RefreshCw, Search, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { entryTypeLabel, sourceTypeLabels } from '../inbox/labels'
@@ -8,8 +9,6 @@ import type { SearchHistoryItem } from '../search/history'
 import { highlightText } from '../search/highlight'
 import { useSearch } from '../search/queries'
 import type { SearchEntryHit, SearchResponse, SearchSourceHit } from '../search/types'
-
-const DEBOUNCE_MS = 300
 
 function SearchHistory({
   items,
@@ -31,12 +30,12 @@ function SearchHistory({
           清空
         </button>
       </header>
-      <ul className="search-history-list">
+      <div className="search-history-chips">
         {items.map((item) => (
-          <li key={item.keyword} className="search-history-item">
+          <span key={item.keyword} className="search-history-chip">
             <button
               type="button"
-              className="search-history-keyword"
+              className="search-history-chip-keyword"
               onClick={() => onSelect(item.keyword)}
             >
               <History size={14} aria-hidden="true" />
@@ -44,15 +43,15 @@ function SearchHistory({
             </button>
             <button
               type="button"
-              className="search-history-remove"
+              className="search-history-chip-remove"
               onClick={() => onRemove(item.keyword)}
               aria-label={`删除最近搜索：${item.keyword}`}
             >
               <X size={14} />
             </button>
-          </li>
+          </span>
         ))}
-      </ul>
+      </div>
     </section>
   )
 }
@@ -160,18 +159,10 @@ export default function SearchPage() {
   const [history, setHistory] = useState<SearchHistoryItem[]>(() =>
     userId ? readHistory(userId) : [],
   )
+  const [emptyHint, setEmptyHint] = useState(false)
   const lastWrittenRef = useRef(urlKeyword)
+  const composingRef = useRef(false)
   const recordedDataRef = useRef<SearchResponse | null>(null)
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const next = input.trim()
-      setKeyword(next)
-      lastWrittenRef.current = next
-      setSearchParams(next ? { q: next } : {}, { replace: true })
-    }, DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [input, setSearchParams])
 
   useEffect(() => {
     if (urlKeyword !== lastWrittenRef.current) {
@@ -200,8 +191,37 @@ export default function SearchPage() {
     setHistory(addSearch(userId, keyword))
   }, [userId, keyword, searchQuery.status, searchQuery.data])
 
+  function submitSearch(nextKeyword = input) {
+    const trimmed = nextKeyword.trim()
+    setEmptyHint(false)
+    if (!trimmed) {
+      setEmptyHint(true)
+      return
+    }
+    lastWrittenRef.current = trimmed
+    setInput(trimmed)
+    setKeyword(trimmed)
+    setSearchParams({ q: trimmed }, { replace: true })
+  }
+
+  function handleInputChange(value: string) {
+    setInput(value)
+    setEmptyHint(false)
+    if (value.trim().length === 0) {
+      lastWrittenRef.current = ''
+      setKeyword('')
+      setSearchParams({}, { replace: true })
+    }
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return
+    if (event.nativeEvent.isComposing || composingRef.current) return
+    submitSearch()
+  }
+
   function clearKeyword() {
-    setInput('')
+    handleInputChange('')
   }
 
   return (
@@ -214,7 +234,14 @@ export default function SearchPage() {
         <Search size={17} aria-hidden="true" />
         <input
           value={input}
-          onChange={(event) => setInput(event.target.value)}
+          onChange={(event) => handleInputChange(event.target.value)}
+          onKeyDown={handleKeyDown}
+          onCompositionStart={() => {
+            composingRef.current = true
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false
+          }}
           placeholder="搜索正式记录和来源内容"
           aria-label="搜索关键词"
         />
@@ -228,22 +255,41 @@ export default function SearchPage() {
             <X size={15} />
           </button>
         )}
+        <button
+          type="button"
+          className="btn primary search-submit"
+          onClick={() => submitSearch()}
+        >
+          搜索
+        </button>
       </div>
 
-      {!hasKeyword && history.length > 0 && (
+      {emptyHint && (
+        <div className="state-panel search-empty-hint" role="alert">
+          请输入搜索关键词
+        </div>
+      )}
+
+      {!hasKeyword && input.trim() === '' && history.length > 0 && (
         <SearchHistory
           items={history}
-          onSelect={(itemKeyword) => setInput(itemKeyword)}
+          onSelect={(itemKeyword) => submitSearch(itemKeyword)}
           onRemove={(itemKeyword) => setHistory(removeSearch(userId, itemKeyword))}
           onClear={() => setHistory(clearHistory(userId))}
         />
       )}
 
-      {!hasKeyword && history.length === 0 && (
+      {!hasKeyword && input.trim() === '' && history.length === 0 && (
         <div className="state-panel search-guidance" role="status">
           <Search size={22} />
           <strong>输入关键词开始搜索</strong>
-          <span>搜索范围包含全部项目中的正式记录，以及原始文字、链接和图片识别内容。</span>
+          <span>输入关键词后点击“搜索”或按回车开始搜索。搜索范围包含全部项目中的正式记录，以及原始文字、链接和图片识别内容。</span>
+        </div>
+      )}
+
+      {!hasKeyword && input.trim() !== '' && (
+        <div className="state-panel search-idle-hint" role="status">
+          按回车或点击“搜索”开始搜索
         </div>
       )}
 

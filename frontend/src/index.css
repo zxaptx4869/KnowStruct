@@ -2552,74 +2552,90 @@ textarea.field-error {
   background: rgba(37, 99, 235, 0.08);
 }
 
-.search-history-list {
-  display: grid;
+.search-history-chips {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.search-history-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-left: 4px;
+.search-history-chip {
+  display: inline-flex;
+  align-items: stretch;
   border: 1px solid var(--line, #e5e7eb);
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--surface-1, #fff);
 }
 
-.search-history-keyword {
-  flex: 1;
-  min-width: 0;
-  display: flex;
+.search-history-chip-keyword {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
   border: 0;
+  border-radius: 999px 0 0 999px;
   background: transparent;
   font-size: 14px;
-  text-align: left;
   color: var(--text, #374151);
   cursor: pointer;
 }
 
-.search-history-keyword:hover {
+.search-history-chip-keyword:hover {
   color: var(--color-primary, #2563eb);
 }
 
-.search-history-keyword svg {
+.search-history-chip-keyword svg {
   flex: none;
   color: var(--muted, #6b7280);
 }
 
-.search-history-remove {
-  flex: none;
+.search-history-chip-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  margin-right: 4px;
+  width: 30px;
+  min-height: 38px;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0 999px 999px 0;
   color: var(--muted, #6b7280);
   background: transparent;
   cursor: pointer;
 }
 
-.search-history-remove:hover {
+.search-history-chip-remove:hover {
   color: var(--color-danger, #dc2626);
   background: rgba(220, 38, 38, 0.08);
 }
 
 @media (max-width: 767px) {
-  .search-history-keyword {
-    padding: 12px 8px;
+  .search-history-chip-keyword {
+    min-height: 40px;
   }
 
-  .search-history-remove {
-    width: 44px;
-    height: 44px;
+  .search-history-chip-remove {
+    width: 36px;
+    min-height: 40px;
   }
+}
+
+.search-submit {
+  flex: none;
+  min-height: 38px;
+  margin-right: -6px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.search-empty-hint {
+  align-items: center;
+  color: var(--color-danger, #dc2626);
+}
+
+.search-idle-hint {
+  align-items: center;
+  color: var(--muted, #6b7280);
 }
 
 .search-no-results {

@@ -72,11 +72,11 @@
 
 #### Scenario: Re-run a search from history
 - **WHEN** 用户点击某条最近搜索
-- **THEN** 输入框回填该关键词，页面执行搜索且该关键词移动到列表顶部
+- **THEN** 输入框回填该关键词，页面立即执行搜索且该关键词移动到列表顶部
 
 #### Scenario: Hide history while typing
 - **WHEN** 输入框存在非空关键词
-- **THEN** 页面不显示最近搜索区块，只显示搜索中的状态或结果
+- **THEN** 页面不显示最近搜索区块
 
 ### Requirement: Delete a single item and clear all history
 
@@ -87,5 +87,25 @@
 - **THEN** 该条被移除，其余条目顺序保持不变，localStorage 同步更新
 
 #### Scenario: Clear all history
-- **WHEN** 用户点击最近搜索区块的“清空”按钮
-- **THEN** 全部历史被移除，页面显示“输入关键词开始搜索”类引导
+- **WHEN** 用户点击最近搜索区块的"清空"按钮
+- **THEN** 全部历史被移除，页面显示"输入关键词开始搜索"类引导
+
+### Requirement: Display history as wrapping chips
+
+最近搜索历史 SHALL 以按内容宽度自适应铺开的标签流展示（最多 8 条），每个标签包含关键词按钮与独立删除按钮，区块头部提供"清空"操作。点击关键词标签 SHALL 回填输入框并立即发起搜索；删除按钮 SHALL 仅删除对应条目。
+
+#### Scenario: Wrap chips by content width
+- **WHEN** 最近搜索存在多条且内容宽度不一
+- **THEN** 标签按内容宽度紧凑排列并自动换行，不逐行占满
+
+#### Scenario: Delete a single chip
+- **WHEN** 用户点击某标签的删除按钮
+- **THEN** 仅该条被移除，其余标签顺序与排列保持不变
+
+#### Scenario: Re-run a search from a chip
+- **WHEN** 用户点击某标签的关键词按钮
+- **THEN** 输入框回填该关键词并立即发起搜索，该词移动到列表顶部
+
+#### Scenario: Render chips on desktop and mobile
+- **WHEN** 用户在桌面视口与 390px 移动视口分别查看最近搜索区块
+- **THEN** 标签流均按宽度自适应换行、不横向溢出，删除按钮可独立点击
