@@ -2593,6 +2593,14 @@ textarea.field-error {
   word-break: break-word;
 }
 
+mark.search-highlight {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
 .search-result-path {
   display: flex;
   flex-wrap: wrap;

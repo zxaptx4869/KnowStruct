@@ -99,11 +99,11 @@ describe('SearchPage', () => {
 
   it('searches after debounce and renders entry and source hits', async () => {
     const fetchMock = searchFetchMock()
-    renderSearchPage()
+    const { container } = renderSearchPage()
 
     await typeKeyword('冰箱')
 
-    expect(await screen.findByText('零嵌冰箱需要先确认散热方式')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
     expect(screen.getByText('避坑 · Entry')).toBeInTheDocument()
     expect(screen.getByText('新房装修 / 家具家电 / 冰箱')).toBeInTheDocument()
     expect(screen.getByText('图片 · 零嵌冰箱安装避坑截图')).toBeInTheDocument()
@@ -111,6 +111,9 @@ describe('SearchPage', () => {
     expect(screen.getByText('来源命中')).toBeInTheDocument()
     expect(screen.getByText('候选型号 A 品牌官网商品页')).toBeInTheDocument()
     expect(screen.getByText(/关联 2 条正式记录/)).toBeInTheDocument()
+    const marks = Array.from(container.querySelectorAll('mark.search-highlight'))
+    expect(marks.length).toBeGreaterThan(0)
+    expect(marks.map((mark) => mark.textContent)).toContain('冰箱')
 
     const searchCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/search'))
     expect(searchCall).toBeDefined()
@@ -122,7 +125,7 @@ describe('SearchPage', () => {
     renderSearchPage()
 
     await typeKeyword('冰箱')
-    await screen.findByText('零嵌冰箱需要先确认散热方式')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
 
     await userEvent.click(screen.getByRole('button', { name: '回到节点：零嵌冰箱需要先确认散热方式' }))
     expect(await screen.findByTestId('node-page')).toBeInTheDocument()
@@ -175,7 +178,7 @@ describe('SearchPage', () => {
     expect(input).toHaveValue('冰箱')
 
     await userEvent.click(screen.getByRole('button', { name: '重试' }))
-    expect(await screen.findByText('零嵌冰箱需要先确认散热方式')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/search')).length).toBe(2)
   })
 
@@ -186,6 +189,6 @@ describe('SearchPage', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('搜索关键词')).toHaveValue('冰箱')
     })
-    expect(await screen.findByText('零嵌冰箱需要先确认散热方式')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
   })
 })

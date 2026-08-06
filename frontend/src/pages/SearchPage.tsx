@@ -2,6 +2,7 @@ import { ArrowRight, ExternalLink, RefreshCw, Search, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { entryTypeLabel, sourceTypeLabels } from '../inbox/labels'
+import { highlightText } from '../search/highlight'
 import { useSearch } from '../search/queries'
 import type { SearchEntryHit, SearchSourceHit } from '../search/types'
 
@@ -9,10 +10,12 @@ const DEBOUNCE_MS = 300
 
 function EntryCard({
   entry,
+  keyword,
   onOpenNode,
   onOpenSource,
 }: {
   entry: SearchEntryHit
+  keyword: string
   onOpenNode: (entry: SearchEntryHit) => void
   onOpenSource: (sourceId: string) => void
 }) {
@@ -22,9 +25,9 @@ function EntryCard({
       <div className="search-result-main">
         <div className="search-result-head">
           <span className="badge">{entryTypeLabel(entry.entry_type)} · Entry</span>
-          <h3>{entry.title}</h3>
+          <h3>{highlightText(entry.title, keyword)}</h3>
         </div>
-        <p className="search-snippet">{entry.content}</p>
+        <p className="search-snippet">{highlightText(entry.content, keyword)}</p>
         <div className="search-result-path">
           {pathLabel}
           <span>· 来源 {entry.sources.length} 个</span>
@@ -61,9 +64,11 @@ function EntryCard({
 
 function SourceCard({
   source,
+  keyword,
   onOpenSource,
 }: {
   source: SearchSourceHit
+  keyword: string
   onOpenSource: (sourceId: string) => void
 }) {
   const snippet = source.content ?? source.link_url ?? '（无正文）'
@@ -72,9 +77,9 @@ function SourceCard({
       <div className="search-result-main">
         <div className="search-result-head">
           <span className="badge">{sourceTypeLabels[source.source_type]} · Source</span>
-          <h3>{source.title}</h3>
+          <h3>{highlightText(source.title, keyword)}</h3>
         </div>
-        <p className="search-snippet">{snippet}</p>
+        <p className="search-snippet">{highlightText(snippet, keyword)}</p>
         <div className="search-result-path">
           {source.project_name ?? '未分配项目'}
           <span>· 关联 {source.entry_count} 条正式记录</span>
@@ -209,6 +214,7 @@ export default function SearchPage() {
                   <EntryCard
                     key={entry.id}
                     entry={entry}
+                    keyword={keyword}
                     onOpenNode={(item) => navigate(item.node_id
                       ? `/projects/${item.project_id}/nodes/${item.node_id}`
                       : `/projects/${item.project_id}`)}
@@ -229,6 +235,7 @@ export default function SearchPage() {
                   <SourceCard
                     key={source.id}
                     source={source}
+                    keyword={keyword}
                     onOpenSource={(sourceId) => navigate(`/inbox/${sourceId}`)}
                   />
                 ))}
