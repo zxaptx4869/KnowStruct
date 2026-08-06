@@ -29,8 +29,9 @@ import {
   RefreshCw,
   Settings2,
   Trash2,
+  X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import ConfirmDialog from '../projects/ConfirmDialog'
@@ -41,12 +42,14 @@ import { mutationMessage } from '../projects/errors'
 import { entryTypeLabel, entryTypeOptions, sourceTypeLabels } from '../inbox/labels'
 import {
   useCreateNode,
+  useDeleteEntry,
   useDeleteNode,
   useDeleteProject,
-  useNodeEntries,
   useMoveNode,
+  useNodeEntries,
   useNodes,
   useProject,
+  useUpdateEntry,
   useUpdateNode,
   useUpdateProject,
 } from '../projects/queries'
@@ -63,7 +66,7 @@ import {
   type TreeNode,
 } from '../projects/tree'
 import { projectStatusLabel, type Node, type NodeInput, type ProjectInput } from '../projects/types'
-import type { NodeEntry } from '../projects/types'
+import type { EntryUpdateInput, NodeEntry } from '../projects/types'
 
 interface NodeMenuProps {
   node: Node
@@ -77,15 +80,37 @@ interface NodeMenuProps {
 function NodeRecordCard({
   entry,
   onOpenSource,
+  onEdit,
+  onDelete,
 }: {
   entry: NodeEntry
   onOpenSource: (sourceId: string) => void
+  onEdit: (entry: NodeEntry) => void
+  onDelete: (entry: NodeEntry) => void
 }) {
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <article className="record-card">
       <header className="record-head">
         <span className="badge">{entryTypeLabel(entry.entry_type)} · Entry</span>
         <h4>{entry.title}</h4>
+        <div className="record-menu" onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            className="icon-action compact-action"
+            aria-label={`管理记录：${entry.title}`}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((value) => !value)}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          {menuOpen && (
+            <div className="action-menu record-action-menu">
+              <button type="button" onClick={() => { setMenuOpen(false); onEdit(entry) }}>编辑记录</button>
+              <button type="button" className="danger-text" onClick={() => { setMenuOpen(false); onDelete(entry) }}>删除记录</button>
+            </div>
+          )}
+        </div>
       </header>
       <p className="record-content">{entry.content}</p>
       {entry.applicable_conditions && entry.applicable_conditions.length > 0 && (
@@ -112,16 +137,139 @@ function NodeRecordCard({
   )
 }
 
+function EntryEditDialog({
+  entry,
+  projectId,
+  pending,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  entry: NodeEntry
+  projectId: string
+  pending: boolean
+  error: unknown
+  onClose: () => void
+  onSubmit: (input: EntryUpdateInput) => Promise<void>
+}) {
+  const nodesQuery = useNodes(projectId)
+  const [title, setTitle] = useState(entry.title)
+  const [entryType, setEntryType] = useState(entry.entry_type)
+  const [content, setContent] = useState(entry.content)
+  const [conditions, setConditions] = useState(
+    (entry.applicable_conditions ?? []).join('；'),
+  )
+  const [nodeId, setNodeId] = useState(entry.node_id ?? '')
+  const [validation, setValidation] = useState('')
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!title.trim()) {
+      setValidation('请输入记录标题')
+      return
+    }
+    if (!content.trim()) {
+      setValidation('请输入记录内容')
+      return
+    }
+    await onSubmit({
+      title: title.trim(),
+      content: content.trim(),
+      entry_type: entryType,
+      applicable_conditions: conditions
+        .split(/[；;]/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+      node_id: nodeId || null,
+    })
+  }
+
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="entry-dialog-title">
+        <header className="dialog-header">
+          <h2 id="entry-dialog-title">编辑记录</h2>
+          <button type="button" className="icon-action" onClick={onClose} aria-label="关闭" disabled={pending}><X size={18} /></button>
+        </header>
+        <form className="form-stack" onSubmit={(event) => void submit(event)}>
+          <label className="form-field">
+            <span>记录标题</span>
+            <input value={title} onChange={(event) => { setTitle(event.target.value); setValidation('') }} maxLength={200} autoFocus />
+          </label>
+          <label className="form-field">
+            <span>记录类型</span>
+            <select value={entryType} onChange={(event) => setEntryType(event.target.value)}>
+              {entryTypeOptions.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span>记录内容</span>
+            <textarea rows={5} value={content} onChange={(event) => { setContent(event.target.value); setValidation('') }} />
+          </label>
+          <label className="form-field">
+            <span>适用条件</span>
+            <input value={conditions} onChange={(event) => setConditions(event.target.value)} placeholder="用分号分隔多条条件" />
+          </label>
+          <label className="form-field">
+            <span>归档节点</span>
+            <select value={nodeId} onChange={(event) => setNodeId(event.target.value)}>
+              <option value="">未归档</option>
+              {(nodesQuery.data ?? []).map((node) => (
+                <option key={node.id} value={node.id}>{node.name}</option>
+              ))}
+            </select>
+          </label>
+          {(validation || Boolean(error)) && (
+            <div className="inline-error" role="alert">
+              {validation || mutationMessage(error, '记录保存失败，请重试')}
+            </div>
+          )}
+          <footer className="dialog-actions">
+            <button type="button" className="secondary-button" onClick={onClose} disabled={pending}>取消</button>
+            <button type="submit" className="primary-button" disabled={pending}>{pending ? '保存中' : '保存更改'}</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function NodeRecordsSection({ projectId, nodeId }: { projectId: string, nodeId: string }) {
   const navigate = useNavigate()
   const [typeFilter, setTypeFilter] = useState<'all' | string>('all')
+  const [editingRecord, setEditingRecord] = useState<NodeEntry | null>(null)
+  const [deletingRecord, setDeletingRecord] = useState<NodeEntry | null>(null)
   const entriesQuery = useNodeEntries(projectId, nodeId)
+  const updateMutation = useUpdateEntry(projectId, editingRecord?.id ?? '')
+  const deleteMutation = useDeleteEntry(projectId)
   const entries = entriesQuery.data ?? []
   const filtered = typeFilter === 'all'
     ? entries
     : entries.filter((entry) => entry.entry_type === typeFilter)
   const noRecords = entries.length === 0
   const noMatches = entries.length > 0 && filtered.length === 0
+
+  async function saveRecord(input: EntryUpdateInput) {
+    try {
+      await updateMutation.mutateAsync(input)
+      setEditingRecord(null)
+    } catch {
+      // Dialog stays open with the error and preserved input.
+    }
+  }
+
+  async function confirmDeleteRecord() {
+    if (!deletingRecord) return
+    try {
+      await deleteMutation.mutateAsync(deletingRecord.id)
+      setDeletingRecord(null)
+    } catch {
+      // Confirmation stays open with the API error.
+    }
+  }
+
   return (
     <section className="records-section">
       <header className="records-head">
@@ -155,9 +303,32 @@ function NodeRecordsSection({ projectId, nodeId }: { projectId: string, nodeId: 
               key={entry.id}
               entry={entry}
               onOpenSource={(sourceId) => navigate(`/inbox/${sourceId}`)}
+              onEdit={setEditingRecord}
+              onDelete={setDeletingRecord}
             />
           ))}
         </div>
+      )}
+      {editingRecord && (
+        <EntryEditDialog
+          entry={editingRecord}
+          projectId={projectId}
+          pending={updateMutation.isPending}
+          error={updateMutation.error}
+          onClose={() => { setEditingRecord(null); updateMutation.reset() }}
+          onSubmit={saveRecord}
+        />
+      )}
+      {deletingRecord && (
+        <ConfirmDialog
+          title="删除记录？"
+          description={`将永久删除“${deletingRecord.title}”，原始来源会保留。`}
+          confirmLabel="删除记录"
+          pending={deleteMutation.isPending}
+          error={deleteMutation.error}
+          onClose={() => { setDeletingRecord(null); deleteMutation.reset() }}
+          onConfirm={confirmDeleteRecord}
+        />
       )}
     </section>
   )

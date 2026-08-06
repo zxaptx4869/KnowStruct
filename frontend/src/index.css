@@ -2756,6 +2756,22 @@ mark.search-highlight {
   font-size: 15px;
   line-height: 1.45;
   color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+}
+
+.record-menu {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+}
+
+.record-action-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 30;
+  min-width: 120px;
 }
 
 .record-content {

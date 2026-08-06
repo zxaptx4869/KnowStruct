@@ -165,6 +165,7 @@ const entryRows = [
     title: '散热方式决定侧边预留',
     content: '零嵌冰箱需要先确认散热方式，再决定柜体预留尺寸。',
     applicable_conditions: ['底部散热型号', '以安装图为准'],
+    node_id: null,
     sources: [
       { id: 'src-1', source_type: 'text', title: '零嵌冰箱安装避坑截图' },
     ],
@@ -176,6 +177,7 @@ const entryRows = [
     title: '冰箱位净宽 915mm',
     content: '复尺数据，需保留插座位置。',
     applicable_conditions: null,
+    node_id: null,
     sources: [],
     created_at: timestamp,
   },
@@ -271,6 +273,113 @@ describe('node detail records section', () => {
     await waitFor(() => {
       const count = container.querySelectorAll('.mobile-entry-count').length
       expect(count, `mobile badges ${count}`).toBeGreaterThan(0)
+    })
+  })
+
+  it('edits a record through the dialog and sends a PATCH request', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).includes('/entries')) {
+        if (init?.method === 'PATCH') {
+          return Promise.resolve(jsonResponse({
+            ...entryRows[0],
+            title: '修正后的标题',
+            content: '修正后的内容',
+          }))
+        }
+        return Promise.resolve(jsonResponse(entryRows))
+      }
+      return mockProjectApi()(url)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
+    await screen.findAllByText('大家电')
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+    await within(desktop).findByText('散热方式决定侧边预留')
+
+    await userEvent.click(within(desktop).getByRole('button', { name: '管理记录：散热方式决定侧边预留' }))
+    await userEvent.click(within(desktop).getByRole('button', { name: '编辑记录' }))
+    const dialog = screen.getByRole('dialog', { name: '编辑记录' })
+    const titleInput = within(dialog).getByLabelText('记录标题')
+    await userEvent.clear(titleInput)
+    await userEvent.type(titleInput, '修正后的标题')
+    await userEvent.click(within(dialog).getByRole('button', { name: '保存更改' }))
+
+    await waitFor(() => {
+      const patchCall = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).includes('/entries') && init?.method === 'PATCH') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(patchCall).toBeDefined()
+      const body = JSON.parse(String(patchCall![1].body))
+      expect(body).toMatchObject({
+        title: '修正后的标题',
+        node_id: null,
+        entry_type: 'pitfall',
+      })
+    })
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '编辑记录' })).not.toBeInTheDocument()
+    })
+  })
+
+  it('keeps the edit dialog open with input on a failed save', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).includes('/entries')) {
+        if (init?.method === 'PATCH') {
+          return Promise.resolve(jsonResponse(
+            { detail: { code: 'request_failed', message: '保存失败' } },
+            500,
+          ))
+        }
+        return Promise.resolve(jsonResponse(entryRows))
+      }
+      return mockProjectApi()(url)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
+    await screen.findAllByText('大家电')
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+    await within(desktop).findByText('散热方式决定侧边预留')
+
+    await userEvent.click(within(desktop).getByRole('button', { name: '管理记录：散热方式决定侧边预留' }))
+    await userEvent.click(within(desktop).getByRole('button', { name: '编辑记录' }))
+    const dialog = screen.getByRole('dialog', { name: '编辑记录' })
+    const titleInput = within(dialog).getByLabelText('记录标题')
+    await userEvent.clear(titleInput)
+    await userEvent.type(titleInput, '保留的标题')
+    await userEvent.click(within(dialog).getByRole('button', { name: '保存更改' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('保存失败')
+    expect(within(dialog).getByLabelText('记录标题')).toHaveValue('保留的标题')
+    expect(screen.getByRole('dialog', { name: '编辑记录' })).toBeInTheDocument()
+  })
+
+  it('deletes a record after confirmation', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).includes('/entries')) {
+        if (init?.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
+        return Promise.resolve(jsonResponse(entryRows))
+      }
+      return mockProjectApi()(url)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
+    await screen.findAllByText('大家电')
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+    await within(desktop).findByText('散热方式决定侧边预留')
+
+    await userEvent.click(within(desktop).getByRole('button', { name: '管理记录：散热方式决定侧边预留' }))
+    await userEvent.click(within(desktop).getByRole('button', { name: '删除记录' }))
+    const confirm = screen.getByRole('alertdialog', { name: '删除记录？' })
+    expect(within(confirm).getByText(/原始来源会保留/)).toBeInTheDocument()
+    await userEvent.click(within(confirm).getByRole('button', { name: '删除记录' }))
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) =>
+        String(url).includes('/entries') && init?.method === 'DELETE')).toBe(true)
+    })
+    await waitFor(() => {
+      const dialogs = screen.queryAllByRole('alertdialog')
+      expect(dialogs, `remaining dialogs ${dialogs.map((d) => d.textContent?.slice(0, 40)).join('|')}`).toHaveLength(0)
     })
   })
 })

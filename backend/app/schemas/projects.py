@@ -5,9 +5,13 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.inbox import EntryTypeValue
+
 ProjectStatusValue = Literal["planning", "active", "paused", "completed"]
 TrimmedProjectName = Annotated[str, Field(min_length=1, max_length=100)]
 TrimmedNodeName = Annotated[str, Field(min_length=1, max_length=100)]
+TrimmedEntryTitle = Annotated[str, Field(min_length=1, max_length=200)]
+TrimmedEntryContent = Annotated[str, Field(min_length=1, max_length=20000)]
 
 
 def strip_required(value: str) -> str:
@@ -123,5 +127,29 @@ class NodeEntryResponse(BaseModel):
     title: str
     content: str
     applicable_conditions: list[str] | None
+    node_id: str | None = None
     sources: list[NodeEntrySourceRef] = Field(default_factory=list)
     created_at: datetime
+
+
+class EntryUpdate(BaseModel):
+    title: TrimmedEntryTitle | None = None
+    content: TrimmedEntryContent | None = None
+    entry_type: EntryTypeValue | None = None
+    applicable_conditions: list[str] | None = None
+    node_id: str | None = None
+
+    @field_validator("title", "content", mode="before")
+    @classmethod
+    def strip_optional_text(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_change(self) -> "EntryUpdate":
+        if not self.model_fields_set:
+            raise ValueError("至少提交一个可编辑字段")
+        return self

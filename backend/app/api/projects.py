@@ -4,6 +4,7 @@ from fastapi import APIRouter, Response, status
 
 from app.api.deps import Auth, DbSession
 from app.schemas.projects import (
+    EntryUpdate,
     NodeCreate,
     NodeDeleteResponse,
     NodeEntryResponse,
@@ -14,7 +15,12 @@ from app.schemas.projects import (
     ProjectResponse,
     ProjectUpdate,
 )
-from app.services.entries import entry_counts_by_node, list_node_entries
+from app.services.entries import (
+    delete_entry,
+    entry_counts_by_node,
+    list_node_entries,
+    update_entry,
+)
 from app.services.nodes import (
     create_node,
     delete_node_subtree,
@@ -109,6 +115,40 @@ async def node_entries(
     db: DbSession,
 ) -> list[NodeEntryResponse]:
     return await list_node_entries(db, auth.workspace.id, project_id, node_id)
+
+
+@router.patch("/{project_id}/entries/{entry_id}", response_model=NodeEntryResponse)
+async def entry_update(
+    project_id: str,
+    entry_id: str,
+    payload: EntryUpdate,
+    auth: Auth,
+    db: DbSession,
+) -> NodeEntryResponse:
+    response = await update_entry(
+        db,
+        auth.workspace.id,
+        project_id,
+        entry_id,
+        payload,
+    )
+    await db.commit()
+    return response
+
+
+@router.delete(
+    "/{project_id}/entries/{entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def entry_delete(
+    project_id: str,
+    entry_id: str,
+    auth: Auth,
+    db: DbSession,
+) -> Response:
+    await delete_entry(db, auth.workspace.id, project_id, entry_id)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

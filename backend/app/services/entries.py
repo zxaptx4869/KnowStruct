@@ -3,9 +3,9 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.errors import ResourceNotFoundError
+from app.api.errors import ConflictError, ResourceNotFoundError
 from app.models import Entry, EntrySource, Node, Source
-from app.schemas.projects import NodeEntryResponse, NodeEntrySourceRef
+from app.schemas.projects import EntryUpdate, NodeEntryResponse, NodeEntrySourceRef
 from app.services.projects import get_project
 
 NODE_ENTRY_LIMIT = 200
@@ -25,6 +25,25 @@ async def _scoped_node(
     if node is None:
         raise ResourceNotFoundError("node")
     return node
+
+
+async def _scoped_entry(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+    entry_id: str,
+) -> Entry:
+    await get_project(db, workspace_id, project_id)
+    entry = await db.scalar(
+        select(Entry).where(
+            Entry.id == entry_id,
+            Entry.workspace_id == workspace_id,
+            Entry.project_id == project_id,
+        )
+    )
+    if entry is None:
+        raise ResourceNotFoundError("entry")
+    return entry
 
 
 async def _load_entry_sources(
@@ -103,8 +122,68 @@ async def list_node_entries(
             title=entry.title,
             content=entry.content,
             applicable_conditions=entry.applicable_conditions,
+            node_id=entry.node_id,
             sources=sources.get(entry.id, []),
             created_at=entry.created_at,
         )
         for entry in entries
     ]
+
+
+async def update_entry(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+    entry_id: str,
+    payload: EntryUpdate,
+) -> NodeEntryResponse:
+    entry = await _scoped_entry(db, workspace_id, project_id, entry_id)
+    if "node_id" in payload.model_fields_set:
+        node_id = payload.node_id
+        if node_id is not None:
+            node = await db.scalar(
+                select(Node).where(
+                    Node.id == node_id,
+                    Node.project_id == project_id,
+                )
+            )
+            if node is None:
+                raise ConflictError(
+                    "invalid_node_for_project",
+                    "选择的归档节点不属于该项目",
+                )
+        entry.node_id = node_id
+    if payload.title is not None:
+        entry.title = payload.title
+    if payload.content is not None:
+        entry.content = payload.content
+    if payload.entry_type is not None:
+        entry.entry_type = payload.entry_type
+    if "applicable_conditions" in payload.model_fields_set:
+        entry.applicable_conditions = payload.applicable_conditions
+    await db.flush()
+    sources = (await _load_entry_sources(db, workspace_id, [entry.id])).get(
+        entry.id,
+        [],
+    )
+    return NodeEntryResponse(
+        id=entry.id,
+        entry_type=entry.entry_type,
+        title=entry.title,
+        content=entry.content,
+        applicable_conditions=entry.applicable_conditions,
+        node_id=entry.node_id,
+        sources=sources,
+        created_at=entry.created_at,
+    )
+
+
+async def delete_entry(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+    entry_id: str,
+) -> None:
+    entry = await _scoped_entry(db, workspace_id, project_id, entry_id)
+    await db.delete(entry)
+    await db.flush()

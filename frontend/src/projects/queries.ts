@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type {
+  EntryUpdateInput,
   Node,
   NodeDeleteResult,
   NodeEntry,
@@ -120,6 +121,24 @@ export function useDeleteNode(projectId: string) {
   return useMutation({
     mutationFn: (nodeId: string) =>
       api.delete<NodeDeleteResult>(`/projects/${projectId}/nodes/${nodeId}`),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateEntry(projectId: string, entryId: string) {
+  const invalidate = useInvalidateProject(projectId)
+  return useMutation({
+    mutationFn: (input: EntryUpdateInput) =>
+      api.patch<NodeEntry>(`/projects/${projectId}/entries/${entryId}`, input),
+    onSettled: invalidate,
+  })
+}
+
+export function useDeleteEntry(projectId: string) {
+  const invalidate = useInvalidateProject(projectId)
+  return useMutation({
+    mutationFn: (entryId: string) =>
+      api.delete<void>(`/projects/${projectId}/entries/${entryId}`),
     onSuccess: invalidate,
   })
 }

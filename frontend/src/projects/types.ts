@@ -59,8 +59,17 @@ export interface NodeEntry {
   title: string
   content: string
   applicable_conditions: string[] | null
+  node_id: string | null
   sources: NodeEntrySourceRef[]
   created_at: string
+}
+
+export interface EntryUpdateInput {
+  title?: string
+  content?: string
+  entry_type?: string
+  applicable_conditions?: string[] | null
+  node_id?: string | null
 }
 
 export const projectStatuses: Array<{ value: ProjectStatus, label: string }> = [
