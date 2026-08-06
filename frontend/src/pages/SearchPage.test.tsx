@@ -1,12 +1,23 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { ToastProvider } from '../components/Toast'
 import { jsonResponse } from '../projects/testUtils'
 import type { SearchEntryHit, SearchResponse, SearchSourceHit } from '../search/types'
 import SearchPage from './SearchPage'
+
+vi.mock('../auth/useAuth', () => ({
+  useAuth: () => ({
+    status: 'authenticated',
+    user: { id: 'user-1', login_name: 'owner' },
+    workspace: { id: 'workspace-1', name: '我的工作区' },
+    login: vi.fn(),
+    logout: vi.fn(),
+    retry: vi.fn(),
+  }),
+}))
 
 const entryHit: SearchEntryHit = {
   id: 'entry-1',
@@ -84,6 +95,10 @@ async function typeKeyword(keyword: string) {
 }
 
 describe('SearchPage', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -155,7 +170,8 @@ describe('SearchPage', () => {
     expect(input).toHaveValue('不存在的关键词')
 
     await userEvent.click(screen.getByRole('button', { name: '清除并重新输入' }))
-    expect(await screen.findByText('输入关键词开始搜索')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '最近搜索' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '不存在的关键词' })).toBeInTheDocument()
     expect(screen.getByLabelText('搜索关键词')).toHaveValue('')
   })
 
@@ -190,5 +206,111 @@ describe('SearchPage', () => {
       expect(screen.getByLabelText('搜索关键词')).toHaveValue('冰箱')
     })
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+  })
+
+  it('shows recent history after a successful search and clearing the keyword', async () => {
+    searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+
+    await userEvent.clear(input)
+    expect(await screen.findByRole('heading', { name: '最近搜索' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '冰箱' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '清空' })).toBeInTheDocument()
+  })
+
+  it('records a search with no results and shows it in history', async () => {
+    searchFetchMock((url) =>
+      url.includes('/api/search')
+        ? Promise.resolve(jsonResponse({ entries: [], sources: [] }))
+        : Promise.resolve(jsonResponse({})),
+    )
+    renderSearchPage()
+
+    const input = await typeKeyword('不存在的关键词')
+    await screen.findByText('没有找到“不存在的关键词”')
+
+    await userEvent.clear(input)
+    expect(await screen.findByRole('heading', { name: '最近搜索' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '不存在的关键词' })).toBeInTheDocument()
+  })
+
+  it('does not record a failed search', async () => {
+    searchFetchMock(() => Promise.resolve(jsonResponse(
+      { detail: { code: 'request_failed', message: '服务器错误' } },
+      500,
+    )))
+    renderSearchPage()
+
+    const input = await typeKeyword('冰箱')
+    await screen.findByRole('alert')
+
+    await userEvent.clear(input)
+    expect(await screen.findByText('输入关键词开始搜索')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '最近搜索' })).not.toBeInTheDocument()
+  })
+
+  it('re-runs a search when a history item is clicked', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+    await userEvent.clear(input)
+    await screen.findByRole('heading', { name: '最近搜索' })
+
+    await userEvent.click(screen.getByRole('button', { name: '冰箱' }))
+    expect(screen.getByLabelText('搜索关键词')).toHaveValue('冰箱')
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/search')).length).toBe(2)
+  })
+
+  it('deletes a single history item and keeps the guidance state', async () => {
+    searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+    await userEvent.clear(input)
+    await screen.findByRole('heading', { name: '最近搜索' })
+
+    await userEvent.click(screen.getByRole('button', { name: '删除最近搜索：冰箱' }))
+    expect(screen.queryByRole('button', { name: '删除最近搜索：冰箱' })).not.toBeInTheDocument()
+    expect(screen.getByText('输入关键词开始搜索')).toBeInTheDocument()
+  })
+
+  it('clears all history back to guidance', async () => {
+    searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+    await userEvent.clear(input)
+    await screen.findByRole('heading', { name: '最近搜索' })
+
+    await userEvent.click(screen.getByRole('button', { name: '清空' }))
+    expect(screen.getByText('输入关键词开始搜索')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '最近搜索' })).not.toBeInTheDocument()
+  })
+
+  it('keeps searching when localStorage is unavailable', async () => {
+    vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => {
+      throw new Error('storage blocked')
+    })
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked')
+    })
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+
+    const input = await typeKeyword('冰箱')
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/search'))).toBe(true)
+
+    await userEvent.clear(input)
+    expect(await screen.findByText('输入关键词开始搜索')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '最近搜索' })).not.toBeInTheDocument()
   })
 })

@@ -1,12 +1,61 @@
-import { ArrowRight, ExternalLink, RefreshCw, Search, X } from 'lucide-react'
+import { ArrowRight, ExternalLink, History, RefreshCw, Search, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../auth/useAuth'
 import { entryTypeLabel, sourceTypeLabels } from '../inbox/labels'
+import { addSearch, clearHistory, readHistory, removeSearch } from '../search/history'
+import type { SearchHistoryItem } from '../search/history'
 import { highlightText } from '../search/highlight'
 import { useSearch } from '../search/queries'
-import type { SearchEntryHit, SearchSourceHit } from '../search/types'
+import type { SearchEntryHit, SearchResponse, SearchSourceHit } from '../search/types'
 
 const DEBOUNCE_MS = 300
+
+function SearchHistory({
+  items,
+  onSelect,
+  onRemove,
+  onClear,
+}: {
+  items: SearchHistoryItem[]
+  onSelect: (keyword: string) => void
+  onRemove: (keyword: string) => void
+  onClear: () => void
+}) {
+  if (items.length === 0) return null
+  return (
+    <section className="search-history" aria-label="最近搜索">
+      <header className="search-history-head">
+        <h2>最近搜索</h2>
+        <button type="button" className="search-history-clear" onClick={onClear}>
+          清空
+        </button>
+      </header>
+      <ul className="search-history-list">
+        {items.map((item) => (
+          <li key={item.keyword} className="search-history-item">
+            <button
+              type="button"
+              className="search-history-keyword"
+              onClick={() => onSelect(item.keyword)}
+            >
+              <History size={14} aria-hidden="true" />
+              {item.keyword}
+            </button>
+            <button
+              type="button"
+              className="search-history-remove"
+              onClick={() => onRemove(item.keyword)}
+              aria-label={`删除最近搜索：${item.keyword}`}
+            >
+              <X size={14} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
 
 function EntryCard({
   entry,
@@ -103,10 +152,16 @@ function SourceCard({
 export default function SearchPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const { user } = useAuth()
+  const userId = user?.id ?? ''
   const urlKeyword = searchParams.get('q') ?? ''
   const [input, setInput] = useState(urlKeyword)
   const [keyword, setKeyword] = useState(urlKeyword)
+  const [history, setHistory] = useState<SearchHistoryItem[]>(() =>
+    userId ? readHistory(userId) : [],
+  )
   const lastWrittenRef = useRef(urlKeyword)
+  const recordedDataRef = useRef<SearchResponse | null>(null)
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -131,6 +186,19 @@ export default function SearchPage() {
   const entries = searchQuery.data?.entries ?? []
   const sources = searchQuery.data?.sources ?? []
   const noResults = searchQuery.isSuccess && entries.length === 0 && sources.length === 0
+
+  useEffect(() => {
+    if (!userId) return
+    setHistory(readHistory(userId))
+  }, [userId])
+
+  useEffect(() => {
+    if (!userId || !keyword) return
+    if (searchQuery.status !== 'success' || !searchQuery.data) return
+    if (recordedDataRef.current === searchQuery.data) return
+    recordedDataRef.current = searchQuery.data
+    setHistory(addSearch(userId, keyword))
+  }, [userId, keyword, searchQuery.status, searchQuery.data])
 
   function clearKeyword() {
     setInput('')
@@ -162,7 +230,16 @@ export default function SearchPage() {
         )}
       </div>
 
-      {!hasKeyword && (
+      {!hasKeyword && history.length > 0 && (
+        <SearchHistory
+          items={history}
+          onSelect={(itemKeyword) => setInput(itemKeyword)}
+          onRemove={(itemKeyword) => setHistory(removeSearch(userId, itemKeyword))}
+          onClear={() => setHistory(clearHistory(userId))}
+        />
+      )}
+
+      {!hasKeyword && history.length === 0 && (
         <div className="state-panel search-guidance" role="status">
           <Search size={22} />
           <strong>输入关键词开始搜索</strong>

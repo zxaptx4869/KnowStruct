@@ -72,11 +72,15 @@
 
 ### Requirement: Search page interaction states
 
-搜索页 SHALL 在同一响应式 Web 应用中提供桌面与 390px 移动端一致的体验，并覆盖引导、加载中、无结果与失败状态。关键词为空时 SHALL 显示引导且不发起请求；搜索中 SHALL 保留输入；无结果 SHALL 保留关键词并提供清除；失败 SHALL 保留关键词并提供重试。结果中的命中关键词 SHALL 以主题色高亮显示，高亮 MUST 与已展示结果使用的关键词一致，大小写不敏感。
+搜索页 SHALL 在同一响应式 Web 应用中提供桌面与 390px 移动端一致的体验，并覆盖引导、加载中、无结果与失败状态。关键词为空时 SHALL 显示最近搜索（存在历史时）或引导（无历史时），且均不发起请求；搜索中 SHALL 保留输入；无结果 SHALL 保留关键词并提供清除；失败 SHALL 保留关键词并提供重试。结果中的命中关键词 SHALL 以主题色高亮显示，高亮 MUST 与已展示结果使用的关键词一致，大小写不敏感。
 
 #### Scenario: Show guidance before any search
-- **WHEN** 用户进入搜索页且未输入关键词
+- **WHEN** 用户进入搜索页、未输入关键词且没有最近搜索历史
 - **THEN** 页面显示"输入关键词开始搜索"类引导，不发起任何搜索请求
+
+#### Scenario: Show recent searches in the empty state
+- **WHEN** 用户进入搜索页、未输入关键词且存在最近搜索历史
+- **THEN** 页面显示最近搜索列表，不发起任何搜索请求
 
 #### Scenario: Keep the input while loading
 - **WHEN** 用户输入关键词且搜索请求进行中
