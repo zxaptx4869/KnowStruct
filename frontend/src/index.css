@@ -2696,7 +2696,8 @@ mark.search-highlight {
 }
 
 .records-section {
-  margin-top: 20px;
+  margin-top: 28px;
+  padding: 0 34px 40px;
 }
 
 .records-head {
@@ -2866,6 +2867,11 @@ mark.search-highlight {
   .records-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .records-section {
+    margin-top: 24px;
+    padding: 0;
   }
 
   .related-entries-section {
