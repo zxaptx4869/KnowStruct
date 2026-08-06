@@ -20,7 +20,7 @@
 
 #### Scenario: Clear the archive node
 - **WHEN** 用户将记录的归档节点清空
-- **THEN** 记录变为未归档，仍归属原项目，可从项目级记录列表找到
+- **THEN** 记录变为未归档，仍归属原项目，可通过全局搜索找到，目录记录数量相应更新（项目级记录列表属后续切片）
 
 #### Scenario: Reject a blank title or content
 - **WHEN** 用户提交去空白后为空或超长的标题 / 内容

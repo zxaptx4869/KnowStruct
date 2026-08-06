@@ -89,12 +89,38 @@ function NodeRecordCard({
   onDelete: (entry: NodeEntry) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = () => setMenuOpen(false)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    const closeOnOutside = (event: PointerEvent) => {
+      const target = event.target
+      if (
+        menuRef.current
+        && target instanceof globalThis.Node
+        && !menuRef.current.contains(target)
+      ) {
+        close()
+      }
+    }
+    document.addEventListener('pointerdown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [menuOpen])
+
   return (
     <article className="record-card">
       <header className="record-head">
         <span className="badge">{entryTypeLabel(entry.entry_type)} · Entry</span>
         <h4>{entry.title}</h4>
-        <div className="record-menu" onClick={(event) => event.stopPropagation()}>
+        <div ref={menuRef} className="record-menu" onClick={(event) => event.stopPropagation()}>
           <button
             type="button"
             className="icon-action compact-action"

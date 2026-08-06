@@ -138,6 +138,50 @@ async def test_reject_blank_and_empty_updates(
 
 
 @pytest.mark.asyncio
+async def test_reject_invalid_entry_type(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    entry_id, _ = await _accepted_entry(
+        client,
+        db,
+        project_id=project["id"],
+    )
+    response = await client.patch(
+        f"/api/projects/{project['id']}/entries/{entry_id}",
+        json={"entry_type": "not-a-type"},
+    )
+    assert response.status_code == 422
+    stored = await db.scalar(select(Entry).where(Entry.id == entry_id))
+    assert stored is not None and stored.entry_type == "pitfall"
+
+
+@pytest.mark.asyncio
+async def test_clear_applicable_conditions(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    entry_id, _ = await _accepted_entry(
+        client,
+        db,
+        project_id=project["id"],
+        conditions=["底部散热型号"],
+    )
+    response = await client.patch(
+        f"/api/projects/{project['id']}/entries/{entry_id}",
+        json={"applicable_conditions": None},
+    )
+    assert response.status_code == 200
+    assert response.json()["applicable_conditions"] is None
+    stored = await db.scalar(select(Entry).where(Entry.id == entry_id))
+    assert stored is not None and stored.applicable_conditions is None
+
+
+@pytest.mark.asyncio
 async def test_reject_node_from_another_project(
     client: AsyncClient,
     db: AsyncSession,
