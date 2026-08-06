@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jsonResponse, renderRoute } from '../projects/testUtils'
@@ -24,13 +24,14 @@ const nodes: Node[] = [
 ]
 
 function node(id: string, parent_id: string | null, name: string, sort_order: number): Node {
-  return { id, project_id: project.id, parent_id, name, description: null, sort_order, created_at: timestamp, updated_at: timestamp }
+  return { id, project_id: project.id, parent_id, name, description: null, sort_order, entry_count: 0, created_at: timestamp, updated_at: timestamp }
 }
 
 function mockProjectApi(nodesResponse: Node[] = nodes) {
   return vi.fn((url: string) => {
     if (url === '/api/projects/project-1') return Promise.resolve(jsonResponse(project))
     if (url === '/api/projects/project-1/nodes') return Promise.resolve(jsonResponse(nodesResponse))
+    if (url.includes('/entries')) return Promise.resolve(jsonResponse([]))
     if (url === '/api/projects') return Promise.resolve(jsonResponse([project]))
     return Promise.resolve(jsonResponse({}))
   })
@@ -154,5 +155,122 @@ describe('ProjectDetailPage directory experience', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('项目目录加载失败')
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
     expect(screen.queryByText('知识目录为空')).not.toBeInTheDocument()
+  })
+})
+
+const entryRows = [
+  {
+    id: 'entry-1',
+    entry_type: 'pitfall',
+    title: '散热方式决定侧边预留',
+    content: '零嵌冰箱需要先确认散热方式，再决定柜体预留尺寸。',
+    applicable_conditions: ['底部散热型号', '以安装图为准'],
+    sources: [
+      { id: 'src-1', source_type: 'text', title: '零嵌冰箱安装避坑截图' },
+    ],
+    created_at: timestamp,
+  },
+  {
+    id: 'entry-2',
+    entry_type: 'parameter',
+    title: '冰箱位净宽 915mm',
+    content: '复尺数据，需保留插座位置。',
+    applicable_conditions: null,
+    sources: [],
+    created_at: timestamp,
+  },
+]
+
+function recordsFetch(overrides: { entries?: unknown[] } = {}) {
+  return vi.fn((url: string) => {
+    if (String(url).includes('/entries')) {
+      return Promise.resolve(jsonResponse(overrides.entries ?? entryRows))
+    }
+    return mockProjectApi()(url)
+  })
+}
+
+describe('node detail records section', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('renders records with type filter, conditions and source chips', async () => {
+    vi.stubGlobal('fetch', recordsFetch())
+    const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
+    await screen.findAllByText('大家电')
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+
+    expect(await within(desktop).findByText('散热方式决定侧边预留')).toBeInTheDocument()
+    expect(within(desktop).getByText('冰箱位净宽 915mm')).toBeInTheDocument()
+    expect(within(desktop).getByText('适用条件：底部散热型号；以安装图为准')).toBeInTheDocument()
+    expect(within(desktop).getByRole('button', { name: '打开来源：零嵌冰箱安装避坑截图' })).toBeInTheDocument()
+
+    await userEvent.click(within(desktop).getByRole('button', { name: '避坑' }))
+    expect(within(desktop).getByText('散热方式决定侧边预留')).toBeInTheDocument()
+    expect(within(desktop).queryByText('冰箱位净宽 915mm')).not.toBeInTheDocument()
+
+    await userEvent.click(within(desktop).getByRole('button', { name: '全部' }))
+    expect(within(desktop).getByText('冰箱位净宽 915mm')).toBeInTheDocument()
+  })
+
+  it('shows an empty hint when the node has no records', async () => {
+    vi.stubGlobal('fetch', recordsFetch({ entries: [] }))
+    const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
+    await screen.findAllByText('大家电')
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+
+    expect(await within(desktop).findByText('该节点还没有正式记录')).toBeInTheDocument()
+  })
+
+  it('keeps the node context and retries after a record loading failure', async () => {
+    let attempts = 0
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (String(url).includes('/entries')) {
+        attempts += 1
+        if (attempts === 1) {
+          return Promise.resolve(jsonResponse({ detail: { code: 'request_failed', message: 'boom' } }, 500))
+        }
+        return Promise.resolve(jsonResponse(entryRows))
+      }
+      return mockProjectApi()(url)
+    }))
+    const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
+    await screen.findAllByText('大家电')
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+
+    expect(await within(desktop).findByRole('alert')).toHaveTextContent('正式记录加载失败')
+    expect(within(desktop).getAllByText('大家电').length).toBeGreaterThan(0)
+    await userEvent.click(within(desktop).getByRole('button', { name: '重试' }))
+    expect(await within(desktop).findByText('散热方式决定侧边预留')).toBeInTheDocument()
+  })
+
+  it('shows entry count badges in the tree and opens a record source', async () => {
+    const nodesWithCounts = nodes.map((item) =>
+      item.id === 'appliances' ? { ...item, entry_count: 3 } : item,
+    )
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (String(url).includes('/entries')) {
+        return Promise.resolve(jsonResponse(entryRows))
+      }
+      return mockProjectApi(nodesWithCounts)(url)
+    }))
+    const { container } = renderRoute(
+      <ProjectDetailPage />,
+      '/projects/project-1/nodes/furniture',
+      '/projects/:id/nodes/:nid',
+    )
+
+    await screen.findAllByText('大家电')
+    await screen.findAllByText('散热方式决定侧边预留')
+    await waitFor(() => {
+      const count = container.querySelectorAll('.tree-entry-count').length
+      expect(count, `tree badges ${count}`).toBeGreaterThan(0)
+    })
+    await waitFor(() => {
+      const count = container.querySelectorAll('.mobile-entry-count').length
+      expect(count, `mobile badges ${count}`).toBeGreaterThan(0)
+    })
   })
 })

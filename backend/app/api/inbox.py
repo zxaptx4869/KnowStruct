@@ -17,6 +17,7 @@ from app.schemas.inbox import (
     DecideRequest,
     DecideResponse,
     EntrySummary,
+    RelatedEntry,
     SourceCreate,
     SourceDetailResponse,
     SourceListItem,
@@ -99,6 +100,7 @@ def _detail_response(item: SourceDetailData) -> SourceDetailResponse:
             ExtractionResponse.model_validate(extraction)
             for extraction in item.extractions
         ],
+        entries=[RelatedEntry.model_validate(entry) for entry in item.entries],
     )
 
 

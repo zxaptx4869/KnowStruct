@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
+  FileText,
   Folder,
   FolderOpen,
   GripVertical,
@@ -37,10 +38,12 @@ import MoveNodeDialog from '../projects/MoveNodeDialog'
 import NodeDialog from '../projects/NodeDialog'
 import ProjectDialog from '../projects/ProjectDialog'
 import { mutationMessage } from '../projects/errors'
+import { entryTypeLabel, entryTypeOptions, sourceTypeLabels } from '../inbox/labels'
 import {
   useCreateNode,
   useDeleteNode,
   useDeleteProject,
+  useNodeEntries,
   useMoveNode,
   useNodes,
   useProject,
@@ -60,6 +63,7 @@ import {
   type TreeNode,
 } from '../projects/tree'
 import { projectStatusLabel, type Node, type NodeInput, type ProjectInput } from '../projects/types'
+import type { NodeEntry } from '../projects/types'
 
 interface NodeMenuProps {
   node: Node
@@ -68,6 +72,95 @@ interface NodeMenuProps {
   onMove: () => void
   onDelete: () => void
   ariaLabel?: string
+}
+
+function NodeRecordCard({
+  entry,
+  onOpenSource,
+}: {
+  entry: NodeEntry
+  onOpenSource: (sourceId: string) => void
+}) {
+  return (
+    <article className="record-card">
+      <header className="record-head">
+        <span className="badge">{entryTypeLabel(entry.entry_type)} · Entry</span>
+        <h4>{entry.title}</h4>
+      </header>
+      <p className="record-content">{entry.content}</p>
+      {entry.applicable_conditions && entry.applicable_conditions.length > 0 && (
+        <p className="record-conditions">
+          适用条件：{entry.applicable_conditions.join('；')}
+        </p>
+      )}
+      {entry.sources.length > 0 && (
+        <div className="record-source-chips">
+          {entry.sources.map((source) => (
+            <button
+              key={source.id}
+              type="button"
+              className="record-source-chip"
+              onClick={() => onOpenSource(source.id)}
+              aria-label={`打开来源：${source.title}`}
+            >
+              {sourceTypeLabels[source.source_type]} · {source.title}
+            </button>
+          ))}
+        </div>
+      )}
+    </article>
+  )
+}
+
+function NodeRecordsSection({ projectId, nodeId }: { projectId: string, nodeId: string }) {
+  const navigate = useNavigate()
+  const [typeFilter, setTypeFilter] = useState<'all' | string>('all')
+  const entriesQuery = useNodeEntries(projectId, nodeId)
+  const entries = entriesQuery.data ?? []
+  const filtered = typeFilter === 'all'
+    ? entries
+    : entries.filter((entry) => entry.entry_type === typeFilter)
+  const noRecords = entries.length === 0
+  const noMatches = entries.length > 0 && filtered.length === 0
+  return (
+    <section className="records-section">
+      <header className="records-head">
+        <div><h3>正式记录</h3><span>{filtered.length} 条</span></div>
+        <div className="record-type-chips" role="group" aria-label="按记录类型筛选">
+          <button type="button" className={typeFilter === 'all' ? 'chip active' : 'chip'} onClick={() => setTypeFilter('all')}>全部</button>
+          {entryTypeOptions.map(([value, label]) => (
+            <button key={value} type="button" className={typeFilter === value ? 'chip active' : 'chip'} onClick={() => setTypeFilter(value)}>{label}</button>
+          ))}
+        </div>
+      </header>
+      {entriesQuery.isPending && (
+        <div className="state-panel" role="status"><span className="spin state-spinner" />正在加载正式记录</div>
+      )}
+      {entriesQuery.isError && (
+        <div className="state-panel state-error" role="alert">
+          <strong>正式记录加载失败</strong>
+          <button type="button" className="secondary-button" onClick={() => void entriesQuery.refetch()}><RefreshCw size={16} />重试</button>
+        </div>
+      )}
+      {entriesQuery.isSuccess && noRecords && (
+        <div className="inline-empty"><FileText size={22} /><div><strong>该节点还没有正式记录</strong><span>接受的提取候选归档到本节点后会显示在这里。</span></div></div>
+      )}
+      {entriesQuery.isSuccess && noMatches && (
+        <div className="inline-empty"><FileText size={22} /><div><strong>当前筛选下没有记录</strong><span>切换回"全部"查看该节点的完整记录。</span></div></div>
+      )}
+      {filtered.length > 0 && (
+        <div className="record-list">
+          {filtered.map((entry) => (
+            <NodeRecordCard
+              key={entry.id}
+              entry={entry}
+              onOpenSource={(sourceId) => navigate(`/inbox/${sourceId}`)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
 }
 
 function NodeMenu({ node, onAdd, onEdit, onMove, onDelete, ariaLabel }: NodeMenuProps) {
@@ -162,6 +255,7 @@ function SortableTreeRow({ treeNode, selected, expanded, dropIntent, onToggle, o
       <button type="button" className="tree-label" onClick={onSelect} title={treeNode.name}>
         {expanded && treeNode.children.length ? <FolderOpen size={15} /> : <Folder size={15} />}
         <span>{treeNode.name}</span>
+        {treeNode.entry_count > 0 && <span className="tree-entry-count">{treeNode.entry_count}</span>}
       </button>
       <NodeMenu {...menu} />
     </div>
@@ -407,6 +501,7 @@ export default function ProjectDetailPage() {
             <>
               <section className="node-hero"><div><h2>{selectedNode.name}</h2><p>{selectedNode.description || '还没有节点说明。'}</p></div><div className="node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><button type="button" className="primary-button" onClick={nodeActions(selectedNode).onAdd}><Plus size={16} />创建子节点</button></div></section>
               <section className="children-section"><header><h3>子节点</h3><span>{currentChildren.length} 个</span></header>{currentChildren.length ? <div className="child-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={18} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span><ChevronRight size={17} /></button>)}</div> : <div className="inline-empty"><Folder size={22} /><div><strong>还没有子节点</strong><span>手动创建节点，不会自动采用 AI 目录。</span></div></div>}</section>
+              <NodeRecordsSection projectId={id} nodeId={selectedNode.id} />
             </>
           ) : (
             <section className="project-overview"><h2>{project.name}</h2><p>{project.goal || '还没有填写项目目标。'}</p><div className="overview-rule"><strong>{nodes.length} 个目录节点</strong><span>{nodes.length ? '从左侧选择节点查看或维护子目录。' : '创建第一个节点后，目录将在此处展开。'}</span></div></section>
@@ -421,8 +516,9 @@ export default function ProjectDetailPage() {
         </nav>
         <section className="mobile-node-head"><h2>{selectedNode?.name ?? project.name}</h2><p>{selectedNode ? selectedNode.description || '还没有节点说明。' : project.goal || '还没有填写项目目标。'}</p>{selectedNode && <div className="mobile-node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><NodeMenu node={selectedNode} {...nodeActions(selectedNode)} ariaLabel="节点操作" /></div>}</section>
         <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} {selectedNode ? '个子节点' : '个一级目录'}</span></div><button type="button" className="icon-action" aria-label={selectedNode ? '创建子节点' : '创建根节点'} onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
-          {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span><ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
+          {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
         </section>
+        {selectedNode && <NodeRecordsSection projectId={id} nodeId={selectedNode.id} />}
       </main>
 
       {nodeEditor && (

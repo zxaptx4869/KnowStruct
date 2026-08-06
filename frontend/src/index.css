@@ -2668,3 +2668,207 @@ mark.search-highlight {
     max-width: 180px;
   }
 }
+
+/* ===== 节点详情正式记录 ===== */
+
+.tree-entry-count,
+.mobile-entry-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  padding: 0 5px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+  font-size: 10px;
+  font-weight: 700;
+  flex: none;
+}
+
+.tree-label .tree-entry-count {
+  margin-left: auto;
+}
+
+.mobile-entry-count {
+  margin-right: 2px;
+}
+
+.records-section {
+  margin-top: 20px;
+}
+
+.records-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.records-head > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.records-head h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--color-text-primary);
+}
+
+.records-head > div:first-child span {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.record-type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.record-list {
+  display: grid;
+  gap: 10px;
+}
+
+.record-card {
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+.record-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.record-head h4 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+}
+
+.record-content {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 8px 0 6px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-ink2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.record-conditions {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.record-source-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.record-source-chip {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--color-text-ink2);
+  background: var(--color-surface-subtle);
+  cursor: pointer;
+}
+
+.record-source-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary-dark);
+}
+
+.related-entries-section {
+  margin-top: 20px;
+  padding: 0 20px 24px;
+}
+
+.related-entries-section header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.related-entries-section header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--color-text-primary);
+}
+
+.related-entries-section header span {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.related-entry-list {
+  display: grid;
+  gap: 8px;
+}
+
+.related-entry-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.related-entry-row:hover {
+  border-color: var(--color-primary-border);
+}
+
+.related-entry-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.related-entry-row svg {
+  flex: none;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 767px) {
+  .records-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .related-entries-section {
+    padding: 0 14px 24px;
+  }
+}

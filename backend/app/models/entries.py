@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -73,6 +73,10 @@ class Entry(UUIDMixin, TimestampMixin, Base):
     entry_type: Mapped[str] = mapped_column(String(30), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    applicable_conditions: Mapped[list[str] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,

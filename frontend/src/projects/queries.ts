@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import type {
   Node,
   NodeDeleteResult,
+  NodeEntry,
   NodeInput,
   NodeMoveInput,
   Project,
@@ -13,6 +14,8 @@ export const projectKeys = {
   all: ['projects'] as const,
   detail: (projectId: string) => ['projects', projectId] as const,
   nodes: (projectId: string) => ['projects', projectId, 'nodes'] as const,
+  entries: (projectId: string, nodeId: string) =>
+    ['projects', projectId, 'nodes', nodeId, 'entries'] as const,
 }
 
 export function useProjects() {
@@ -35,6 +38,15 @@ export function useNodes(projectId: string) {
     queryKey: projectKeys.nodes(projectId),
     queryFn: () => api.get<Node[]>(`/projects/${projectId}/nodes`),
     enabled: Boolean(projectId),
+  })
+}
+
+export function useNodeEntries(projectId: string, nodeId: string) {
+  return useQuery({
+    queryKey: projectKeys.entries(projectId, nodeId),
+    queryFn: () =>
+      api.get<NodeEntry[]>(`/projects/${projectId}/nodes/${nodeId}/entries`),
+    enabled: Boolean(projectId && nodeId),
   })
 }
 

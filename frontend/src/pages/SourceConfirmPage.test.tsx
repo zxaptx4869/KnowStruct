@@ -1,6 +1,9 @@
-import { screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { ToastProvider } from '../components/Toast'
 import { jsonResponse, renderRoute } from '../projects/testUtils'
 import type { SourceDetail } from '../inbox/types'
 import SourceConfirmPage from './SourceConfirmPage'
@@ -27,6 +30,7 @@ const detail: SourceDetail = {
   },
   created_at: '2026-08-05T10:00:00',
   updated_at: '2026-08-05T10:00:00',
+  entries: [],
   extractions: [
     {
       id: 'ext-1',
@@ -146,5 +150,45 @@ describe('SourceConfirmPage confirmation flow', () => {
     renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
     expect((await screen.findAllByText(/低置信度 62%/)).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/置信度 94%/).length).toBeGreaterThan(0)
+  })
+
+  it('shows related formal entries and navigates to the node detail', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      processing_state: 'done',
+      project_id: 'project-1',
+      entries: [
+        {
+          id: 'entry-1',
+          entry_type: 'pitfall',
+          title: '散热方式决定侧边预留',
+          project_id: 'project-1',
+          node_id: 'node-1',
+          created_at: '2026-08-05T10:00:00',
+        },
+      ],
+    }
+    vi.stubGlobal('fetch', confirmFetch({ state }))
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/inbox/src-1']}>
+          <ToastProvider>
+            <Routes>
+              <Route path="/inbox/:sourceId" element={<SourceConfirmPage />} />
+              <Route path="/projects/:id/nodes/:nid" element={<div data-testid="node-page">节点详情页</div>} />
+            </Routes>
+          </ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('关联正式记录')).toBeInTheDocument()
+    const relatedRow = screen.getByRole('button', { name: /散热方式决定侧边预留/ })
+    expect(relatedRow).toBeInTheDocument()
+    await userEvent.click(relatedRow)
+    expect(await screen.findByTestId('node-page')).toBeInTheDocument()
   })
 })

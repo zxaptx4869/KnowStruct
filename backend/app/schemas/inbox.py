@@ -118,6 +118,17 @@ class ExtractionResponse(BaseModel):
     updated_at: datetime
 
 
+class RelatedEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    entry_type: str
+    title: str
+    project_id: str
+    node_id: str | None = None
+    created_at: datetime
+
+
 class SourceListItem(BaseModel):
     id: str
     source_type: str
@@ -138,6 +149,7 @@ class SourceListItem(BaseModel):
 
 class SourceDetailResponse(SourceListItem):
     extractions: list[ExtractionResponse] = Field(default_factory=list)
+    entries: list[RelatedEntry] = Field(default_factory=list)
 
 
 class DecideRequest(BaseModel):

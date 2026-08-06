@@ -28,6 +28,7 @@ function node(id: string, parent_id: string | null, name: string, sort_order: nu
     name,
     description: null,
     sort_order,
+    entry_count: 0,
     created_at: timestamp,
     updated_at: timestamp,
   }

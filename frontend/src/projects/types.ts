@@ -1,3 +1,5 @@
+import type { SourceType } from '../inbox/types'
+
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed'
 
 export interface Project {
@@ -24,6 +26,7 @@ export interface Node {
   name: string
   description: string | null
   sort_order: number
+  entry_count: number
   created_at: string
   updated_at: string
 }
@@ -42,6 +45,22 @@ export interface NodeMoveInput {
 export interface NodeDeleteResult {
   deleted_count: number
   parent_id: string | null
+}
+
+export interface NodeEntrySourceRef {
+  id: string
+  source_type: SourceType
+  title: string
+}
+
+export interface NodeEntry {
+  id: string
+  entry_type: string
+  title: string
+  content: string
+  applicable_conditions: string[] | null
+  sources: NodeEntrySourceRef[]
+  created_at: string
 }
 
 export const projectStatuses: Array<{ value: ProjectStatus, label: string }> = [

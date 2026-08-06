@@ -68,8 +68,18 @@ export interface Extraction {
   updated_at: string
 }
 
+export interface RelatedEntry {
+  id: string
+  entry_type: string
+  title: string
+  project_id: string
+  node_id: string | null
+  created_at: string
+}
+
 export interface SourceDetail extends SourceItem {
   extractions: Extraction[]
+  entries: RelatedEntry[]
 }
 
 export interface SourceCreateInput {

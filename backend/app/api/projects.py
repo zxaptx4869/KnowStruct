@@ -6,6 +6,7 @@ from app.api.deps import Auth, DbSession
 from app.schemas.projects import (
     NodeCreate,
     NodeDeleteResponse,
+    NodeEntryResponse,
     NodeMove,
     NodeResponse,
     NodeUpdate,
@@ -13,6 +14,7 @@ from app.schemas.projects import (
     ProjectResponse,
     ProjectUpdate,
 )
+from app.services.entries import entry_counts_by_node, list_node_entries
 from app.services.nodes import (
     create_node,
     delete_node_subtree,
@@ -83,7 +85,30 @@ async def project_delete(project_id: str, auth: Auth, db: DbSession) -> Response
 @router.get("/{project_id}/nodes", response_model=list[NodeResponse])
 async def node_list(project_id: str, auth: Auth, db: DbSession) -> list[NodeResponse]:
     _, nodes = await list_nodes(db, auth.workspace.id, project_id)
-    return [NodeResponse.model_validate(node) for node in nodes]
+    counts = await entry_counts_by_node(
+        db,
+        auth.workspace.id,
+        [node.id for node in nodes],
+    )
+    return [
+        NodeResponse.model_validate(node).model_copy(
+            update={"entry_count": counts.get(node.id, 0)}
+        )
+        for node in nodes
+    ]
+
+
+@router.get(
+    "/{project_id}/nodes/{node_id}/entries",
+    response_model=list[NodeEntryResponse],
+)
+async def node_entries(
+    project_id: str,
+    node_id: str,
+    auth: Auth,
+    db: DbSession,
+) -> list[NodeEntryResponse]:
+    return await list_node_entries(db, auth.workspace.id, project_id, node_id)
 
 
 @router.post(

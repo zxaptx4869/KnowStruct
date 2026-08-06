@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.base import AIProvider, AIProviderError
 from app.api.errors import ConflictError, ResourceNotFoundError
 from app.models import (
+    Entry,
+    EntrySource,
     Extraction,
     ProcessingTask,
     Project,
@@ -183,6 +185,7 @@ class SourceListItemData:
 @dataclass(frozen=True)
 class SourceDetailData(SourceListItemData):
     extractions: list[Extraction]
+    entries: list[Entry] = field(default_factory=list)
     attachments: list[SourceAttachment]
 
 
@@ -333,6 +336,20 @@ async def get_source_detail(
             )
         ).all()
     )
+    entries = list(
+        (
+            await db.scalars(
+                select(Entry)
+                .join(EntrySource, EntrySource.entry_id == Entry.id)
+                .where(
+                    EntrySource.source_id == source.id,
+                    Entry.workspace_id == workspace_id,
+                    Entry.status == "archived",
+                )
+                .order_by(Entry.created_at.desc(), Entry.id.desc())
+            )
+        ).all()
+    )
     counts = CandidateCounts()
     for extraction in extractions:
         if extraction.status == "pending_confirm":
@@ -347,6 +364,7 @@ async def get_source_detail(
         task=task,
         counts=counts,
         extractions=extractions,
+        entries=entries,
         attachments=attachments.get(source.id, []),
     )
 

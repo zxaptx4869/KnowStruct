@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../components/useToast'
 import {
+  entryTypeLabel,
   entryTypeOptions,
   processingDetailLabel,
   sourceTypeLabels,
@@ -414,6 +415,32 @@ export default function SourceConfirmPage() {
             </section>
           </div>
         </>
+      )}
+      {source && source.entries.length > 0 && (
+        <section className="related-entries-section" aria-label="关联正式记录">
+          <header>
+            <h3>关联正式记录</h3>
+            <span>{source.entries.length} 条</span>
+          </header>
+          <div className="related-entry-list">
+            {source.entries.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                className="related-entry-row"
+                onClick={() => navigate(
+                  entry.node_id
+                    ? `/projects/${entry.project_id}/nodes/${entry.node_id}`
+                    : `/projects/${entry.project_id}`,
+                )}
+              >
+                <span className="badge">{entryTypeLabel(entry.entry_type)}</span>
+                <span className="related-entry-title">{entry.title}</span>
+                <ChevronRight size={15} />
+              </button>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   )

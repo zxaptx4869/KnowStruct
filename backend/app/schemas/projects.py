@@ -97,6 +97,7 @@ class NodeResponse(BaseModel):
     name: str
     description: str | None
     sort_order: int
+    entry_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -104,3 +105,23 @@ class NodeResponse(BaseModel):
 class NodeDeleteResponse(BaseModel):
     deleted_count: int
     parent_id: str | None
+
+
+class NodeEntrySourceRef(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    source_type: str
+    title: str
+
+
+class NodeEntryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    entry_type: str
+    title: str
+    content: str
+    applicable_conditions: list[str] | None
+    sources: list[NodeEntrySourceRef] = Field(default_factory=list)
+    created_at: datetime

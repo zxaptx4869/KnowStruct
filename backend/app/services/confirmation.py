@@ -125,6 +125,7 @@ async def decide_extraction(
         entry_type=entry_type,
         title=title,
         content=content,
+        applicable_conditions=conditions,
         status="archived",
     )
     db.add(entry)
