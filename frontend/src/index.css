@@ -357,14 +357,6 @@ a {
   position: relative;
 }
 
-.mobile-p1-dot {
-  position: absolute;
-  top: -7px;
-  right: -15px;
-  font-size: 8px;
-  font-weight: 700;
-}
-
 .page-content {
   padding: 20px 16px;
 }
@@ -1134,12 +1126,6 @@ a {
     background: var(--color-primary-soft);
     color: var(--color-primary-active);
     font-weight: 680;
-  }
-
-  .p1-label {
-    margin-left: auto;
-    color: var(--color-text-muted);
-    font-size: 10px;
   }
 
   .sidebar-account {

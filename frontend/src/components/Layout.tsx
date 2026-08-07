@@ -16,7 +16,6 @@ interface NavItem {
   label: string
   icon: LucideIcon
   end?: boolean
-  p1?: boolean
 }
 
 const navigation: NavItem[] = [
@@ -48,11 +47,10 @@ export default function Layout() {
       <aside className="desktop-sidebar">
         <div className="brand-lockup sidebar-brand"><span className="brand-mark">KS</span><span>KnowStruct</span></div>
         <nav className="desktop-nav" aria-label="全局导航">
-          {navigation.map(({ path, label, icon: Icon, end, p1 }) => (
+          {navigation.map(({ path, label, icon: Icon, end }) => (
             <NavLink key={path} to={path} end={end} className={({ isActive }) => `desktop-nav-item${isActive ? ' active' : ''}`}>
               <Icon size={18} aria-hidden="true" />
               <span>{label}</span>
-              {p1 && <span className="p1-label">P1</span>}
             </NavLink>
           ))}
         </nav>
@@ -74,9 +72,9 @@ export default function Layout() {
         </header>
         <main className="content-area"><Outlet /></main>
         <nav className="mobile-tabs safe-bottom" aria-label="移动端导航">
-          {navigation.map(({ path, label, icon: Icon, end, p1 }) => (
+          {navigation.map(({ path, label, icon: Icon, end }) => (
             <NavLink key={path} to={path} end={end} className={({ isActive }) => `mobile-tab${isActive ? ' active' : ''}`}>
-              <span className="mobile-tab-icon"><Icon size={20} aria-hidden="true" />{p1 && <span className="mobile-p1-dot">P1</span>}</span>
+              <span className="mobile-tab-icon"><Icon size={20} aria-hidden="true" /></span>
               <span>{label}</span>
             </NavLink>
           ))}

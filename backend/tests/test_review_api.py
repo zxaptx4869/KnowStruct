@@ -324,6 +324,30 @@ async def test_invalid_parameters_and_resolution_input(
 
 
 @pytest.mark.asyncio
+async def test_resolve_rejects_when_finding_no_longer_exists(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    node = await _create_node(client, project["id"], "冰箱")
+    entry_id, _ = await _accepted_entry(
+        client,
+        db,
+        project_id=project["id"],
+        node_id=node["id"],
+        conditions=["底部散热"],
+    )
+
+    response = await client.post(
+        f"/api/review/findings/missing_conditions/entry/{entry_id}/resolution",
+        json={"resolution": "resolved"},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "finding_not_found"
+
+
+@pytest.mark.asyncio
 async def test_resolved_view_keeps_record_after_target_deleted(
     client: AsyncClient,
     db: AsyncSession,

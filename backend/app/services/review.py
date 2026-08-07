@@ -26,6 +26,7 @@ from app.schemas.review import ReviewFindingItem
 
 LONG_PENDING_DAYS = 7
 MAX_NODE_DEPTH = 6
+FINDINGS_LIMIT = 200
 NAIVE_EPOCH = datetime.fromtimestamp(0, UTC).replace(tzinfo=None)
 
 
@@ -69,6 +70,14 @@ async def _resolved_keys(
         (row.finding_type, row.target_type, row.target_id)
         for row in rows
     }
+
+
+async def _long_pending_cutoff(db: AsyncSession) -> datetime:
+    """基于数据库服务器时钟计算 7 天阈值，与 created_at 的时钟保持一致。"""
+    server_now = await db.scalar(func.now())
+    return (server_now if server_now is not None else utc_now()) - timedelta(
+        days=LONG_PENDING_DAYS
+    )
 
 
 async def _load_projects_and_paths(
@@ -233,7 +242,7 @@ async def _long_pending_items(
     workspace_id: str,
     resolved: set[tuple[str, str, str]],
 ) -> list[ReviewFindingItem]:
-    cutoff = utc_now() - timedelta(days=LONG_PENDING_DAYS)
+    cutoff = await _long_pending_cutoff(db)
     rows = (
         await db.execute(
             select(Source, func.count(Extraction.id))
@@ -289,7 +298,7 @@ async def compute_open_findings(
     if finding_type is None or finding_type == FindingType.LONG_PENDING:
         items.extend(await _long_pending_items(db, workspace_id, resolved))
     items.sort(key=lambda item: item.created_at or NAIVE_EPOCH, reverse=True)
-    return items
+    return items[:FINDINGS_LIMIT]
 
 
 async def _resolved_item(
@@ -370,7 +379,7 @@ async def list_resolved_findings(
         key=lambda item: item.resolved_at or NAIVE_EPOCH,
         reverse=True,
     )
-    return items
+    return items[:FINDINGS_LIMIT]
 
 
 async def _ensure_target(
@@ -397,6 +406,48 @@ async def _ensure_target(
         raise ResourceNotFoundError("target")
 
 
+async def _finding_exists(
+    db: AsyncSession,
+    workspace_id: str,
+    finding_type: FindingType,
+    target_type: FindingTargetType,
+    target_id: str,
+) -> bool:
+    if target_type == FindingTargetType.ENTRY:
+        entry = await db.scalar(
+            select(Entry).where(
+                Entry.id == target_id,
+                Entry.workspace_id == workspace_id,
+                Entry.status == EntryStatus.ARCHIVED.value,
+            )
+        )
+        if entry is None:
+            return False
+        if finding_type == FindingType.MISSING_SOURCE:
+            linked = await db.scalar(
+                select(EntrySource.entry_id).where(
+                    EntrySource.entry_id == target_id
+                )
+            )
+            return linked is None
+        if finding_type == FindingType.MISSING_CONDITIONS:
+            return not entry.applicable_conditions
+        return False
+
+    if finding_type != FindingType.LONG_PENDING:
+        return False
+    cutoff = await _long_pending_cutoff(db)
+    count = await db.scalar(
+        select(func.count(Extraction.id)).where(
+            Extraction.source_id == target_id,
+            Extraction.workspace_id == workspace_id,
+            Extraction.status == ExtractionStatus.PENDING_CONFIRM.value,
+            Extraction.created_at < cutoff,
+        )
+    )
+    return (count or 0) > 0
+
+
 async def set_resolution(
     db: AsyncSession,
     workspace_id: str,
@@ -407,6 +458,18 @@ async def set_resolution(
     note: str | None,
 ) -> None:
     await _ensure_target(db, workspace_id, target_type, target_id)
+    if not await _finding_exists(
+        db,
+        workspace_id,
+        finding_type,
+        target_type,
+        target_id,
+    ):
+        raise DomainError(
+            409,
+            "finding_not_found",
+            "该问题当前不存在，无需处理",
+        )
     resolution_row = await db.scalar(
         select(ReviewResolution).where(
             ReviewResolution.workspace_id == workspace_id,

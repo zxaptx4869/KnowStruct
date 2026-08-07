@@ -43,5 +43,9 @@ class ReviewResolutionInput(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class ReviewResolutionHandled(BaseModel):
+    handled: bool
+
+
 class ReviewResolutionResult(BaseModel):
     removed: bool = False

@@ -8,6 +8,7 @@ from app.api.deps import Auth, DbSession
 from app.api.errors import DomainError
 from app.schemas.review import (
     ReviewFindingsResponse,
+    ReviewResolutionHandled,
     ReviewResolutionInput,
     ReviewResolutionResult,
 )
@@ -47,7 +48,7 @@ async def list_findings(
 
 @router.post(
     "/findings/{finding_type}/{target_type}/{target_id}/resolution",
-    response_model=ReviewResolutionResult,
+    response_model=ReviewResolutionHandled,
 )
 async def set_finding_resolution(
     finding_type: str,
@@ -56,7 +57,7 @@ async def set_finding_resolution(
     payload: ReviewResolutionInput,
     auth: Auth,
     db: DbSession,
-) -> ReviewResolutionResult:
+) -> ReviewResolutionHandled:
     ftype = review_service.parse_finding_type(finding_type)
     ttype = review_service.parse_target_type(target_type)
     await review_service.set_resolution(
@@ -69,7 +70,7 @@ async def set_finding_resolution(
         payload.note,
     )
     await db.commit()
-    return ReviewResolutionResult(removed=False)
+    return ReviewResolutionHandled(handled=True)
 
 
 @router.delete(
