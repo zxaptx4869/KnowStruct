@@ -616,22 +616,24 @@ function ProjectRecordsSection({
           <h3>全部记录</h3>
           <span>{total} 条 · 未归档 {unarchivedCount} 条</span>
         </div>
-        <div className="record-type-chips" role="group" aria-label="按状态筛选">
-          <button
-            type="button"
-            className={filter === 'all' ? 'chip active' : 'chip'}
-            onClick={() => onFilterChange('all')}
-          >
-            全部
-          </button>
-          <button
-            type="button"
-            className={filter === 'unarchived' ? 'chip active' : 'chip'}
-            onClick={() => onFilterChange('unarchived')}
-          >
-            未归档
-          </button>
-        </div>
+        {mobile && (
+          <div className="record-type-chips" role="group" aria-label="按状态筛选">
+            <button
+              type="button"
+              className={filter === 'all' ? 'chip active' : 'chip'}
+              onClick={() => onFilterChange('all')}
+            >
+              全部
+            </button>
+            <button
+              type="button"
+              className={filter === 'unarchived' ? 'chip active' : 'chip'}
+              onClick={() => onFilterChange('unarchived')}
+            >
+              未归档
+            </button>
+          </div>
+        )}
       </header>
       <div className="record-type-chips" role="group" aria-label="按记录类型筛选">
         <button
@@ -788,20 +790,22 @@ function ProjectRecordsSection({
                     <td>{entry.sources.length}</td>
                     <td>{new Date(entry.created_at).toLocaleString('zh-CN')}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn small"
-                        onClick={() => setEditingRecord(entry)}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        className="btn small danger-text"
-                        onClick={() => setDeletingRecord(entry)}
-                      >
-                        删除
-                      </button>
+                      <div className="record-row-actions">
+                        <button
+                          type="button"
+                          className="btn small"
+                          onClick={() => setEditingRecord(entry)}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          className="btn small danger-text"
+                          onClick={() => setDeletingRecord(entry)}
+                        >
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1040,16 +1044,17 @@ export default function ProjectDetailPage() {
         <div className="project-top-actions">
           <button
             type="button"
-            className="secondary-button"
+            className={organizeMode ? 'secondary-button' : 'primary-button'}
             onClick={() => setOrganizeMode(!organizeMode)}
           >
             {organizeMode ? '回到查看' : '批量整理'}
           </button>
-          <button type="button" className="add-source-button" onClick={() => navigate(`/inbox?project=${id}`)}>
-            <Plus size={15} />添加资料
-          </button>
-          <button type="button" className="icon-action" onClick={() => setEditingProject(true)} aria-label="项目设置" title="项目设置"><Settings2 size={17} /></button>
-          <button type="button" className="icon-action project-delete-action" onClick={() => setDeletingProject(true)} aria-label="删除项目" title="删除项目"><Trash2 size={17} /></button>
+          {!organizeMode && (
+            <>
+              <button type="button" className="icon-action" onClick={() => setEditingProject(true)} aria-label="项目设置" title="项目设置"><Settings2 size={17} /></button>
+              <button type="button" className="icon-action project-delete-action" onClick={() => setDeletingProject(true)} aria-label="删除项目" title="删除项目"><Trash2 size={17} /></button>
+            </>
+          )}
         </div>
       </header>
 
@@ -1118,7 +1123,23 @@ export default function ProjectDetailPage() {
             />
           ) : selectedNode ? (
             <>
-              <section className="node-hero"><div><h2>{selectedNode.name}</h2><p>{selectedNode.description || '还没有节点说明。'}</p></div><div className="node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><button type="button" className="primary-button" onClick={nodeActions(selectedNode).onAdd}><Plus size={16} />创建子节点</button></div></section>
+              <section className="node-hero">
+                <div>
+                  <h2>
+                    {selectedNode.name}
+                    <button
+                      type="button"
+                      className="icon-action node-edit-inline"
+                      aria-label="编辑节点"
+                      title="编辑节点"
+                      onClick={nodeActions(selectedNode).onEdit}
+                    >
+                      <Settings2 size={16} />
+                    </button>
+                  </h2>
+                  {selectedNode.description && <p>{selectedNode.description}</p>}
+                </div>
+              </section>
               <section className="children-section"><header><h3>子节点</h3><span>{currentChildren.length} 个</span></header>{currentChildren.length ? <div className="child-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={18} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span><ChevronRight size={17} /></button>)}</div> : <div className="inline-empty"><Folder size={22} /><div><strong>还没有子节点</strong><span>手动创建节点，不会自动采用 AI 目录。</span></div></div>}</section>
               <NodeRecordsSection projectId={id} nodeId={selectedNode.id} />
             </>
@@ -1136,7 +1157,7 @@ export default function ProjectDetailPage() {
         <div className="mobile-organize-entry">
           <button
             type="button"
-            className="secondary-button"
+            className={organizeMode ? 'secondary-button' : 'primary-button'}
             onClick={() => setOrganizeMode(!organizeMode)}
           >
             {organizeMode ? '回到查看' : '批量整理'}
@@ -1151,7 +1172,29 @@ export default function ProjectDetailPage() {
           />
         ) : (
           <>
-            <section className="mobile-node-head"><h2>{selectedNode?.name ?? project.name}</h2><p>{selectedNode ? selectedNode.description || '还没有节点说明。' : project.goal || '还没有填写项目目标。'}</p>{selectedNode && <div className="mobile-node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><NodeMenu node={selectedNode} {...nodeActions(selectedNode)} ariaLabel="节点操作" /></div>}</section>
+            <section className="mobile-node-head">
+              <h2>
+                {selectedNode?.name ?? project.name}
+                {selectedNode && (
+                  <button
+                    type="button"
+                    className="icon-action node-edit-inline"
+                    aria-label="编辑节点"
+                    onClick={nodeActions(selectedNode).onEdit}
+                  >
+                    <Settings2 size={16} />
+                  </button>
+                )}
+              </h2>
+              {(selectedNode ? selectedNode.description : project.goal) && (
+                <p>{selectedNode ? selectedNode.description : project.goal}</p>
+              )}
+              {selectedNode && (
+                <div className="mobile-node-actions">
+                  <NodeMenu node={selectedNode} {...nodeActions(selectedNode)} ariaLabel="节点操作" />
+                </div>
+              )}
+            </section>
             <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} {selectedNode ? '个子节点' : '个一级目录'}</span></div><button type="button" className="icon-action" aria-label={selectedNode ? '创建子节点' : '创建根节点'} onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
               {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
             </section>

@@ -53,7 +53,7 @@ describe('ProjectDetailPage directory experience', () => {
     expect(screen.getByRole('button', { name: '上一层' })).toBeInTheDocument()
     expect(screen.getByText('新房装修 / 家具家电 / 大家电')).toBeInTheDocument()
     expect(screen.getAllByText('冰箱').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getAllByText('还没有节点说明。')).toHaveLength(2)
+    expect(screen.queryByText('还没有节点说明。')).not.toBeInTheDocument()
     expect(screen.queryByText(project.goal!)).not.toBeInTheDocument()
     expect(screen.getByText('项目根目录')).toBeInTheDocument()
   })

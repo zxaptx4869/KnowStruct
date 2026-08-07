@@ -3575,6 +3575,17 @@ mark.search-highlight {
   border-bottom: 0;
 }
 
+.records-table th:last-child {
+  width: 130px;
+}
+
+.record-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .records-title-cell strong,
 .records-title-cell span {
   display: block;
@@ -3620,6 +3631,18 @@ mark.search-highlight {
   padding: 10px 14px 0;
 }
 
-.mobile-organize-entry .secondary-button {
+.mobile-organize-entry .secondary-button,
+.mobile-organize-entry .primary-button {
   width: 100%;
+}
+
+.node-hero h2,
+.mobile-node-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-edit-inline {
+  flex: 0 0 auto;
 }
