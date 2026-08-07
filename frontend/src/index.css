@@ -838,8 +838,8 @@ a {
   background: #fff;
 }
 
-.desktop-back {
-  display: none;
+.topbar-back {
+  display: inline-flex;
 }
 
 .project-title {
@@ -860,11 +860,18 @@ a {
   font-size: 16px;
 }
 
-.project-title > span:last-child {
+.project-title .topbar-counts {
+  display: none;
+}
+
+.project-title .topbar-path {
   order: 3;
   width: 100%;
+  overflow: hidden;
   color: var(--color-text-secondary);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workspace-alert {
@@ -882,35 +889,6 @@ a {
 .mobile-directory {
   min-width: 0;
   padding: 0 15px 24px;
-}
-
-.mobile-breadcrumbs {
-  display: grid;
-  gap: 5px;
-  padding: 11px 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.mobile-breadcrumbs button {
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--color-primary-dark);
-  font-size: 12px;
-  font-weight: 680;
-  text-align: left;
-}
-
-.mobile-breadcrumbs span {
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-node-head p {
@@ -1272,10 +1250,6 @@ a {
     padding: 0 16px;
   }
 
-  .desktop-back {
-    display: inline-flex;
-  }
-
   .project-title {
     flex-wrap: nowrap;
   }
@@ -1290,11 +1264,16 @@ a {
     white-space: nowrap;
   }
 
-  .project-title > span:last-child {
+  .project-title .topbar-counts {
+    display: inline;
     order: 0;
     width: auto;
     margin-left: 4px;
     font-size: 11px;
+  }
+
+  .project-title .topbar-path {
+    display: none;
   }
 
   .desktop-directory {

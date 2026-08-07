@@ -937,6 +937,22 @@ export default function ProjectDetailPage() {
     setSearchParams(params, { replace: false })
   }
 
+  function handleTopBack() {
+    if (organizeMode) {
+      navigate(`/projects/${id}`)
+      return
+    }
+    if (nid) {
+      navigate(
+        path.length > 1
+          ? `/projects/${id}/nodes/${path[path.length - 2].id}`
+          : `/projects/${id}`,
+      )
+      return
+    }
+    navigate('/')
+  }
+
   async function saveNode(input: NodeInput) {
     try {
       if (nodeEditor?.mode === 'edit') await updateNodeMutation.mutateAsync(input)
@@ -1039,8 +1055,20 @@ export default function ProjectDetailPage() {
   return (
     <div className="project-workspace">
       <header className="project-topbar">
-        <button type="button" className="icon-action desktop-back" onClick={() => navigate('/')} aria-label="返回项目列表"><ArrowLeft size={18} /></button>
-        <div className="project-title"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><h1>{project.name}</h1><span>{project.node_count} 个目录节点 · {project.entry_count} 条记录 · 未归档 {project.unarchived_entry_count}</span></div>
+        <button
+          type="button"
+          className="icon-action topbar-back"
+          onClick={handleTopBack}
+          aria-label={organizeMode ? '返回项目' : (nid ? '上一层' : '返回项目列表')}
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <div className="project-title">
+          <span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span>
+          <h1>{project.name}</h1>
+          <span className="topbar-counts">{project.node_count} 个目录节点 · {project.entry_count} 条记录 · 未归档 {project.unarchived_entry_count}</span>
+          <span className="topbar-path">{[project.name, ...path.map((item) => item.name)].join(' / ')}</span>
+        </div>
         <div className="project-top-actions">
           <button
             type="button"
@@ -1150,26 +1178,6 @@ export default function ProjectDetailPage() {
       </div>
 
       <main className="mobile-directory">
-        <nav className="mobile-breadcrumbs" aria-label="节点路径">
-          <button
-            type="button"
-            onClick={() => {
-              if (organizeMode) {
-                navigate(`/projects/${id}`)
-                return
-              }
-              if (nid) {
-                navigate(path.length > 1 ? `/projects/${id}/nodes/${path[path.length - 2].id}` : `/projects/${id}`)
-                return
-              }
-              navigate('/')
-            }}
-          >
-            <ArrowLeft size={17} />
-            {organizeMode ? '返回项目' : (nid ? '上一层' : '项目列表')}
-          </button>
-          <span>{[project.name, ...path.map((item) => item.name)].join(' / ')}</span>
-        </nav>
         {organizeMode ? (
           <ProjectRecordsSection
             projectId={id}
