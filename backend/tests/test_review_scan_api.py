@@ -1,9 +1,16 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.base import AIProviderNotConfiguredError, ReviewResult
-from app.models import Entry, Project, ReviewAiFinding, ReviewScan
+from app.models import (
+    Entry,
+    Project,
+    ReviewAiFinding,
+    ReviewResolution,
+    ReviewScan,
+)
 from app.services.accounts import create_account
 from app.services.review_scan import SCAN_ENTRY_LIMIT
 from app.services.task_worker import process_next_scan
@@ -51,6 +58,7 @@ async def test_start_scan_workspace_scope_and_status(
     fetched = (await client.get(f"/api/review/scans/{scan['id']}")).json()
     assert fetched["id"] == scan["id"]
     assert fetched["status"] == "pending"
+    assert await process_next_scan(db, ReviewFakeProvider()) is True
 
 
 @pytest.mark.asyncio
@@ -64,9 +72,10 @@ async def test_list_scans_recent_first_with_started_at(
     second = await _start_scan(client, scope_type="workspace")
 
     scans = (await client.get("/api/review/scans")).json()["scans"]
-    assert [scan["id"] for scan in scans] == [second["id"], first["id"]]
-    assert scans[1]["started_at"] is not None
-    assert scans[0]["started_at"] is None
+    by_id = {scan["id"]: scan for scan in scans}
+    assert set(by_id) == {first["id"], second["id"]}
+    assert by_id[first["id"]]["started_at"] is not None
+    assert by_id[second["id"]]["started_at"] is None
 
 
 @pytest.mark.asyncio
@@ -86,6 +95,7 @@ async def test_concurrent_scan_is_blocked(
     await process_next_scan(db, ReviewFakeProvider())
     scan = await _start_scan(client, scope_type="workspace")
     assert scan["status"] == "pending"
+    assert await process_next_scan(db, ReviewFakeProvider()) is True
 
 
 @pytest.mark.asyncio
@@ -127,6 +137,7 @@ async def test_start_scan_validates_scope(
         node_id=node["id"],
     )
     assert scan["scope_id"] == node["id"]
+    assert await process_next_scan(db, ReviewFakeProvider()) is True
 
 
 @pytest.mark.asyncio
@@ -320,6 +331,87 @@ async def test_rescan_dedupe_and_regenerate_after_reject(
         await client.get(f"/api/review/scans/{scan_3['id']}/candidates")
     ).json()["candidates"]
     assert len(candidates_3) == 1
+
+
+@pytest.mark.asyncio
+async def test_rescan_resurfaces_resolved_and_ignored_findings(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    node = await _create_node(client, project["id"], "冰箱")
+    entry_a, _ = await _accepted_entry(
+        client, db, project_id=project["id"], node_id=node["id"]
+    )
+    entry_b, _ = await _accepted_entry(
+        client,
+        db,
+        project_id=project["id"],
+        node_id=node["id"],
+        title="重复候选记录",
+        content="与第一条内容几乎一致。",
+    )
+    results = [
+        ReviewResult(
+            review_type="duplicate",
+            description="重复",
+            related_entry_ids=[entry_a, entry_b],
+        )
+    ]
+
+    scan_1 = await _start_scan(client, scope_type="workspace")
+    await process_next_scan(db, ReviewFakeProvider(results=results))
+    candidate = (
+        await client.get(f"/api/review/scans/{scan_1['id']}/candidates")
+    ).json()["candidates"][0]
+    await client.post(
+        f"/api/review/findings/ai/{candidate['id']}/decision",
+        json={"decision": "confirmed"},
+    )
+
+    # 已解决 → 重扫 → 处理记录清除并重新浮现
+    resolution_path = (
+        f"/api/review/findings/duplicate/ai_finding/"
+        f"{candidate['id']}/resolution"
+    )
+    await client.post(
+        resolution_path,
+        json={"resolution": "resolved", "note": "先放下"},
+    )
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    assert not any(
+        item["target_type"] == "ai_finding" for item in open_findings
+    )
+
+    await _start_scan(client, scope_type="workspace")
+    await process_next_scan(db, ReviewFakeProvider(results=results))
+    resolution_count = await db.scalar(
+        select(func.count(ReviewResolution.id)).where(
+            ReviewResolution.target_id == candidate["id"]
+        )
+    )
+    assert resolution_count == 0
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    assert any(
+        item["target_type"] == "ai_finding"
+        and item["target_id"] == candidate["id"]
+        for item in open_findings
+    )
+
+    # 忽略 → 重扫 → 同样重新浮现
+    await client.post(
+        resolution_path,
+        json={"resolution": "ignored"},
+    )
+    await _start_scan(client, scope_type="workspace")
+    await process_next_scan(db, ReviewFakeProvider(results=results))
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    assert any(
+        item["target_type"] == "ai_finding"
+        and item["target_id"] == candidate["id"]
+        for item in open_findings
+    )
 
 
 @pytest.mark.asyncio

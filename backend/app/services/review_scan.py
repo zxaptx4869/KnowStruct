@@ -12,9 +12,11 @@ from app.models import (
     AiReviewType,
     Entry,
     EntryStatus,
+    FindingTargetType,
     Node,
     Project,
     ReviewAiFinding,
+    ReviewResolution,
     ReviewScan,
     ScanScopeType,
     ScanStatus,
@@ -152,7 +154,23 @@ async def _create_candidates(
             )
         )
         if existing is not None:
-            if existing.status != AiFindingStatus.REJECTED.value:
+            if existing.status == AiFindingStatus.CANDIDATE.value:
+                continue
+            if existing.status == AiFindingStatus.OPEN.value:
+                resolution = await db.scalar(
+                    select(ReviewResolution).where(
+                        ReviewResolution.workspace_id == workspace_id,
+                        ReviewResolution.finding_type == result.review_type,
+                        ReviewResolution.target_type
+                        == FindingTargetType.AI_FINDING.value,
+                        ReviewResolution.target_id == existing.id,
+                    )
+                )
+                if resolution is None:
+                    # 已确认且未处理：问题仍在待处理列表，不重复生成
+                    continue
+                # 已解决/忽略但数据未修复：清除处理记录，问题重新浮现
+                await db.delete(resolution)
                 continue
             existing.scan_id = scan.id
             existing.description = result.description
