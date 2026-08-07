@@ -12,6 +12,8 @@ const project: Project = {
   background: '设计方案已确认',
   status: 'active',
   node_count: 6,
+  entry_count: 0,
+  unarchived_entry_count: 0,
   created_at: '2026-08-04T10:00:00',
   updated_at: '2026-08-04T11:00:00',
 }

@@ -1,6 +1,6 @@
 """Formal entry queries for directory browsing and source tracing."""
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ConflictError, ResourceNotFoundError
@@ -92,6 +92,181 @@ async def entry_counts_by_node(
         .group_by(Entry.node_id)
     )
     return {node_id: int(count) for node_id, count in rows.all()}
+
+
+async def _load_node_paths(
+    db: AsyncSession,
+    project_id: str,
+) -> dict[str, list[str]]:
+    """项目内节点 id → 完整路径名称（根到节点）。"""
+    nodes = (
+        await db.scalars(
+            select(Node).where(Node.project_id == project_id)
+        )
+    ).all()
+    by_id = {node.id: node for node in nodes}
+    paths: dict[str, list[str]] = {}
+    for node in nodes:
+        parts: list[str] = []
+        current: Node | None = node
+        seen: set[str] = set()
+        while current is not None and current.id not in seen:
+            seen.add(current.id)
+            parts.append(current.name)
+            current = (
+                by_id.get(current.parent_id)
+                if current.parent_id is not None
+                else None
+            )
+        paths[node.id] = list(reversed(parts))
+    return paths
+
+
+async def list_project_entries(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+) -> tuple[list[NodeEntryResponse], int, int]:
+    """项目级记录列表（含未归档），返回 (items, total, unarchived_count)。"""
+    await get_project(db, workspace_id, project_id)
+    entries = (
+        await db.scalars(
+            select(Entry)
+            .where(
+                Entry.workspace_id == workspace_id,
+                Entry.project_id == project_id,
+                Entry.status == "archived",
+            )
+            .order_by(Entry.created_at.desc(), Entry.id.desc())
+            .limit(NODE_ENTRY_LIMIT)
+        )
+    ).all()
+    total = await db.scalar(
+        select(func.count(Entry.id)).where(
+            Entry.workspace_id == workspace_id,
+            Entry.project_id == project_id,
+            Entry.status == "archived",
+        )
+    )
+    unarchived_count = await db.scalar(
+        select(func.count(Entry.id)).where(
+            Entry.workspace_id == workspace_id,
+            Entry.project_id == project_id,
+            Entry.status == "archived",
+            Entry.node_id.is_(None),
+        )
+    )
+    entry_ids = [entry.id for entry in entries]
+    sources = await _load_entry_sources(db, workspace_id, entry_ids)
+    paths = await _load_node_paths(db, project_id)
+    items = [
+        NodeEntryResponse(
+            id=entry.id,
+            entry_type=entry.entry_type,
+            title=entry.title,
+            content=entry.content,
+            applicable_conditions=entry.applicable_conditions,
+            node_id=entry.node_id,
+            node_path=(
+                paths.get(entry.node_id, [])
+                if entry.node_id is not None
+                else []
+            ),
+            sources=sources.get(entry.id, []),
+            created_at=entry.created_at,
+        )
+        for entry in entries
+    ]
+    return items, int(total or 0), int(unarchived_count or 0)
+
+
+def _unique_entry_ids(entry_ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for entry_id in entry_ids:
+        stripped = (entry_id or "").strip()
+        if stripped and stripped not in seen:
+            seen.add(stripped)
+            unique.append(stripped)
+    return unique
+
+
+async def _load_batch_entries(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+    entry_ids: list[str],
+) -> dict[str, Entry]:
+    unique_ids = _unique_entry_ids(entry_ids)
+    if not unique_ids or len(unique_ids) > 100:
+        raise ConflictError(
+            "invalid_batch",
+            "批量操作需要 1-100 条记录",
+            blocker_count=len(unique_ids),
+        )
+    rows = (
+        await db.scalars(
+            select(Entry).where(
+                Entry.id.in_(unique_ids),
+                Entry.workspace_id == workspace_id,
+                Entry.project_id == project_id,
+            )
+        )
+    ).all()
+    found = {entry.id: entry for entry in rows}
+    if len(found) != len(unique_ids):
+        raise ResourceNotFoundError("entry")
+    return found
+
+
+async def batch_move_entries(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+    entry_ids: list[str],
+    node_id: str | None,
+) -> int:
+    await get_project(db, workspace_id, project_id)
+    if node_id is not None:
+        node = await db.scalar(
+            select(Node).where(
+                Node.id == node_id,
+                Node.project_id == project_id,
+            )
+        )
+        if node is None:
+            raise ConflictError(
+                "invalid_node_for_project",
+                "选择的归档节点不属于该项目",
+            )
+    entries = await _load_batch_entries(
+        db,
+        workspace_id,
+        project_id,
+        entry_ids,
+    )
+    for entry in entries.values():
+        entry.node_id = node_id
+    await db.flush()
+    return len(entries)
+
+
+async def batch_delete_entries(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+    entry_ids: list[str],
+) -> int:
+    await get_project(db, workspace_id, project_id)
+    entries = await _load_batch_entries(
+        db,
+        workspace_id,
+        project_id,
+        entry_ids,
+    )
+    await db.execute(delete(Entry).where(Entry.id.in_(list(entries))))
+    await db.flush()
+    return len(entries)
 
 
 async def list_node_entries(

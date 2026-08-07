@@ -12,6 +12,8 @@ const project: Project = {
   background: null,
   status: 'active',
   node_count: 4,
+  entry_count: 0,
+  unarchived_entry_count: 0,
   created_at: '2026-08-04T10:00:00',
   updated_at: '2026-08-04T11:00:00',
 }
@@ -166,6 +168,7 @@ const entryRows = [
     content: '零嵌冰箱需要先确认散热方式，再决定柜体预留尺寸。',
     applicable_conditions: ['底部散热型号', '以安装图为准'],
     node_id: null,
+    node_path: [],
     sources: [
       { id: 'src-1', source_type: 'text', title: '零嵌冰箱安装避坑截图' },
     ],
@@ -178,6 +181,7 @@ const entryRows = [
     content: '复尺数据，需保留插座位置。',
     applicable_conditions: null,
     node_id: null,
+    node_path: [],
     sources: [],
     created_at: timestamp,
   },
@@ -380,6 +384,136 @@ describe('node detail records section', () => {
     await waitFor(() => {
       const dialogs = screen.queryAllByRole('alertdialog')
       expect(dialogs, `remaining dialogs ${dialogs.map((d) => d.textContent?.slice(0, 40)).join('|')}`).toHaveLength(0)
+    })
+  })
+})
+
+const organizeEntries = [
+  {
+    id: 'e-1',
+    entry_type: 'pitfall',
+    title: '未归档经验',
+    content: '内容一',
+    applicable_conditions: null,
+    node_id: null,
+    node_path: [],
+    sources: [],
+    created_at: timestamp,
+  },
+  {
+    id: 'e-2',
+    entry_type: 'parameter',
+    title: '已归档参数',
+    content: '内容二',
+    applicable_conditions: null,
+    node_id: 'appliances',
+    node_path: ['家具家电', '大家电'],
+    sources: [{ id: 's-1', source_type: 'text', title: '来源' }],
+    created_at: timestamp,
+  },
+]
+
+function organizeFetch(overrides: { records?: unknown } = {}) {
+  return vi.fn((url: string, init?: RequestInit) => {
+    const path = String(url)
+    if (path === '/api/projects/project-1/entries' && (!init || init.method === 'GET')) {
+      return Promise.resolve(jsonResponse(overrides.records ?? {
+        items: organizeEntries,
+        total: 2,
+        unarchived_count: 1,
+      }))
+    }
+    if (path.endsWith('/entries/batch/move') && init?.method === 'POST') {
+      return Promise.resolve(jsonResponse({ moved: 1 }, 200))
+    }
+    if (path.endsWith('/entries/batch/delete') && init?.method === 'POST') {
+      return Promise.resolve(jsonResponse({ deleted: 1 }, 200))
+    }
+    return mockProjectApi()(url)
+  })
+}
+
+async function enterOrganizeMode() {
+  renderRoute(<ProjectDetailPage />, '/projects/project-1', '/projects/:id')
+  await screen.findAllByText('家具家电')
+  await userEvent.click(screen.getAllByRole('button', { name: '批量整理' })[0])
+  await screen.findAllByText('全部记录')
+}
+
+describe('project organize mode', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('switches to organize mode and lists all records with unarchived badge', async () => {
+    vi.stubGlobal('fetch', organizeFetch())
+    await enterOrganizeMode()
+
+    expect(screen.getAllByText('2 条 · 未归档 1 条').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('未归档经验').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('已归档参数').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('未归档').length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: '回到查看' }).length).toBeGreaterThan(0)
+  })
+
+  it('filters records by unarchived status', async () => {
+    vi.stubGlobal('fetch', organizeFetch())
+    await enterOrganizeMode()
+
+    await userEvent.click(
+      within(screen.getAllByRole('group', { name: '按状态筛选' })[0])
+        .getByRole('button', { name: '未归档' }),
+    )
+    expect(screen.getAllByText('未归档经验').length).toBeGreaterThan(0)
+    expect(screen.queryByText('已归档参数')).not.toBeInTheDocument()
+
+    await userEvent.click(
+      within(screen.getAllByRole('group', { name: '按状态筛选' })[0])
+        .getByRole('button', { name: '全部' }),
+    )
+    expect(screen.getAllByText('已归档参数').length).toBeGreaterThan(0)
+  })
+
+  it('batch moves selected records to a node', async () => {
+    const fetchMock = organizeFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    await enterOrganizeMode()
+
+    await userEvent.click(screen.getByLabelText('选择 未归档经验'))
+    await userEvent.selectOptions(screen.getByLabelText('移动到节点目标'), 'appliances')
+    await userEvent.click(screen.getByRole('button', { name: '移动到节点' }))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).endsWith('/entries/batch/move') && init?.method === 'POST') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call![1].body))).toEqual({
+        entry_ids: ['e-1'],
+        node_id: 'appliances',
+      })
+    })
+  })
+
+  it('batch deletes selected records after confirmation', async () => {
+    const fetchMock = organizeFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await enterOrganizeMode()
+
+    await userEvent.click(screen.getByLabelText('选择 未归档经验'))
+    const toolbar = within(
+      screen.getAllByRole('group', { name: '批量操作' })[0],
+    )
+    await userEvent.click(toolbar.getByRole('button', { name: /删除/ }))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).endsWith('/entries/batch/delete') && init?.method === 'POST') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call![1].body))).toEqual({ entry_ids: ['e-1'] })
     })
   })
 })

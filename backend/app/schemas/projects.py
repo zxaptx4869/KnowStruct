@@ -60,6 +60,8 @@ class ProjectResponse(BaseModel):
     background: str | None
     status: ProjectStatusValue
     node_count: int = 0
+    entry_count: int = 0
+    unarchived_entry_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -128,8 +130,56 @@ class NodeEntryResponse(BaseModel):
     content: str
     applicable_conditions: list[str] | None
     node_id: str | None = None
+    node_path: list[str] = Field(default_factory=list)
     sources: list[NodeEntrySourceRef] = Field(default_factory=list)
     created_at: datetime
+
+
+class ProjectRecordsResponse(BaseModel):
+    items: list[NodeEntryResponse] = Field(default_factory=list)
+    total: int = 0
+    unarchived_count: int = 0
+
+
+class BatchEntryMoveRequest(BaseModel):
+    entry_ids: list[str] = Field(min_length=1, max_length=100)
+    node_id: str | None = None
+
+    @field_validator("entry_ids", mode="before")
+    @classmethod
+    def normalize_entry_ids(cls, value: object) -> object:
+        if isinstance(value, list):
+            return [
+                item.strip()
+                for item in value
+                if isinstance(item, str) and item.strip()
+            ]
+        return value
+
+    _strip_node = field_validator("node_id", mode="before")(strip_optional)
+
+
+class BatchEntryDeleteRequest(BaseModel):
+    entry_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @field_validator("entry_ids", mode="before")
+    @classmethod
+    def normalize_entry_ids(cls, value: object) -> object:
+        if isinstance(value, list):
+            return [
+                item.strip()
+                for item in value
+                if isinstance(item, str) and item.strip()
+            ]
+        return value
+
+
+class BatchEntryMoveResponse(BaseModel):
+    moved: int
+
+
+class BatchEntryDeleteResponse(BaseModel):
+    deleted: int
 
 
 class EntryUpdate(BaseModel):

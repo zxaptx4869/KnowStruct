@@ -14,6 +14,8 @@ from app.schemas.projects import ProjectCreate, ProjectUpdate
 class ProjectWithCount:
     project: Project
     node_count: int
+    entry_count: int = 0
+    unarchived_entry_count: int = 0
 
 
 def scoped_project_query(workspace_id: str, project_id: str) -> Select[tuple[Project]]:
@@ -46,12 +48,40 @@ async def list_projects(db: AsyncSession, workspace_id: str) -> list[ProjectWith
         .correlate(Project)
         .scalar_subquery()
     )
+    entry_count = (
+        select(func.count(Entry.id))
+        .where(Entry.project_id == Project.id)
+        .correlate(Project)
+        .scalar_subquery()
+    )
+    unarchived_entry_count = (
+        select(func.count(Entry.id))
+        .where(
+            Entry.project_id == Project.id,
+            Entry.node_id.is_(None),
+        )
+        .correlate(Project)
+        .scalar_subquery()
+    )
     rows = await db.execute(
-        select(Project, node_count.label("node_count"))
+        select(
+            Project,
+            node_count.label("node_count"),
+            entry_count.label("entry_count"),
+            unarchived_entry_count.label("unarchived_entry_count"),
+        )
         .where(Project.workspace_id == workspace_id)
         .order_by(Project.updated_at.desc(), Project.id)
     )
-    return [ProjectWithCount(project=row[0], node_count=int(row[1])) for row in rows.all()]
+    return [
+        ProjectWithCount(
+            project=row[0],
+            node_count=int(row[1]),
+            entry_count=int(row[2]),
+            unarchived_entry_count=int(row[3]),
+        )
+        for row in rows.all()
+    ]
 
 
 async def project_with_count(
@@ -60,8 +90,24 @@ async def project_with_count(
     project_id: str,
 ) -> ProjectWithCount:
     project = await get_project(db, workspace_id, project_id)
-    count = await db.scalar(select(func.count(Node.id)).where(Node.project_id == project.id))
-    return ProjectWithCount(project=project, node_count=int(count or 0))
+    node_count = await db.scalar(
+        select(func.count(Node.id)).where(Node.project_id == project.id)
+    )
+    entry_count = await db.scalar(
+        select(func.count(Entry.id)).where(Entry.project_id == project.id)
+    )
+    unarchived_count = await db.scalar(
+        select(func.count(Entry.id)).where(
+            Entry.project_id == project.id,
+            Entry.node_id.is_(None),
+        )
+    )
+    return ProjectWithCount(
+        project=project,
+        node_count=int(node_count or 0),
+        entry_count=int(entry_count or 0),
+        unarchived_entry_count=int(unarchived_count or 0),
+    )
 
 
 async def create_project(

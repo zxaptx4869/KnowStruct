@@ -33,7 +33,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ConfirmDialog from '../projects/ConfirmDialog'
 import MoveNodeDialog from '../projects/MoveNodeDialog'
 import NodeDialog from '../projects/NodeDialog'
@@ -42,6 +42,8 @@ import { mutationMessage } from '../projects/errors'
 import { entryTypeLabel, entryTypeOptions, sourceTypeLabels } from '../inbox/labels'
 import {
   useCreateNode,
+  useBatchDeleteEntries,
+  useBatchMoveEntries,
   useDeleteEntry,
   useDeleteNode,
   useDeleteProject,
@@ -49,6 +51,7 @@ import {
   useNodeEntries,
   useNodes,
   useProject,
+  useProjectEntries,
   useUpdateEntry,
   useUpdateNode,
   useUpdateProject,
@@ -79,11 +82,13 @@ interface NodeMenuProps {
 
 function NodeRecordCard({
   entry,
+  nodeLabel,
   onOpenSource,
   onEdit,
   onDelete,
 }: {
   entry: NodeEntry
+  nodeLabel?: string | null
   onOpenSource: (sourceId: string) => void
   onEdit: (entry: NodeEntry) => void
   onDelete: (entry: NodeEntry) => void
@@ -139,6 +144,11 @@ function NodeRecordCard({
         </div>
       </header>
       <p className="record-content">{entry.content}</p>
+      {nodeLabel && (
+        <p className={`record-node-label${nodeLabel === '未归档' ? ' unarchived' : ''}`}>
+          {nodeLabel === '未归档' ? '未归档' : `归档：${nodeLabel}`}
+        </p>
+      )}
       {entry.applicable_conditions && entry.applicable_conditions.length > 0 && (
         <p className="record-conditions">
           适用条件：{entry.applicable_conditions.join('；')}
@@ -487,13 +497,374 @@ function dropIntentForEvent(event: DragMoveEvent | DragEndEvent, nodes: Node[]):
   return dropIntentFromGeometry(activeCenterY, event.over.rect.top, event.over.rect.height)
 }
 
+function ProjectRecordsSection({
+  projectId,
+  filter,
+  onFilterChange,
+  mobile,
+}: {
+  projectId: string
+  filter: string
+  onFilterChange: (filter: string) => void
+  mobile?: boolean
+}) {
+  const navigate = useNavigate()
+  const recordsQuery = useProjectEntries(projectId)
+  const nodesQuery = useNodes(projectId)
+  const [typeFilter, setTypeFilter] = useState<'all' | string>('all')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchTargetNode, setBatchTargetNode] = useState('')
+  const [batchError, setBatchError] = useState<string | null>(null)
+  const [editingRecord, setEditingRecord] = useState<NodeEntry | null>(null)
+  const [deletingRecord, setDeletingRecord] = useState<NodeEntry | null>(null)
+  const updateMutation = useUpdateEntry(projectId, editingRecord?.id ?? '')
+  const deleteMutation = useDeleteEntry(projectId)
+  const moveMutation = useBatchMoveEntries(projectId)
+  const deleteBatchMutation = useBatchDeleteEntries(projectId)
+
+  const records = recordsQuery.data?.items ?? []
+  const total = recordsQuery.data?.total ?? 0
+  const unarchivedCount = recordsQuery.data?.unarchived_count ?? 0
+
+  useEffect(() => {
+    setSelectedIds(new Set())
+    setBatchError(null)
+  }, [filter, typeFilter])
+
+  const filtered = records.filter((entry) => {
+    if (filter === 'unarchived' && entry.node_id !== null) return false
+    if (filter !== 'all' && filter !== 'unarchived' && entry.node_id !== filter) return false
+    if (typeFilter !== 'all' && entry.entry_type !== typeFilter) return false
+    return true
+  })
+  const noRecords = records.length === 0
+  const noMatches = records.length > 0 && filtered.length === 0
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      if (filtered.length > 0 && filtered.every((entry) => prev.has(entry.id))) {
+        return new Set()
+      }
+      return new Set(filtered.map((entry) => entry.id))
+    })
+  }
+
+  async function saveRecord(input: EntryUpdateInput) {
+    try {
+      await updateMutation.mutateAsync(input)
+      setEditingRecord(null)
+    } catch {
+      // Dialog stays open with the error and preserved input.
+    }
+  }
+
+  async function confirmDeleteRecord() {
+    if (!deletingRecord) return
+    try {
+      await deleteMutation.mutateAsync(deletingRecord.id)
+      setDeletingRecord(null)
+    } catch {
+      // Confirmation stays open with the API error.
+    }
+  }
+
+  async function runBatchMove() {
+    if (selectedIds.size === 0) return
+    setBatchError(null)
+    try {
+      await moveMutation.mutateAsync({
+        entry_ids: [...selectedIds],
+        node_id: batchTargetNode || null,
+      })
+      setSelectedIds(new Set())
+      setBatchTargetNode('')
+    } catch (error) {
+      setBatchError(mutationMessage(error, '批量移动失败，请重试'))
+    }
+  }
+
+  async function runBatchDelete() {
+    if (selectedIds.size === 0) return
+    const confirmed = window.confirm(
+      `确定删除选中的 ${selectedIds.size} 条记录？原始来源会保留。`,
+    )
+    if (!confirmed) return
+    setBatchError(null)
+    try {
+      await deleteBatchMutation.mutateAsync([...selectedIds])
+      setSelectedIds(new Set())
+    } catch (error) {
+      setBatchError(mutationMessage(error, '批量删除失败，请重试'))
+    }
+  }
+
+  const batchPending = moveMutation.isPending || deleteBatchMutation.isPending
+
+  return (
+    <section className="records-section">
+      <header className="records-head">
+        <div>
+          <h3>全部记录</h3>
+          <span>{total} 条 · 未归档 {unarchivedCount} 条</span>
+        </div>
+        <div className="record-type-chips" role="group" aria-label="按状态筛选">
+          <button
+            type="button"
+            className={filter === 'all' ? 'chip active' : 'chip'}
+            onClick={() => onFilterChange('all')}
+          >
+            全部
+          </button>
+          <button
+            type="button"
+            className={filter === 'unarchived' ? 'chip active' : 'chip'}
+            onClick={() => onFilterChange('unarchived')}
+          >
+            未归档
+          </button>
+        </div>
+      </header>
+      <div className="record-type-chips" role="group" aria-label="按记录类型筛选">
+        <button
+          type="button"
+          className={typeFilter === 'all' ? 'chip active' : 'chip'}
+          onClick={() => setTypeFilter('all')}
+        >
+          全部类型
+        </button>
+        {entryTypeOptions.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            className={typeFilter === value ? 'chip active' : 'chip'}
+            onClick={() => setTypeFilter(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {recordsQuery.isPending && (
+        <div className="state-panel" role="status">
+          <span className="spin state-spinner" />正在加载正式记录
+        </div>
+      )}
+      {recordsQuery.isError && (
+        <div className="state-panel state-error" role="alert">
+          <strong>正式记录加载失败</strong>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void recordsQuery.refetch()}
+          >
+            <RefreshCw size={16} />重试
+          </button>
+        </div>
+      )}
+      {recordsQuery.isSuccess && noRecords && (
+        <div className="inline-empty">
+          <FileText size={22} />
+          <div>
+            <strong>还没有正式记录</strong>
+            <span>接受的提取候选归档后会显示在这里。</span>
+          </div>
+        </div>
+      )}
+      {recordsQuery.isSuccess && noMatches && (
+        <div className="inline-empty">
+          <FileText size={22} />
+          <div>
+            <strong>当前筛选下没有记录</strong>
+            <span>切换筛选或类型查看其他记录。</span>
+          </div>
+        </div>
+      )}
+
+      {filtered.length > 0 && !mobile && (
+        <>
+          {selectedIds.size > 0 && (
+            <div className="batch-toolbar" role="group" aria-label="批量操作">
+              <span className="batch-count">已选 {selectedIds.size} 条</span>
+              <select
+                value={batchTargetNode}
+                onChange={(event) => setBatchTargetNode(event.target.value)}
+                aria-label="移动到节点目标"
+              >
+                <option value="">移动到未归档</option>
+                {(nodesQuery.data ?? []).map((node) => (
+                  <option key={node.id} value={node.id}>{node.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void runBatchMove()}
+                disabled={batchPending}
+              >
+                {moveMutation.isPending ? '移动中…' : '移动到节点'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button danger-button"
+                onClick={() => void runBatchDelete()}
+                disabled={batchPending}
+              >
+                <Trash2 size={15} />
+                {deleteBatchMutation.isPending ? '删除中…' : '删除'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setSelectedIds(new Set())
+                  setBatchError(null)
+                }}
+              >
+                取消选择
+              </button>
+              {batchError && (
+                <span className="inline-error batch-error" role="alert">
+                  {batchError}
+                </span>
+              )}
+            </div>
+          )}
+          <div className="records-table-wrap">
+            <table className="project-table records-table">
+              <thead>
+                <tr>
+                  <th className="source-select-col">
+                    <input
+                      type="checkbox"
+                      aria-label="全选当前筛选"
+                      checked={
+                        filtered.length > 0
+                        && filtered.every((entry) => selectedIds.has(entry.id))
+                      }
+                      onChange={toggleSelectAll}
+                    />
+                  </th>
+                  <th>记录</th>
+                  <th>节点</th>
+                  <th>来源</th>
+                  <th>时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((entry) => (
+                  <tr key={entry.id}>
+                    <td
+                      className="source-select-cell"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`选择 ${entry.title}`}
+                        checked={selectedIds.has(entry.id)}
+                        onChange={() => toggleSelected(entry.id)}
+                      />
+                    </td>
+                    <td className="records-title-cell">
+                      <strong>{entry.title}</strong>
+                      <span>
+                        {entryTypeLabel(entry.entry_type)} · {entry.content.slice(0, 60)}
+                      </span>
+                    </td>
+                    <td>
+                      {entry.node_id
+                        ? ((entry.node_path ?? []).join(' / ') || '—')
+                        : <span className="unarchived-badge">未归档</span>}
+                    </td>
+                    <td>{entry.sources.length}</td>
+                    <td>{new Date(entry.created_at).toLocaleString('zh-CN')}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn small"
+                        onClick={() => setEditingRecord(entry)}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn small danger-text"
+                        onClick={() => setDeletingRecord(entry)}
+                      >
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {filtered.length > 0 && mobile && (
+        <div className="record-list">
+          {filtered.map((entry) => (
+            <NodeRecordCard
+              key={entry.id}
+              entry={entry}
+              nodeLabel={entry.node_id ? (entry.node_path ?? []).join(' / ') : '未归档'}
+              onOpenSource={(sourceId) => navigate(`/inbox/${sourceId}`)}
+              onEdit={setEditingRecord}
+              onDelete={setDeletingRecord}
+            />
+          ))}
+        </div>
+      )}
+      {editingRecord && (
+        <EntryEditDialog
+          entry={editingRecord}
+          projectId={projectId}
+          pending={updateMutation.isPending}
+          error={updateMutation.error}
+          onClose={() => {
+            setEditingRecord(null)
+            updateMutation.reset()
+          }}
+          onSubmit={saveRecord}
+        />
+      )}
+      {deletingRecord && (
+        <ConfirmDialog
+          title="删除记录？"
+          description={`将永久删除“${deletingRecord.title}”，原始来源会保留。`}
+          confirmLabel="删除记录"
+          pending={deleteMutation.isPending}
+          error={deleteMutation.error}
+          onClose={() => {
+            setDeletingRecord(null)
+            deleteMutation.reset()
+          }}
+          onConfirm={confirmDeleteRecord}
+        />
+      )}
+    </section>
+  )
+}
+
 type NodeEditor = { mode: 'create', parentId: string | null } | { mode: 'edit', node: Node }
 
 export default function ProjectDetailPage() {
   const { id = '', nid } = useParams<{ id: string, nid?: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const projectQuery = useProject(id)
   const nodesQuery = useNodes(id)
+  const organizeMode = searchParams.get('mode') === 'organize'
+  const recordFilter = searchParams.get('filter') ?? 'all'
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [nodeEditor, setNodeEditor] = useState<NodeEditor | null>(null)
   const [movingNode, setMovingNode] = useState<Node | null>(null)
@@ -540,6 +911,26 @@ export default function ProjectDetailPage() {
 
   function openNode(nodeId: string) {
     navigate(`/projects/${id}/nodes/${nodeId}`)
+  }
+
+  function setOrganizeMode(next: boolean) {
+    const params = new URLSearchParams(searchParams)
+    if (next) {
+      params.set('mode', 'organize')
+      params.set('filter', 'all')
+    } else {
+      params.delete('mode')
+      params.delete('filter')
+    }
+    setSearchParams(params, { replace: false })
+  }
+
+  function setRecordFilter(next: string) {
+    const params = new URLSearchParams(searchParams)
+    params.set('mode', 'organize')
+    if (next === 'all') params.delete('filter')
+    else params.set('filter', next)
+    setSearchParams(params, { replace: false })
   }
 
   async function saveNode(input: NodeInput) {
@@ -645,8 +1036,15 @@ export default function ProjectDetailPage() {
     <div className="project-workspace">
       <header className="project-topbar">
         <button type="button" className="icon-action desktop-back" onClick={() => navigate('/')} aria-label="返回项目列表"><ArrowLeft size={18} /></button>
-        <div className="project-title"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><h1>{project.name}</h1><span>{project.node_count} 个目录节点</span></div>
+        <div className="project-title"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><h1>{project.name}</h1><span>{project.node_count} 个目录节点 · {project.entry_count} 条记录 · 未归档 {project.unarchived_entry_count}</span></div>
         <div className="project-top-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setOrganizeMode(!organizeMode)}
+          >
+            {organizeMode ? '回到查看' : '批量整理'}
+          </button>
           <button type="button" className="add-source-button" onClick={() => navigate(`/inbox?project=${id}`)}>
             <Plus size={15} />添加资料
           </button>
@@ -660,6 +1058,24 @@ export default function ProjectDetailPage() {
       <div className="desktop-directory">
         <aside className="directory-panel">
           <div className="directory-panel-head"><div><strong>知识目录</strong></div><button type="button" className="icon-action" aria-label="创建根节点" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}><Plus size={17} /></button></div>
+          {organizeMode && (
+            <div className="tree-filter-options" role="group" aria-label="记录筛选">
+              <button
+                type="button"
+                className={recordFilter === 'all' ? 'active' : ''}
+                onClick={() => setRecordFilter('all')}
+              >
+                全部记录
+              </button>
+              <button
+                type="button"
+                className={recordFilter === 'unarchived' ? 'active' : ''}
+                onClick={() => setRecordFilter('unarchived')}
+              >
+                未归档 ({project.unarchived_entry_count})
+              </button>
+            </div>
+          )}
           {nodes.length === 0 ? (
             <div className="tree-empty"><Folder size={24} /><strong>知识目录为空</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}>创建第一个节点</button></div>
           ) : (
@@ -679,11 +1095,11 @@ export default function ProjectDetailPage() {
                       key={node.id}
                       treeNode={node}
                       node={node}
-                      selected={node.id === nid}
+                      selected={organizeMode ? recordFilter === node.id : node.id === nid}
                       expanded={expanded.has(node.id)}
                       dropIntent={activeDragId && dropPreview?.overId === node.id && activeDragId !== node.id && dropPreview.intent !== 'root' ? dropPreview.intent : undefined}
                       onToggle={() => toggleExpanded(node.id)}
-                      onSelect={() => openNode(node.id)}
+                      onSelect={() => organizeMode ? setRecordFilter(node.id) : openNode(node.id)}
                       {...nodeActions(node)}
                     />
                   ))}
@@ -694,7 +1110,13 @@ export default function ProjectDetailPage() {
         </aside>
         <main className="directory-content">
           <nav className="breadcrumbs" aria-label="节点路径"><button type="button" onClick={() => navigate(`/projects/${id}`)}>{project.name}</button>{path.map((item) => <span key={item.id}><ChevronRight size={13} /><button type="button" onClick={() => openNode(item.id)}>{item.name}</button></span>)}</nav>
-          {selectedNode ? (
+          {organizeMode ? (
+            <ProjectRecordsSection
+              projectId={id}
+              filter={recordFilter}
+              onFilterChange={setRecordFilter}
+            />
+          ) : selectedNode ? (
             <>
               <section className="node-hero"><div><h2>{selectedNode.name}</h2><p>{selectedNode.description || '还没有节点说明。'}</p></div><div className="node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><button type="button" className="primary-button" onClick={nodeActions(selectedNode).onAdd}><Plus size={16} />创建子节点</button></div></section>
               <section className="children-section"><header><h3>子节点</h3><span>{currentChildren.length} 个</span></header>{currentChildren.length ? <div className="child-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={18} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span><ChevronRight size={17} /></button>)}</div> : <div className="inline-empty"><Folder size={22} /><div><strong>还没有子节点</strong><span>手动创建节点，不会自动采用 AI 目录。</span></div></div>}</section>
@@ -711,11 +1133,31 @@ export default function ProjectDetailPage() {
           <button type="button" onClick={() => nid ? navigate(path.length > 1 ? `/projects/${id}/nodes/${path[path.length - 2].id}` : `/projects/${id}`) : navigate('/')}><ArrowLeft size={17} />{nid ? '上一层' : '项目列表'}</button>
           <span>{[project.name, ...path.map((item) => item.name)].join(' / ')}</span>
         </nav>
-        <section className="mobile-node-head"><h2>{selectedNode?.name ?? project.name}</h2><p>{selectedNode ? selectedNode.description || '还没有节点说明。' : project.goal || '还没有填写项目目标。'}</p>{selectedNode && <div className="mobile-node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><NodeMenu node={selectedNode} {...nodeActions(selectedNode)} ariaLabel="节点操作" /></div>}</section>
-        <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} {selectedNode ? '个子节点' : '个一级目录'}</span></div><button type="button" className="icon-action" aria-label={selectedNode ? '创建子节点' : '创建根节点'} onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
-          {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
-        </section>
-        {selectedNode && <NodeRecordsSection projectId={id} nodeId={selectedNode.id} />}
+        <div className="mobile-organize-entry">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setOrganizeMode(!organizeMode)}
+          >
+            {organizeMode ? '回到查看' : '批量整理'}
+          </button>
+        </div>
+        {organizeMode ? (
+          <ProjectRecordsSection
+            projectId={id}
+            filter={recordFilter}
+            onFilterChange={setRecordFilter}
+            mobile
+          />
+        ) : (
+          <>
+            <section className="mobile-node-head"><h2>{selectedNode?.name ?? project.name}</h2><p>{selectedNode ? selectedNode.description || '还没有节点说明。' : project.goal || '还没有填写项目目标。'}</p>{selectedNode && <div className="mobile-node-actions"><button type="button" className="secondary-button" onClick={nodeActions(selectedNode).onEdit}>编辑节点</button><NodeMenu node={selectedNode} {...nodeActions(selectedNode)} ariaLabel="节点操作" /></div>}</section>
+            <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} {selectedNode ? '个子节点' : '个一级目录'}</span></div><button type="button" className="icon-action" aria-label={selectedNode ? '创建子节点' : '创建根节点'} onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
+              {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
+            </section>
+            {selectedNode && <NodeRecordsSection projectId={id} nodeId={selectedNode.id} />}
+          </>
+        )}
       </main>
 
       {nodeEditor && (

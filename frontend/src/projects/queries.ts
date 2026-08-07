@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type {
+  BatchEntryMoveInput,
   EntryUpdateInput,
   Node,
   NodeDeleteResult,
@@ -9,6 +10,7 @@ import type {
   NodeMoveInput,
   Project,
   ProjectInput,
+  ProjectRecords,
 } from './types'
 
 export const projectKeys = {
@@ -17,6 +19,8 @@ export const projectKeys = {
   nodes: (projectId: string) => ['projects', projectId, 'nodes'] as const,
   entries: (projectId: string, nodeId: string) =>
     ['projects', projectId, 'nodes', nodeId, 'entries'] as const,
+  projectEntries: (projectId: string) =>
+    ['projects', projectId, 'entries'] as const,
 }
 
 export function useProjects() {
@@ -51,6 +55,14 @@ export function useNodeEntries(projectId: string, nodeId: string) {
   })
 }
 
+export function useProjectEntries(projectId: string) {
+  return useQuery({
+    queryKey: projectKeys.projectEntries(projectId),
+    queryFn: () => api.get<ProjectRecords>(`/projects/${projectId}/entries`),
+    enabled: Boolean(projectId),
+  })
+}
+
 function useInvalidateProject(projectId?: string) {
   const queryClient = useQueryClient()
   return async () => {
@@ -59,6 +71,7 @@ function useInvalidateProject(projectId?: string) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId) }),
         queryClient.invalidateQueries({ queryKey: projectKeys.nodes(projectId) }),
+        queryClient.invalidateQueries({ queryKey: projectKeys.projectEntries(projectId) }),
       ])
     }
   }
@@ -140,5 +153,29 @@ export function useDeleteEntry(projectId: string) {
     mutationFn: (entryId: string) =>
       api.delete<void>(`/projects/${projectId}/entries/${entryId}`),
     onSuccess: invalidate,
+  })
+}
+
+export function useBatchMoveEntries(projectId: string) {
+  const invalidate = useInvalidateProject(projectId)
+  return useMutation({
+    mutationFn: (input: BatchEntryMoveInput) =>
+      api.post<{ moved: number }>(
+        `/projects/${projectId}/entries/batch/move`,
+        input,
+      ),
+    onSettled: invalidate,
+  })
+}
+
+export function useBatchDeleteEntries(projectId: string) {
+  const invalidate = useInvalidateProject(projectId)
+  return useMutation({
+    mutationFn: (entryIds: string[]) =>
+      api.post<{ deleted: number }>(
+        `/projects/${projectId}/entries/batch/delete`,
+        { entry_ids: entryIds },
+      ),
+    onSettled: invalidate,
   })
 }

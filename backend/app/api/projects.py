@@ -4,6 +4,10 @@ from fastapi import APIRouter, Response, status
 
 from app.api.deps import Auth, DbSession
 from app.schemas.projects import (
+    BatchEntryDeleteRequest,
+    BatchEntryDeleteResponse,
+    BatchEntryMoveRequest,
+    BatchEntryMoveResponse,
     EntryUpdate,
     NodeCreate,
     NodeDeleteResponse,
@@ -12,13 +16,17 @@ from app.schemas.projects import (
     NodeResponse,
     NodeUpdate,
     ProjectCreate,
+    ProjectRecordsResponse,
     ProjectResponse,
     ProjectUpdate,
 )
 from app.services.entries import (
+    batch_delete_entries,
+    batch_move_entries,
     delete_entry,
     entry_counts_by_node,
     list_node_entries,
+    list_project_entries,
     update_entry,
 )
 from app.services.nodes import (
@@ -42,7 +50,13 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 def project_response(item: ProjectWithCount) -> ProjectResponse:
     response = ProjectResponse.model_validate(item.project)
-    return response.model_copy(update={"node_count": item.node_count})
+    return response.model_copy(
+        update={
+            "node_count": item.node_count,
+            "entry_count": item.entry_count,
+            "unarchived_entry_count": item.unarchived_entry_count,
+        }
+    )
 
 
 @router.get("", response_model=list[ProjectResponse])
@@ -86,6 +100,65 @@ async def project_delete(project_id: str, auth: Auth, db: DbSession) -> Response
     await delete_project(db, auth.workspace.id, project_id)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{project_id}/entries", response_model=ProjectRecordsResponse)
+async def project_entries(
+    project_id: str,
+    auth: Auth,
+    db: DbSession,
+) -> ProjectRecordsResponse:
+    items, total, unarchived_count = await list_project_entries(
+        db,
+        auth.workspace.id,
+        project_id,
+    )
+    return ProjectRecordsResponse(
+        items=items,
+        total=total,
+        unarchived_count=unarchived_count,
+    )
+
+
+@router.post(
+    "/{project_id}/entries/batch/move",
+    response_model=BatchEntryMoveResponse,
+)
+async def project_entries_batch_move(
+    project_id: str,
+    payload: BatchEntryMoveRequest,
+    auth: Auth,
+    db: DbSession,
+) -> BatchEntryMoveResponse:
+    moved = await batch_move_entries(
+        db,
+        auth.workspace.id,
+        project_id,
+        payload.entry_ids,
+        payload.node_id,
+    )
+    await db.commit()
+    return BatchEntryMoveResponse(moved=moved)
+
+
+@router.post(
+    "/{project_id}/entries/batch/delete",
+    response_model=BatchEntryDeleteResponse,
+)
+async def project_entries_batch_delete(
+    project_id: str,
+    payload: BatchEntryDeleteRequest,
+    auth: Auth,
+    db: DbSession,
+) -> BatchEntryDeleteResponse:
+    deleted = await batch_delete_entries(
+        db,
+        auth.workspace.id,
+        project_id,
+        payload.entry_ids,
+    )
+    await db.commit()
+    return BatchEntryDeleteResponse(deleted=deleted)
 
 
 @router.get("/{project_id}/nodes", response_model=list[NodeResponse])

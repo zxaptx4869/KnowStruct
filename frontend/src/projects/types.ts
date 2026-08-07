@@ -9,6 +9,8 @@ export interface Project {
   background: string | null
   status: ProjectStatus
   node_count: number
+  entry_count: number
+  unarchived_entry_count: number
   created_at: string
   updated_at: string
 }
@@ -60,6 +62,7 @@ export interface NodeEntry {
   content: string
   applicable_conditions: string[] | null
   node_id: string | null
+  node_path: string[]
   sources: NodeEntrySourceRef[]
   created_at: string
 }
@@ -70,6 +73,17 @@ export interface EntryUpdateInput {
   entry_type?: string
   applicable_conditions?: string[] | null
   node_id?: string | null
+}
+
+export interface ProjectRecords {
+  items: NodeEntry[]
+  total: number
+  unarchived_count: number
+}
+
+export interface BatchEntryMoveInput {
+  entry_ids: string[]
+  node_id: string | null
 }
 
 export const projectStatuses: Array<{ value: ProjectStatus, label: string }> = [
