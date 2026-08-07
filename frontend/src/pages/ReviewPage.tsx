@@ -247,15 +247,14 @@ export default function ReviewPage() {
       const incoming = historyQuery.data.scans.filter(
         (item) => !known.has(item.id),
       )
-      return historyOffset === 0
-        ? historyQuery.data.scans
-        : [...prev, ...incoming]
+      return [...prev, ...incoming]
     })
-  }, [historyQuery.data, historyQuery.isSuccess, historyOffset])
+  }, [historyQuery.data, historyQuery.isSuccess])
 
   const findingsQuery = useReviewFindings(
     tab === 'history' ? 'open' : tab,
     findingType,
+    tab !== 'history',
   )
   const findings = findingsQuery.data?.findings ?? []
   const scan = scanQuery.data
@@ -592,7 +591,7 @@ export default function ReviewPage() {
                   <article key={key} className="review-card">
                     <header className="review-card-head">
                       <span className="badge">
-                        {findingTypeLabels[item.finding_type]}
+                        {findingTypeLabels[item.finding_type] ?? item.finding_type}
                       </span>
                       <h3>{item.title}</h3>
                       {item.ai_severity && (

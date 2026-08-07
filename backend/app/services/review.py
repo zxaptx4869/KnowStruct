@@ -338,6 +338,11 @@ async def _resolved_item(
 ) -> ReviewFindingItem:
     finding_type = parse_finding_type(resolution.finding_type)
     target_type = parse_target_type(resolution.target_type)
+    handled_label = (
+        "已解决"
+        if resolution.resolution == ResolutionType.RESOLVED.value
+        else "已拒绝"
+    )
     base = ReviewFindingItem(
         finding_type=finding_type,
         target_type=target_type,
@@ -415,7 +420,7 @@ async def _resolved_item(
                 entry,
                 projects,
                 paths,
-                "已处理的问题记录",
+                f"{handled_label}的问题记录",
             )
             item.resolution = ResolutionType(resolution.resolution)
             item.note = resolution.note
@@ -430,7 +435,7 @@ async def _resolved_item(
         )
         if source is not None:
             base.title = source.title
-            base.summary = "已处理的问题来源"
+            base.summary = f"{handled_label}的问题来源"
             base.source_type = source.source_type
             base.content = source.content
             base.link_url = source.link_url
@@ -629,4 +634,3 @@ async def remove_resolution(
     await db.delete(resolution_row)
     await db.flush()
     return True
-

@@ -149,6 +149,7 @@ async def test_resolve_ignore_undo_and_idempotency(
     assert len(resolved) == 1
     assert resolved[0]["resolution"] == "resolved"
     assert resolved[0]["note"] == "已补条件"
+    assert resolved[0]["summary"] == "已解决的问题记录"
     assert resolved[0]["resolved_at"] is not None
     assert resolved[0]["target_id"] == entry_id
 
@@ -178,6 +179,7 @@ async def test_resolve_ignore_undo_and_idempotency(
     ).json()["findings"]
     assert len(rejected) == 1
     assert rejected[0]["resolution"] == "rejected"
+    assert rejected[0]["summary"] == "已拒绝的问题记录"
     assert (await client.delete(path)).json() == {"removed": True}
     open_findings = (await client.get("/api/review/findings")).json()["findings"]
     assert any(item["target_id"] == entry_id for item in open_findings)

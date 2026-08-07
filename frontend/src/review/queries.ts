@@ -26,6 +26,7 @@ export const reviewKeys = {
 export function useReviewFindings(
   status: ReviewStatus,
   findingType: ReviewFindingType | 'all',
+  enabled = true,
 ) {
   return useQuery({
     queryKey: reviewKeys.findings(status, findingType),
@@ -36,6 +37,7 @@ export function useReviewFindings(
           type: findingType === 'all' ? undefined : findingType,
         },
       }),
+    enabled,
   })
 }
 
