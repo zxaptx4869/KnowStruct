@@ -3417,6 +3417,13 @@ mark.search-highlight {
   }
 }
 
+.project-table .source-select-col,
+.project-table .source-select-cell {
+  width: 44px;
+  padding: 0;
+  text-align: center;
+}
+
 .source-select-col input,
 .source-select-cell input {
   width: 14px;
@@ -3424,10 +3431,6 @@ mark.search-highlight {
   margin: 0;
   accent-color: var(--color-primary);
   cursor: pointer;
-}
-
-.source-select-cell {
-  text-align: center;
 }
 
 .inline-notice {
@@ -3479,8 +3482,15 @@ mark.search-highlight {
   flex-basis: 100%;
 }
 
-.danger-button {
-  border-color: #e5b8b4;
+.batch-toolbar .danger-button {
+  border-color: var(--color-danger);
+  background: #fff;
+  color: var(--color-danger);
+}
+
+.batch-toolbar .danger-button:hover {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
   color: var(--color-danger);
 }
 
