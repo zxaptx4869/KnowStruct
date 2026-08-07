@@ -27,7 +27,7 @@ describe('HomePage project experience', () => {
 
     expect(await screen.findByRole('heading', { name: '还没有项目' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '创建项目' })).toBeInTheDocument()
-    expect(screen.getByText(/点击右上角「创建项目」开始/)).toBeInTheDocument()
+    expect(screen.getByText(/点击「创建项目」开始/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '创建第一个项目' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '前往采集箱' })).not.toBeInTheDocument()
   })

@@ -66,7 +66,15 @@ export default function HomePage() {
     <div className="projects-page">
       <header className="page-toolbar">
         <h1>项目</h1>
-        <button type="button" className="primary-button toolbar-button" onClick={() => setEditing('new')}><Plus size={16} />创建项目</button>
+        <button
+          type="button"
+          className="primary-button toolbar-button create-project-fab"
+          onClick={() => setEditing('new')}
+          aria-label="创建项目"
+        >
+          <Plus size={16} />
+          <span className="fab-label">创建项目</span>
+        </button>
       </header>
 
       {projectsQuery.isPending && <div className="state-panel" role="status"><span className="spin state-spinner" />正在加载项目</div>}
@@ -80,7 +88,7 @@ export default function HomePage() {
         <div className="empty-state">
           <div className="empty-icon"><FolderKanban size={28} /></div>
           <h2>还没有项目</h2>
-          <p>先建立一个知识主题，或从全局采集箱保存临时资料。点击右上角「创建项目」开始。</p>
+          <p>先建立一个知识主题，或从全局采集箱保存临时资料。点击「创建项目」开始。</p>
         </div>
       )}
       {projectsQuery.isSuccess && projects.length > 0 && (

@@ -1172,7 +1172,12 @@ export default function ProjectDetailPage() {
               <NodeRecordsSection projectId={id} nodeId={selectedNode.id} />
             </>
           ) : (
-            <section className="project-overview"><h2>{project.name}</h2><p>{project.goal || '还没有填写项目目标。'}</p><div className="overview-rule"><strong>{nodes.length} 个目录节点</strong><span>{nodes.length ? '从左侧选择节点查看或维护子目录。' : '创建第一个节点后，目录将在此处展开。'}</span></div></section>
+            <section className="project-overview">
+              <div className="overview-rule">
+                <strong>{nodes.length} 个目录节点</strong>
+                <span>{nodes.length ? '从左侧选择节点查看或维护子目录。' : '创建第一个节点后，目录将在此处展开。'}</span>
+              </div>
+            </section>
           )}
         </main>
       </div>
@@ -1194,10 +1199,10 @@ export default function ProjectDetailPage() {
             >
               未归档记录 {project.unarchived_entry_count} 条
             </button>
-            <section className="mobile-node-head">
-              <h2>
-                {selectedNode?.name ?? project.name}
-                {selectedNode && (
+            {selectedNode && (
+              <section className="mobile-node-head">
+                <h2>
+                  {selectedNode.name}
                   <button
                     type="button"
                     className="icon-action node-edit-inline"
@@ -1206,17 +1211,13 @@ export default function ProjectDetailPage() {
                   >
                     <Settings2 size={16} />
                   </button>
-                )}
-              </h2>
-              {(selectedNode ? selectedNode.description : project.goal) && (
-                <p>{selectedNode ? selectedNode.description : project.goal}</p>
-              )}
-              {selectedNode && (
+                </h2>
+                {selectedNode.description && <p>{selectedNode.description}</p>}
                 <div className="mobile-node-actions">
                   <NodeMenu node={selectedNode} {...nodeActions(selectedNode)} ariaLabel="节点操作" />
                 </div>
-              )}
-            </section>
+              </section>
+            )}
             <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} {selectedNode ? '个子节点' : '个一级目录'}</span></div><button type="button" className="icon-action" aria-label={selectedNode ? '创建子节点' : '创建根节点'} onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
               {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
             </section>

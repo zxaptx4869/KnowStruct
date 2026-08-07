@@ -1045,6 +1045,24 @@ a {
     min-height: 40px;
   }
 
+  .create-project-fab {
+    position: fixed;
+    top: auto;
+    right: 18px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+    width: 52px;
+    height: 52px;
+    min-height: 52px;
+    border-radius: 999px;
+    padding: 0;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
+    z-index: 30;
+  }
+
+  .create-project-fab .fab-label {
+    display: none;
+  }
+
   .page-toolbar:not(.confirm-toolbar) h1,
   .page-toolbar:not(.confirm-toolbar) p,
   .page-heading h1 {
