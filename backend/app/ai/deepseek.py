@@ -9,7 +9,7 @@ from app.ai.base import (
     OutlineNode,
     ReviewResult,
 )
-from app.ai.openai_compat import request_json_candidates
+from app.ai.openai_compat import request_json_candidates, request_json_review
 
 
 class DeepSeekProvider(AIProvider):
@@ -57,7 +57,7 @@ class DeepSeekProvider(AIProvider):
         raise AIProviderError("AI 归档建议能力尚未实现")
 
     async def review(self, entries: list[dict]) -> list[ReviewResult]:
-        raise AIProviderError("AI Review 能力尚未实现")
+        return await request_json_review(self._client, self.model, entries)
 
     async def expand_node(
         self, node_title: str, context: str

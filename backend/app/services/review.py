@@ -7,8 +7,9 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.errors import DomainError, ResourceNotFoundError
+from app.api.errors import ConflictError, DomainError, ResourceNotFoundError
 from app.models import (
+    AiFindingStatus,
     Entry,
     EntrySource,
     EntryStatus,
@@ -19,6 +20,7 @@ from app.models import (
     Node,
     Project,
     ResolutionType,
+    ReviewAiFinding,
     ReviewResolution,
     Source,
 )
@@ -297,8 +299,96 @@ async def compute_open_findings(
         items.extend(await _missing_conditions_items(db, workspace_id, resolved))
     if finding_type is None or finding_type == FindingType.LONG_PENDING:
         items.extend(await _long_pending_items(db, workspace_id, resolved))
+    if finding_type is None or finding_type in (
+        FindingType.DUPLICATE,
+        FindingType.CONFLICT,
+    ):
+        items.extend(await _ai_open_items(db, workspace_id, resolved, finding_type))
     items.sort(key=lambda item: item.created_at or NAIVE_EPOCH, reverse=True)
     return items[:FINDINGS_LIMIT]
+
+
+async def _ai_open_items(
+    db: AsyncSession,
+    workspace_id: str,
+    resolved: set[tuple[str, str, str]],
+    finding_type: FindingType | None,
+) -> list[ReviewFindingItem]:
+    stmt = select(ReviewAiFinding).where(
+        ReviewAiFinding.workspace_id == workspace_id,
+        ReviewAiFinding.status == AiFindingStatus.OPEN.value,
+    )
+    if finding_type is not None:
+        stmt = stmt.where(ReviewAiFinding.review_type == finding_type.value)
+    findings = (await db.scalars(stmt)).all()
+    if not findings:
+        return []
+
+    entry_ids = {
+        entry_id
+        for finding in findings
+        for entry_id in (finding.entry_a_id, finding.entry_b_id)
+    }
+    entries = {
+        entry.id: entry
+        for entry in (
+            await db.scalars(
+                select(Entry).where(
+                    Entry.id.in_(entry_ids),
+                    Entry.workspace_id == workspace_id,
+                )
+            )
+        ).all()
+    }
+    projects, paths = await _load_projects_and_paths(
+        db,
+        workspace_id,
+        {entry.project_id for entry in entries.values()},
+    )
+
+    items: list[ReviewFindingItem] = []
+    for finding in findings:
+        key = (
+            finding.review_type,
+            FindingTargetType.AI_FINDING.value,
+            finding.id,
+        )
+        if key in resolved:
+            continue
+        entry_a = entries.get(finding.entry_a_id)
+        entry_b = entries.get(finding.entry_b_id)
+        if entry_a is None or entry_b is None:
+            continue
+        items.append(
+            ReviewFindingItem(
+                finding_type=FindingType(finding.review_type),
+                target_type=FindingTargetType.AI_FINDING,
+                target_id=finding.id,
+                title=f"{entry_a.title} vs {entry_b.title}",
+                summary=finding.description,
+                created_at=finding.created_at,
+                entry_type=entry_a.entry_type,
+                content=entry_a.content,
+                conditions=entry_a.applicable_conditions,
+                project_id=entry_a.project_id,
+                project_name=projects.get(entry_a.project_id),
+                node_id=entry_a.node_id,
+                node_path=(
+                    paths.get(entry_a.node_id or "", [])
+                    if entry_a.node_id
+                    else []
+                ),
+                entry_b_id=entry_b.id,
+                entry_b_title=entry_b.title,
+                entry_b_content=entry_b.content,
+                entry_b_project_id=entry_b.project_id,
+                entry_b_node_id=entry_b.node_id,
+                ai_description=finding.description,
+                ai_suggestion=finding.suggestion,
+                ai_severity=finding.severity,
+            )
+        )
+    return items
 
 
 async def _resolved_item(
@@ -318,6 +408,55 @@ async def _resolved_item(
         note=resolution.note,
         resolved_at=resolution.created_at,
     )
+    if target_type == FindingTargetType.AI_FINDING:
+        finding = await db.scalar(
+            select(ReviewAiFinding).where(
+                ReviewAiFinding.id == resolution.target_id,
+                ReviewAiFinding.workspace_id == workspace_id,
+            )
+        )
+        if finding is not None:
+            entry_a = await db.scalar(
+                select(Entry).where(
+                    Entry.id == finding.entry_a_id,
+                    Entry.workspace_id == workspace_id,
+                )
+            )
+            entry_b = await db.scalar(
+                select(Entry).where(
+                    Entry.id == finding.entry_b_id,
+                    Entry.workspace_id == workspace_id,
+                )
+            )
+            if entry_a is not None and entry_b is not None:
+                projects, paths = await _load_projects_and_paths(
+                    db,
+                    workspace_id,
+                    {entry_a.project_id},
+                )
+                base.finding_type = FindingType(finding.review_type)
+                base.title = f"{entry_a.title} vs {entry_b.title}"
+                base.summary = finding.description
+                base.entry_type = entry_a.entry_type
+                base.content = entry_a.content
+                base.conditions = entry_a.applicable_conditions
+                base.project_id = entry_a.project_id
+                base.project_name = projects.get(entry_a.project_id)
+                base.node_id = entry_a.node_id
+                base.node_path = (
+                    paths.get(entry_a.node_id or "", [])
+                    if entry_a.node_id
+                    else []
+                )
+                base.entry_b_id = entry_b.id
+                base.entry_b_title = entry_b.title
+                base.entry_b_content = entry_b.content
+                base.entry_b_project_id = entry_b.project_id
+                base.entry_b_node_id = entry_b.node_id
+                base.ai_description = finding.description
+                base.ai_suggestion = finding.suggestion
+                base.ai_severity = finding.severity
+        return base
     if target_type == FindingTargetType.ENTRY:
         entry = await db.scalar(
             select(Entry).where(
@@ -388,7 +527,14 @@ async def _ensure_target(
     target_type: FindingTargetType,
     target_id: str,
 ) -> None:
-    if target_type == FindingTargetType.ENTRY:
+    if target_type == FindingTargetType.AI_FINDING:
+        exists = await db.scalar(
+            select(ReviewAiFinding.id).where(
+                ReviewAiFinding.id == target_id,
+                ReviewAiFinding.workspace_id == workspace_id,
+            )
+        )
+    elif target_type == FindingTargetType.ENTRY:
         exists = await db.scalar(
             select(Entry.id).where(
                 Entry.id == target_id,
@@ -413,6 +559,21 @@ async def _finding_exists(
     target_type: FindingTargetType,
     target_id: str,
 ) -> bool:
+    if target_type == FindingTargetType.AI_FINDING:
+        if finding_type not in (
+            FindingType.DUPLICATE,
+            FindingType.CONFLICT,
+        ):
+            return False
+        finding = await db.scalar(
+            select(ReviewAiFinding).where(
+                ReviewAiFinding.id == target_id,
+                ReviewAiFinding.workspace_id == workspace_id,
+                ReviewAiFinding.status == AiFindingStatus.OPEN.value,
+            )
+        )
+        return finding is not None and finding.review_type == finding_type.value
+
     if target_type == FindingTargetType.ENTRY:
         entry = await db.scalar(
             select(Entry).where(
@@ -515,3 +676,35 @@ async def remove_resolution(
     await db.delete(resolution_row)
     await db.flush()
     return True
+
+
+async def decide_ai_finding(
+    db: AsyncSession,
+    workspace_id: str,
+    finding_id: str,
+    decision: str,
+) -> str:
+    """确认或拒绝 AI 候选发现；幂等，状态变更不可逆。"""
+    finding = await db.scalar(
+        select(ReviewAiFinding).where(
+            ReviewAiFinding.id == finding_id,
+            ReviewAiFinding.workspace_id == workspace_id,
+        )
+    )
+    if finding is None:
+        raise ResourceNotFoundError("finding")
+    target = (
+        AiFindingStatus.OPEN.value
+        if decision == "confirmed"
+        else AiFindingStatus.REJECTED.value
+    )
+    if finding.status == target:
+        return target
+    if finding.status != AiFindingStatus.CANDIDATE.value:
+        raise ConflictError(
+            "invalid_finding_transition",
+            "该候选已处理，不能再次决定",
+        )
+    finding.status = target
+    await db.flush()
+    return target

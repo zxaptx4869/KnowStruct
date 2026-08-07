@@ -14,14 +14,22 @@ from app.models.capture import (
 from app.models.entries import Entry, EntrySource, EntryStatus, EntryType
 from app.models.projects import Node, Project, ProjectStatus
 from app.models.review import (
+    AiFindingStatus,
+    AiReviewType,
     FindingTargetType,
     FindingType,
     ResolutionType,
+    ReviewAiFinding,
     ReviewResolution,
+    ReviewScan,
+    ScanScopeType,
+    ScanStatus,
 )
 
 __all__ = [
+    "AiFindingStatus",
     "AiProviderConfig",
+    "AiReviewType",
     "AuthSession",
     "Base",
     "Entry",
@@ -37,7 +45,11 @@ __all__ = [
     "Project",
     "ProjectStatus",
     "ResolutionType",
+    "ReviewAiFinding",
     "ReviewResolution",
+    "ReviewScan",
+    "ScanScopeType",
+    "ScanStatus",
     "Source",
     "SourceAttachment",
     "SourceContentStatus",

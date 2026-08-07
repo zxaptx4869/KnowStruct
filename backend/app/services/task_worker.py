@@ -11,12 +11,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import AIProvider, get_ai_provider
 from app.config import get_settings
 from app.database import AsyncSessionFactory
-from app.models import ProcessingTask, Source, TaskStage, TaskStatus
+from app.models import (
+    ProcessingTask,
+    ReviewScan,
+    ScanStatus,
+    Source,
+    TaskStage,
+    TaskStatus,
+)
 from app.services.inbox import (
     process_source_extraction,
     process_source_ocr,
     utc_now,
 )
+from app.services.review_scan import run_scan
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +72,77 @@ async def recover_stale_tasks(db: AsyncSession, stale_seconds: int) -> int:
     )
     await db.commit()
     return result.rowcount or 0
+
+
+async def claim_next_scan(db: AsyncSession) -> ReviewScan | None:
+    """乐观领取最旧的待处理扫描；未领取成功返回 None。"""
+    scan = await db.scalar(
+        select(ReviewScan)
+        .where(ReviewScan.status == ScanStatus.PENDING.value)
+        .order_by(ReviewScan.created_at, ReviewScan.id)
+        .limit(1)
+    )
+    if scan is None:
+        return None
+    result = await db.execute(
+        update(ReviewScan)
+        .where(
+            ReviewScan.id == scan.id,
+            ReviewScan.status == ScanStatus.PENDING.value,
+        )
+        .values(status=ScanStatus.RUNNING.value, claimed_at=utc_now())
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        return None
+    await db.commit()
+    return scan
+
+
+async def recover_stale_scans(db: AsyncSession, stale_seconds: int) -> int:
+    """把超时未完成的 running 扫描重置回 pending。"""
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(
+        seconds=stale_seconds
+    )
+    result = await db.execute(
+        update(ReviewScan)
+        .where(
+            ReviewScan.status == ScanStatus.RUNNING.value,
+            ReviewScan.claimed_at < cutoff,
+        )
+        .values(
+            status=ScanStatus.PENDING.value,
+            claimed_at=None,
+        )
+    )
+    await db.commit()
+    return result.rowcount or 0
+
+
+async def process_next_scan(
+    db: AsyncSession,
+    provider: AIProvider | None = None,
+) -> bool:
+    """处理至多一个扫描；返回是否处理了扫描。"""
+    scan = await claim_next_scan(db)
+    if scan is None:
+        return False
+    scan_id = scan.id
+    try:
+        provider = provider or await get_ai_provider(db, scan.workspace_id)
+        await run_scan(db, scan, provider)
+        await db.commit()
+        logger.info("review scan %s succeeded", scan_id)
+    except Exception as exc:  # noqa: BLE001 - 任何失败都落库并可重试
+        await db.rollback()
+        failed_scan = await db.get(ReviewScan, scan_id)
+        if failed_scan is not None:
+            failed_scan.status = ScanStatus.FAILED.value
+            failed_scan.last_error = str(exc)[:2000]
+            failed_scan.finished_at = utc_now()
+            await db.commit()
+        logger.warning("review scan %s failed: %s", scan_id, exc)
+    return True
 
 
 async def process_next_task(
@@ -114,8 +193,11 @@ async def run_task_worker() -> None:
                 now_monotonic = time.monotonic()
                 if now_monotonic - last_recovery >= 30:
                     await recover_stale_tasks(db, settings.TASK_STALE_SECONDS)
+                    await recover_stale_scans(db, settings.TASK_STALE_SECONDS)
                     last_recovery = now_monotonic
                 processed = await process_next_task(db)
+                if not processed:
+                    processed = await process_next_scan(db)
             if not processed:
                 await asyncio.sleep(1)
         except asyncio.CancelledError:

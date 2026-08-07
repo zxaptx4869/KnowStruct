@@ -2,19 +2,32 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Play,
   RefreshCw,
   Undo2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
+import { useAuth } from '../auth/useAuth'
 import { useToast } from '../components/useToast'
 import { entryTypeLabels, sourceTypeLabels } from '../inbox/labels'
 import type { EntryType, SourceType } from '../inbox/types'
-import { useReviewFindings, useReviewMutations } from '../review/queries'
+import { useNodes, useProjects } from '../projects/queries'
+import {
+  useAiDecision,
+  useReviewFindings,
+  useReviewMutations,
+  useReviewScan,
+  useScanCandidates,
+  useStartScan,
+} from '../review/queries'
+import { readScope, writeScope } from '../review/scope'
 import type {
+  ReviewCandidate,
   ReviewFinding,
   ReviewFindingType,
+  ReviewScopeType,
   ReviewStatus,
 } from '../review/types'
 
@@ -22,6 +35,8 @@ const findingTypeLabels: Record<ReviewFindingType, string> = {
   missing_source: '缺来源',
   missing_conditions: '缺适用条件',
   long_pending: '长期待确认',
+  duplicate: '疑似重复',
+  conflict: '疑似冲突',
 }
 
 const findingTypeOptions: Array<[ReviewFindingType | 'all', string]> = [
@@ -29,7 +44,15 @@ const findingTypeOptions: Array<[ReviewFindingType | 'all', string]> = [
   ['missing_source', '缺来源'],
   ['missing_conditions', '缺适用条件'],
   ['long_pending', '长期待确认'],
+  ['duplicate', '疑似重复'],
+  ['conflict', '疑似冲突'],
 ]
+
+const severityLabels: Record<string, string> = {
+  info: '提示',
+  warning: '警告',
+  error: '严重',
+}
 
 function findingKey(item: ReviewFinding): string {
   return `${item.finding_type}:${item.target_type}:${item.target_id}`
@@ -39,18 +62,88 @@ function formatTime(value: string | null | undefined): string {
   return value ? dayjs(value).format('MM-DD HH:mm') : ''
 }
 
+function entryJumpPath(
+  projectId?: string | null,
+  nodeId?: string | null,
+): string | null {
+  if (!projectId) return null
+  return nodeId
+    ? `/projects/${projectId}/nodes/${nodeId}`
+    : `/projects/${projectId}`
+}
+
 export default function ReviewPage() {
   const navigate = useNavigate()
   const toast = useToast()
+  const { user } = useAuth()
+  const userId = user?.id ?? ''
+  const initialScope = readScope(userId)
   const [status, setStatus] = useState<ReviewStatus>('open')
   const [findingType, setFindingType] = useState<ReviewFindingType | 'all'>('all')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [scopeType, setScopeType] = useState<ReviewScopeType>(
+    initialScope.scope_type,
+  )
+  const [projectId, setProjectId] = useState<string | null>(
+    initialScope.project_id ?? null,
+  )
+  const [nodeId, setNodeId] = useState<string | null>(
+    initialScope.node_id ?? null,
+  )
+  const [activeScanId, setActiveScanId] = useState<string | null>(null)
   const { setResolution, undoResolution } = useReviewMutations()
+  const startScan = useStartScan()
+  const scanQuery = useReviewScan(activeScanId)
+  const candidatesQuery = useScanCandidates(
+    activeScanId,
+    scanQuery.data?.status === 'succeeded',
+  )
+  const aiDecision = useAiDecision()
+  const projectsQuery = useProjects()
+  const nodesQuery = useNodes(projectId ?? '')
 
   const query = useReviewFindings(status, findingType)
   const findings = query.data?.findings ?? []
+  const candidates = candidatesQuery.data?.candidates ?? []
   const mutating = setResolution.isPending || undoResolution.isPending
+  const scan = scanQuery.data
+  const scanActive =
+    scan?.status === 'pending' || scan?.status === 'running'
+
+  function persistScope(next: {
+    scope_type: ReviewScopeType
+    project_id?: string | null
+    node_id?: string | null
+  }) {
+    writeScope(userId, {
+      scope_type: next.scope_type,
+      project_id: next.project_id ?? null,
+      node_id: next.node_id ?? null,
+    })
+  }
+
+  function handleScopeTypeChange(value: ReviewScopeType) {
+    setScopeType(value)
+    setProjectId(null)
+    setNodeId(null)
+    persistScope({ scope_type: value, project_id: null, node_id: null })
+  }
+
+  function handleProjectChange(value: string) {
+    setProjectId(value || null)
+    setNodeId(null)
+    persistScope({ scope_type: scopeType, project_id: value || null, node_id: null })
+  }
+
+  function handleNodeChange(value: string) {
+    setNodeId(value || null)
+    persistScope({
+      scope_type: scopeType,
+      project_id: projectId,
+      node_id: value || null,
+    })
+  }
 
   function toggle(key: string) {
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -115,11 +208,185 @@ export default function ReviewPage() {
     }
   }
 
+  async function handleStartScan() {
+    if (scopeType === 'project' && !projectId) {
+      toast.error('请选择要审查的项目')
+      return
+    }
+    if (scopeType === 'node' && (!projectId || !nodeId)) {
+      toast.error('请选择要审查的项目与节点')
+      return
+    }
+    try {
+      const scan = await startScan.mutateAsync({
+        scope_type: scopeType,
+        project_id: projectId,
+        node_id: nodeId,
+      })
+      setActiveScanId(scan.id)
+      toast.success('已开始审查')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '发起扫描失败，请重试')
+    }
+  }
+
+  async function handleCandidateDecision(
+    candidate: ReviewCandidate,
+    decision: 'confirmed' | 'rejected',
+  ) {
+    try {
+      await aiDecision.mutateAsync({ findingId: candidate.id, decision })
+      toast.success(
+        decision === 'confirmed'
+          ? '已确认为问题，进入待处理'
+          : '已拒绝该发现',
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '操作失败，请重试')
+    }
+  }
+
   return (
     <div className="projects-page review-page">
       <header className="page-toolbar">
         <h1>Review</h1>
       </header>
+
+      <div className="review-scan-bar">
+        <div className="review-scope">
+          <label htmlFor="review-scope-type">审查范围</label>
+          <select
+            id="review-scope-type"
+            value={scopeType}
+            onChange={(event) =>
+              handleScopeTypeChange(event.target.value as ReviewScopeType)
+            }
+          >
+            <option value="workspace">全部工作区</option>
+            <option value="project">指定项目</option>
+            <option value="node">指定节点</option>
+          </select>
+          {scopeType !== 'workspace' && (
+            <select
+              aria-label="选择项目"
+              value={projectId ?? ''}
+              onChange={(event) => handleProjectChange(event.target.value)}
+            >
+              <option value="">选择项目</option>
+              {projectsQuery.data?.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {scopeType === 'node' && (
+            <select
+              aria-label="选择节点"
+              value={nodeId ?? ''}
+              onChange={(event) => handleNodeChange(event.target.value)}
+            >
+              <option value="">选择节点</option>
+              {nodesQuery.data?.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {node.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn primary review-start-scan"
+          disabled={startScan.isPending || scanActive}
+          onClick={() => void handleStartScan()}
+        >
+          <Play size={14} />
+          {scanActive ? '扫描中' : '开始审查'}
+        </button>
+      </div>
+
+      {scan && (
+        <div
+          className={`state-panel review-scan-status${scan.status === 'failed' ? ' state-error' : ''}`}
+          role="status"
+        >
+          {scanActive ? (
+            <>
+              <span className="spin state-spinner" />
+              正在扫描该范围，完成后将展示候选发现
+            </>
+          ) : scan.status === 'failed' ? (
+            <>
+              <strong>扫描失败</strong>
+              <span>{scan.last_error ?? '请重试'}</span>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void handleStartScan()}
+              >
+                <RefreshCw size={16} />
+                重新扫描
+              </button>
+            </>
+          ) : (
+            <span>
+              扫描完成：发现 {scan.findings_count} 条候选
+              {scan.truncated ? '（本次达到上限，建议缩小范围后重扫）' : ''}
+            </span>
+          )}
+        </div>
+      )}
+
+      {candidates.length > 0 && (
+        <section className="review-candidates">
+          <header className="review-section-head">
+            <h2>候选发现</h2>
+            <span>{candidates.length} 条，需逐条确认</span>
+          </header>
+          <div className="review-list">
+            {candidates.map((candidate) => (
+              <article key={candidate.id} className="review-card">
+                <header className="review-card-head">
+                  <span className="badge">
+                    {findingTypeLabels[candidate.review_type]}
+                  </span>
+                  <h3>
+                    {candidate.entry_a.title} vs {candidate.entry_b.title}
+                  </h3>
+                  <span className={`review-severity severity-${candidate.severity}`}>
+                    {severityLabels[candidate.severity] ?? candidate.severity}
+                  </span>
+                </header>
+                <p className="review-card-summary">{candidate.description}</p>
+                {candidate.suggestion && (
+                  <p className="review-candidate-suggestion">
+                    建议：{candidate.suggestion}
+                  </p>
+                )}
+                <div className="review-card-actions">
+                  <button
+                    type="button"
+                    className="btn small primary"
+                    disabled={aiDecision.isPending}
+                    onClick={() => void handleCandidateDecision(candidate, 'confirmed')}
+                  >
+                    确认为问题
+                  </button>
+                  <button
+                    type="button"
+                    className="btn small"
+                    disabled={aiDecision.isPending}
+                    onClick={() => void handleCandidateDecision(candidate, 'rejected')}
+                  >
+                    拒绝
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="review-tabs" role="tablist" aria-label="Review 视图">
         <button
@@ -182,7 +449,7 @@ export default function ReviewPage() {
           <strong>{status === 'open' ? '没有待处理问题' : '还没有处理记录'}</strong>
           <span>
             {status === 'open'
-              ? '知识库的缺来源、缺适用条件与长期待确认检查均通过'
+              ? '知识库的缺来源、缺适用条件、长期待确认与 AI 审查检查均通过'
               : '处理过的问题会显示在这里，可随时撤销'}
           </span>
         </div>
@@ -193,19 +460,24 @@ export default function ReviewPage() {
           {findings.map((item) => {
             const key = findingKey(item)
             const isExpanded = Boolean(expanded[key])
-            const entryJump =
-              item.target_type === 'entry'
-                ? item.node_id
-                  ? `/projects/${item.project_id}/nodes/${item.node_id}`
-                  : item.project_id
-                    ? `/projects/${item.project_id}`
-                    : null
-                : null
+            const isAiFinding = item.target_type === 'ai_finding'
+            const entryAJump = isAiFinding
+              ? entryJumpPath(item.project_id, item.node_id)
+              : entryJumpPath(item.project_id, item.node_id)
+            const entryBJump = entryJumpPath(
+              item.entry_b_project_id,
+              item.entry_b_node_id,
+            )
             return (
               <article key={key} className="review-card">
                 <header className="review-card-head">
                   <span className="badge">{findingTypeLabels[item.finding_type]}</span>
                   <h3>{item.title}</h3>
+                  {item.ai_severity && (
+                    <span className={`review-severity severity-${item.ai_severity}`}>
+                      {severityLabels[item.ai_severity] ?? item.ai_severity}
+                    </span>
+                  )}
                   <span className="review-card-time">
                     {formatTime(status === 'open' ? item.created_at : item.resolved_at)}
                   </span>
@@ -256,7 +528,56 @@ export default function ReviewPage() {
 
                 {isExpanded && (
                   <div className="review-detail">
-                    {item.target_type === 'entry' ? (
+                    {isAiFinding ? (
+                      <>
+                        <div className="review-detail-row">
+                          <span>AI 说明</span>
+                          <p>{item.ai_description ?? item.summary}</p>
+                        </div>
+                        {item.ai_suggestion && (
+                          <div className="review-detail-row">
+                            <span>建议</span>
+                            <p>{item.ai_suggestion}</p>
+                          </div>
+                        )}
+                        <div className="review-detail-row">
+                          <span>记录 A</span>
+                          <p>
+                            {item.title.split(' vs ')[0]}
+                            {'\n'}
+                            {item.content}
+                          </p>
+                        </div>
+                        {entryAJump && (
+                          <button
+                            type="button"
+                            className="btn small"
+                            onClick={() => navigate(entryAJump)}
+                          >
+                            查看记录 A
+                            <ExternalLink size={13} />
+                          </button>
+                        )}
+                        <div className="review-detail-row">
+                          <span>记录 B</span>
+                          <p>
+                            {item.entry_b_title ?? ''}
+                            {'\n'}
+                            {item.entry_b_content ?? ''}
+                          </p>
+                        </div>
+                        {entryBJump && (
+                          <button
+                            type="button"
+                            className="btn small"
+                            onClick={() => navigate(entryBJump)}
+                          >
+                            查看记录 B
+                            <ExternalLink size={13} />
+                          </button>
+                        )}
+                      </>
+                    ) : item.target_type === 'entry' ? (
                       <>
                         <div className="review-detail-row">
                           <span>记录类型</span>
@@ -285,11 +606,11 @@ export default function ReviewPage() {
                               : ''}
                           </strong>
                         </div>
-                        {entryJump && (
+                        {entryAJump && (
                           <button
                             type="button"
                             className="btn small"
-                            onClick={() => navigate(entryJump)}
+                            onClick={() => navigate(entryAJump)}
                           >
                             查看记录
                             <ExternalLink size={13} />
