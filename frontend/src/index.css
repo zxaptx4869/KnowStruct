@@ -1039,6 +1039,12 @@ a {
     font-size: 12px;
   }
 
+  .capture-form .toolbar-button {
+    position: static;
+    width: 100%;
+    min-height: 40px;
+  }
+
   .dialog-backdrop {
     align-items: end;
     padding: 0;
