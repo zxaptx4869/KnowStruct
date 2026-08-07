@@ -15,6 +15,7 @@ import type {
 
 export const reviewKeys = {
   all: ['review'] as const,
+  findingsBase: ['review', 'findings'] as const,
   findings: (status: ReviewStatus, findingType: ReviewFindingType | 'all') =>
     ['review', 'findings', status, findingType] as const,
   scans: ['review', 'scans'] as const,

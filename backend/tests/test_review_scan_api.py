@@ -384,7 +384,7 @@ async def test_rescan_resurfaces_resolved_and_ignored_findings(
         item["target_type"] == "ai_finding" for item in open_findings
     )
 
-    await _start_scan(client, scope_type="workspace")
+    scan_2 = await _start_scan(client, scope_type="workspace")
     await process_next_scan(db, ReviewFakeProvider(results=results))
     resolution_count = await db.scalar(
         select(func.count(ReviewResolution.id)).where(
@@ -392,6 +392,9 @@ async def test_rescan_resurfaces_resolved_and_ignored_findings(
         )
     )
     assert resolution_count == 0
+    assert (
+        await client.get(f"/api/review/scans/{scan_2['id']}")
+    ).json()["resurfaced_count"] == 1
     open_findings = (await client.get("/api/review/findings")).json()["findings"]
     assert any(
         item["target_type"] == "ai_finding"
@@ -443,7 +446,7 @@ async def test_rescan_resurfaces_only_within_scope(
     await client.post(resolution_path, json={"resolution": "resolved"})
 
     # 扫描不覆盖该节点的范围 → 不重新浮现
-    await _start_scan(
+    scan_b = await _start_scan(
         client,
         scope_type="node",
         project_id=project["id"],
@@ -456,9 +459,12 @@ async def test_rescan_resurfaces_only_within_scope(
         )
     )
     assert resolution_count == 1
+    assert (
+        await client.get(f"/api/review/scans/{scan_b['id']}")
+    ).json()["resurfaced_count"] == 0
 
     # 扫描覆盖该节点 → 重新浮现
-    await _start_scan(
+    scan_a = await _start_scan(
         client,
         scope_type="node",
         project_id=project["id"],
@@ -471,6 +477,9 @@ async def test_rescan_resurfaces_only_within_scope(
         )
     )
     assert resolution_count == 0
+    assert (
+        await client.get(f"/api/review/scans/{scan_a['id']}")
+    ).json()["resurfaced_count"] == 1
     open_findings = (await client.get("/api/review/findings")).json()["findings"]
     assert any(
         item["target_type"] == "ai_finding"

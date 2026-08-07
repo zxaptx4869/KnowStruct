@@ -148,6 +148,12 @@ class ReviewScan(UUIDMixin, TimestampMixin, Base):
         default=0,
         server_default="0",
     )
+    resurfaced_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
 
 
 class ReviewAiFinding(UUIDMixin, TimestampMixin, Base):

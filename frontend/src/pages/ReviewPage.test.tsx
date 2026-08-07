@@ -169,6 +169,7 @@ function reviewFetchMock(
           status: 'pending',
           truncated: false,
           findings_count: 0,
+          resurfaced_count: 0,
           last_error: null,
           started_at: null,
           created_at: '2026-08-07T10:00:00',
@@ -441,9 +442,15 @@ describe('ReviewPage', () => {
     expect(String(scanCall![1]?.body)).toContain('"scope_type":"project"')
 
     expect(
-      await screen.findByText('扫描完成：发现 1 条候选', {}, { timeout: 5000 }),
+      await screen.findByText('扫描完成：发现 1 条新候选', {}, { timeout: 5000 }),
     ).toBeInTheDocument()
     expect(await screen.findByText('两条记录语义重复，建议合并')).toBeInTheDocument()
+    const findingsCalls = fetchMock.mock.calls.filter(
+      ([url]) =>
+        String(url).includes('/api/review/findings') &&
+        String(url).includes('status=open'),
+    )
+    expect(findingsCalls.length).toBeGreaterThanOrEqual(2)
 
     await userEvent.click(screen.getByRole('button', { name: '确认为问题' }))
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式 vs 零嵌冰箱侧边预留尺寸' })).toBeInTheDocument()
@@ -456,7 +463,7 @@ describe('ReviewPage', () => {
     await selectProjectScope()
 
     await userEvent.click(screen.getByRole('button', { name: '开始审查' }))
-    await screen.findByText('扫描完成：发现 1 条候选', {}, { timeout: 5000 })
+    await screen.findByText('扫描完成：发现 1 条新候选', {}, { timeout: 5000 })
     await screen.findByText('两条记录语义重复，建议合并')
     await userEvent.click(screen.getByRole('button', { name: '拒绝' }))
 
@@ -473,6 +480,7 @@ describe('ReviewPage', () => {
         status: 'pending',
         truncated: false,
         findings_count: 0,
+        resurfaced_count: 0,
         last_error: null,
         started_at: null,
         created_at: '2026-08-07T10:00:00',
@@ -495,6 +503,7 @@ describe('ReviewPage', () => {
         status: 'succeeded',
         truncated: false,
         findings_count: 1,
+        resurfaced_count: 2,
         last_error: null,
         started_at: '2026-08-07T10:00:00',
         created_at: '2026-08-07T10:00:00',
@@ -503,7 +512,8 @@ describe('ReviewPage', () => {
     })
     renderReviewPage()
 
-    expect(await screen.findByText('扫描完成：发现 1 条候选')).toBeInTheDocument()
+    expect(await screen.findByText(/扫描完成：发现 1 条新候选/)).toBeInTheDocument()
+    expect(await screen.findByText(/2 条已处理问题已重新浮现/)).toBeInTheDocument()
     expect(await screen.findByText('两条记录语义重复，建议合并')).toBeInTheDocument()
   })
 

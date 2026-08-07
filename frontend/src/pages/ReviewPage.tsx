@@ -6,8 +6,9 @@ import {
   RefreshCw,
   Undo2,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { useAuth } from '../auth/useAuth'
 import { useToast } from '../components/useToast'
@@ -23,6 +24,7 @@ import {
   useScanCandidates,
   useStartScan,
 } from '../review/queries'
+import { reviewKeys } from '../review/queries'
 import { readScope, writeScope } from '../review/scope'
 import type {
   ReviewCandidate,
@@ -81,6 +83,7 @@ function entryJumpPath(
 export default function ReviewPage() {
   const navigate = useNavigate()
   const toast = useToast()
+  const queryClient = useQueryClient()
   const { user } = useAuth()
   const userId = user?.id ?? ''
   const initialScope = readScope(userId)
@@ -112,6 +115,15 @@ export default function ReviewPage() {
   const scan = scanQuery.data
   const scanActive =
     scan?.status === 'pending' || scan?.status === 'running'
+  const prevScanStatusRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const status = scan?.status ?? null
+    if (status === 'succeeded' && prevScanStatusRef.current !== 'succeeded') {
+      void queryClient.invalidateQueries({ queryKey: reviewKeys.findingsBase })
+    }
+    prevScanStatusRef.current = status
+  }, [scan?.status, queryClient])
 
   useEffect(() => {
     if (!activeScanId && latestScanId) {
@@ -267,7 +279,10 @@ export default function ReviewPage() {
             </>
           ) : (
             <span>
-              扫描完成：发现 {scan.findings_count} 条候选
+              扫描完成：发现 {scan.findings_count} 条新候选
+              {scan.resurfaced_count > 0
+                ? `，${scan.resurfaced_count} 条已处理问题已重新浮现`
+                : ''}
               {scan.truncated ? '（本次达到上限，建议缩小范围后重扫）' : ''}
             </span>
           )}

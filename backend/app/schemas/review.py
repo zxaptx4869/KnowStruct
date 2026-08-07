@@ -82,6 +82,7 @@ class ReviewScanResponse(BaseModel):
     status: str
     truncated: bool
     findings_count: int
+    resurfaced_count: int
     last_error: str | None
     started_at: datetime | None
     created_at: datetime | None

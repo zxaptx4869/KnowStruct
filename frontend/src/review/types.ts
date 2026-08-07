@@ -68,6 +68,7 @@ export interface ReviewScan {
   status: 'pending' | 'running' | 'succeeded' | 'failed'
   truncated: boolean
   findings_count: number
+  resurfaced_count: number
   last_error: string | null
   started_at: string | null
   created_at: string | null

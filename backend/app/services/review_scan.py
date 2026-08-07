@@ -251,7 +251,11 @@ async def run_scan(
             results,
         )
 
-    await _resurface_handled_in_scope(db, scan.workspace_id, entries)
+    scan.resurfaced_count = await _resurface_handled_in_scope(
+        db,
+        scan.workspace_id,
+        entries,
+    )
 
     scan.status = ScanStatus.SUCCEEDED.value
     scan.findings_count = findings_count
