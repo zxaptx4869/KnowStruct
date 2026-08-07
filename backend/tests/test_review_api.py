@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import delete, func, select
@@ -8,40 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     Entry,
     EntrySource,
-    Extraction,
-    ExtractionStatus,
     Project,
     ReviewResolution,
     Source,
 )
 from app.services.accounts import create_account
-from app.services.review import utc_now
-from tests.test_inbox_api import capture, create_project, login_owner
+from tests.test_inbox_api import create_project, login_owner
 from tests.test_node_entries import _accepted_entry, _create_node
-
-
-async def _seed_long_pending(
-    db: AsyncSession,
-    workspace_id: str,
-    source_id: str,
-    count: int = 2,
-    days: int = 8,
-) -> None:
-    for index in range(count):
-        db.add(
-            Extraction(
-                source_id=source_id,
-                workspace_id=workspace_id,
-                status=ExtractionStatus.PENDING_CONFIRM.value,
-                title=f"待确认候选 {index + 1}",
-                content="需要确认的经验内容",
-                entry_type="experience",
-                applicable_conditions=[],
-                confidence=0.8,
-                created_at=utc_now() - timedelta(days=days),
-            )
-        )
-    await db.commit()
 
 
 async def _seed_other_workspace_problems(db: AsyncSession, workspace_id: str) -> None:
@@ -66,28 +37,15 @@ async def _seed_other_workspace_problems(db: AsyncSession, workspace_id: str) ->
     )
     db.add(source)
     await db.flush()
-    db.add(
-        Extraction(
-            source_id=source.id,
-            workspace_id=workspace_id,
-            status=ExtractionStatus.PENDING_CONFIRM.value,
-            title="其他工作区候选",
-            content="待确认",
-            entry_type="experience",
-            applicable_conditions=[],
-            confidence=0.7,
-            created_at=utc_now() - timedelta(days=10),
-        )
-    )
     await db.commit()
 
 
 @pytest.mark.asyncio
-async def test_open_findings_for_all_three_types(
+async def test_open_findings_for_two_types(
     client: AsyncClient,
     db: AsyncSession,
 ) -> None:
-    owner_workspace_id = await login_owner(client, db)
+    await login_owner(client, db)
     project = await create_project(client)
     node = await _create_node(client, project["id"], "冰箱")
 
@@ -110,18 +68,6 @@ async def test_open_findings_for_all_three_types(
     )
     await db.commit()
 
-    source = await capture(
-        client,
-        source_type="text",
-        content="  吊顶材料待确认  ",
-    )
-    await _seed_long_pending(
-        db,
-        owner_workspace_id,
-        source["id"],
-        count=2,
-    )
-
     body = (await client.get("/api/review/findings")).json()
     findings = body["findings"]
     by_target = {
@@ -138,12 +84,6 @@ async def test_open_findings_for_all_three_types(
     missing_source = by_target[("missing_source", missing_source_entry)]
     assert missing_source["summary"].startswith("该记录没有任何来源关联")
     assert missing_source["content"].startswith("零嵌冰箱")
-
-    long_pending = by_target[("long_pending", source["id"])]
-    assert long_pending["pending_count"] == 2
-    assert "2 条候选待确认" in long_pending["summary"]
-    assert long_pending["target_type"] == "source"
-
 
 @pytest.mark.asyncio
 async def test_empty_findings_and_type_filter(
@@ -176,7 +116,7 @@ async def test_empty_findings_and_type_filter(
     other = (
         await client.get(
             "/api/review/findings",
-            params={"type": "long_pending"},
+            params={"type": "missing_source"},
         )
     ).json()
     assert other["findings"] == []
@@ -231,12 +171,16 @@ async def test_resolve_ignore_undo_and_idempotency(
     response = await client.delete(path)
     assert response.json() == {"removed": False}
 
-    # 忽略
-    await client.post(path, json={"resolution": "ignored"})
-    ignored = (
-        await client.get("/api/review/findings", params={"status": "resolved"})
+    # 拒绝 → 已拒绝视图，恢复后回到待处理
+    await client.post(path, json={"resolution": "rejected", "note": "不是问题"})
+    rejected = (
+        await client.get("/api/review/findings", params={"status": "rejected"})
     ).json()["findings"]
-    assert ignored[0]["resolution"] == "ignored"
+    assert len(rejected) == 1
+    assert rejected[0]["resolution"] == "rejected"
+    assert (await client.delete(path)).json() == {"removed": True}
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    assert any(item["target_id"] == entry_id for item in open_findings)
 
 
 @pytest.mark.asyncio
@@ -288,7 +232,7 @@ async def test_workspace_isolation(
     )
     assert other_source is not None
     response = await client.post(
-        f"/api/review/findings/long_pending/source/{other_source.id}/resolution",
+        f"/api/review/findings/missing_conditions/source/{other_source.id}/resolution",
         json={"resolution": "resolved"},
     )
     assert response.status_code == 404

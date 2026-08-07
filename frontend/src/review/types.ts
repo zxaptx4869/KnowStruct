@@ -1,15 +1,14 @@
 export type ReviewFindingType =
   | 'missing_source'
   | 'missing_conditions'
-  | 'long_pending'
   | 'duplicate'
   | 'conflict'
 
 export type ReviewTargetType = 'entry' | 'source' | 'ai_finding'
 
-export type ReviewResolutionKind = 'resolved' | 'ignored'
+export type ReviewResolutionKind = 'resolved' | 'ignored' | 'rejected'
 
-export type ReviewStatus = 'open' | 'resolved'
+export type ReviewStatus = 'open' | 'resolved' | 'rejected'
 
 export interface ReviewFinding {
   finding_type: ReviewFindingType
@@ -69,38 +68,21 @@ export interface ReviewScan {
   truncated: boolean
   findings_count: number
   resurfaced_count: number
+  skipped_rejected_count: number
   last_error: string | null
   started_at: string | null
   created_at: string | null
   finished_at: string | null
+  scope_name?: string | null
+  duration_seconds?: number | null
+  decision_summary?: {
+    resolved: number
+    rejected: number
+    pending: number
+  } | null
 }
 
 export interface ReviewScanListResponse {
   scans: ReviewScan[]
-}
-
-export interface ReviewAiEntryRef {
-  id: string
-  title: string
-  content: string
-  entry_type: string
-  project_id: string | null
-  project_name: string | null
-  node_id: string | null
-  node_path: string[]
-}
-
-export interface ReviewCandidate {
-  id: string
-  review_type: ReviewFindingType
-  status: string
-  description: string
-  suggestion: string | null
-  severity: string
-  entry_a: ReviewAiEntryRef
-  entry_b: ReviewAiEntryRef
-}
-
-export interface ReviewCandidatesResponse {
-  candidates: ReviewCandidate[]
+  total: number
 }

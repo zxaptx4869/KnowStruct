@@ -1,12 +1,10 @@
 """Review finding request/response schemas."""
 
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.review import (
-    AiReviewType,
     FindingTargetType,
     FindingType,
     ResolutionType,
@@ -83,45 +81,16 @@ class ReviewScanResponse(BaseModel):
     truncated: bool
     findings_count: int
     resurfaced_count: int
+    skipped_rejected_count: int
     last_error: str | None
     started_at: datetime | None
     created_at: datetime | None
     finished_at: datetime | None
+    scope_name: str | None = None
+    duration_seconds: int | None = None
+    decision_summary: dict[str, int] | None = None
 
 
 class ReviewScanListResponse(BaseModel):
     scans: list[ReviewScanResponse]
-
-
-class ReviewAiEntryRef(BaseModel):
-    id: str
-    title: str
-    content: str
-    entry_type: str
-    project_id: str | None = None
-    project_name: str | None = None
-    node_id: str | None = None
-    node_path: list[str] = Field(default_factory=list)
-
-
-class ReviewCandidateItem(BaseModel):
-    id: str
-    review_type: AiReviewType
-    status: str
-    description: str
-    suggestion: str | None
-    severity: str
-    entry_a: ReviewAiEntryRef
-    entry_b: ReviewAiEntryRef
-
-
-class ReviewCandidatesResponse(BaseModel):
-    candidates: list[ReviewCandidateItem]
-
-
-class ReviewDecisionInput(BaseModel):
-    decision: Literal["confirmed", "rejected"]
-
-
-class ReviewDecisionResult(BaseModel):
-    status: str
+    total: int

@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.errors import ConflictError, DomainError, ResourceNotFoundError
+from app.api.errors import DomainError, ResourceNotFoundError
 from app.models import (
     AiFindingStatus,
     Entry,
     EntrySource,
     EntryStatus,
-    Extraction,
-    ExtractionStatus,
     FindingTargetType,
     FindingType,
     Node,
@@ -26,7 +24,6 @@ from app.models import (
 )
 from app.schemas.review import ReviewFindingItem
 
-LONG_PENDING_DAYS = 7
 MAX_NODE_DEPTH = 6
 FINDINGS_LIMIT = 200
 NAIVE_EPOCH = datetime.fromtimestamp(0, UTC).replace(tzinfo=None)
@@ -72,14 +69,6 @@ async def _resolved_keys(
         (row.finding_type, row.target_type, row.target_id)
         for row in rows
     }
-
-
-async def _long_pending_cutoff(db: AsyncSession) -> datetime:
-    """基于数据库服务器时钟计算 7 天阈值，与 created_at 的时钟保持一致。"""
-    server_now = await db.scalar(func.now())
-    return (server_now if server_now is not None else utc_now()) - timedelta(
-        days=LONG_PENDING_DAYS
-    )
 
 
 async def _load_projects_and_paths(
@@ -239,53 +228,6 @@ async def _missing_conditions_items(
     return items
 
 
-async def _long_pending_items(
-    db: AsyncSession,
-    workspace_id: str,
-    resolved: set[tuple[str, str, str]],
-) -> list[ReviewFindingItem]:
-    cutoff = await _long_pending_cutoff(db)
-    rows = (
-        await db.execute(
-            select(Source, func.count(Extraction.id))
-            .join(Extraction, Extraction.source_id == Source.id)
-            .where(
-                Source.workspace_id == workspace_id,
-                Extraction.status == ExtractionStatus.PENDING_CONFIRM.value,
-                Extraction.created_at < cutoff,
-            )
-            .group_by(Source.id)
-        )
-    ).all()
-    if not rows:
-        return []
-    items: list[ReviewFindingItem] = []
-    for source, pending_count in rows:
-        key = (
-            FindingType.LONG_PENDING.value,
-            FindingTargetType.SOURCE.value,
-            source.id,
-        )
-        if key in resolved:
-            continue
-        items.append(
-            ReviewFindingItem(
-                finding_type=FindingType.LONG_PENDING,
-                target_type=FindingTargetType.SOURCE,
-                target_id=source.id,
-                title=source.title,
-                summary=f"有 {pending_count} 条候选待确认超过 {LONG_PENDING_DAYS} 天",
-                created_at=source.created_at,
-                source_type=source.source_type,
-                content=source.content,
-                link_url=source.link_url,
-                project_id=source.project_id,
-                pending_count=pending_count,
-            )
-        )
-    return items
-
-
 async def compute_open_findings(
     db: AsyncSession,
     workspace_id: str,
@@ -297,8 +239,6 @@ async def compute_open_findings(
         items.extend(await _missing_source_items(db, workspace_id, resolved))
     if finding_type is None or finding_type == FindingType.MISSING_CONDITIONS:
         items.extend(await _missing_conditions_items(db, workspace_id, resolved))
-    if finding_type is None or finding_type == FindingType.LONG_PENDING:
-        items.extend(await _long_pending_items(db, workspace_id, resolved))
     if finding_type is None or finding_type in (
         FindingType.DUPLICATE,
         FindingType.CONFLICT,
@@ -505,7 +445,31 @@ async def list_resolved_findings(
     finding_type: FindingType | None = None,
 ) -> list[ReviewFindingItem]:
     stmt = select(ReviewResolution).where(
-        ReviewResolution.workspace_id == workspace_id
+        ReviewResolution.workspace_id == workspace_id,
+        ReviewResolution.resolution == ResolutionType.RESOLVED.value,
+    )
+    if finding_type is not None:
+        stmt = stmt.where(ReviewResolution.finding_type == finding_type.value)
+    resolutions = (await db.scalars(stmt)).all()
+    items = [
+        await _resolved_item(db, workspace_id, resolution)
+        for resolution in resolutions
+    ]
+    items.sort(
+        key=lambda item: item.resolved_at or NAIVE_EPOCH,
+        reverse=True,
+    )
+    return items[:FINDINGS_LIMIT]
+
+
+async def list_rejected_findings(
+    db: AsyncSession,
+    workspace_id: str,
+    finding_type: FindingType | None = None,
+) -> list[ReviewFindingItem]:
+    stmt = select(ReviewResolution).where(
+        ReviewResolution.workspace_id == workspace_id,
+        ReviewResolution.resolution == ResolutionType.REJECTED.value,
     )
     if finding_type is not None:
         stmt = stmt.where(ReviewResolution.finding_type == finding_type.value)
@@ -595,18 +559,7 @@ async def _finding_exists(
             return not entry.applicable_conditions
         return False
 
-    if finding_type != FindingType.LONG_PENDING:
-        return False
-    cutoff = await _long_pending_cutoff(db)
-    count = await db.scalar(
-        select(func.count(Extraction.id)).where(
-            Extraction.source_id == target_id,
-            Extraction.workspace_id == workspace_id,
-            Extraction.status == ExtractionStatus.PENDING_CONFIRM.value,
-            Extraction.created_at < cutoff,
-        )
-    )
-    return (count or 0) > 0
+    return False
 
 
 async def set_resolution(
@@ -677,34 +630,3 @@ async def remove_resolution(
     await db.flush()
     return True
 
-
-async def decide_ai_finding(
-    db: AsyncSession,
-    workspace_id: str,
-    finding_id: str,
-    decision: str,
-) -> str:
-    """确认或拒绝 AI 候选发现；幂等，状态变更不可逆。"""
-    finding = await db.scalar(
-        select(ReviewAiFinding).where(
-            ReviewAiFinding.id == finding_id,
-            ReviewAiFinding.workspace_id == workspace_id,
-        )
-    )
-    if finding is None:
-        raise ResourceNotFoundError("finding")
-    target = (
-        AiFindingStatus.OPEN.value
-        if decision == "confirmed"
-        else AiFindingStatus.REJECTED.value
-    )
-    if finding.status == target:
-        return target
-    if finding.status != AiFindingStatus.CANDIDATE.value:
-        raise ConflictError(
-            "invalid_finding_transition",
-            "该候选已处理，不能再次决定",
-        )
-    finding.status = target
-    await db.flush()
-    return target

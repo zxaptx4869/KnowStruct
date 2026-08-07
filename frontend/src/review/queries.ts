@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type {
-  ReviewCandidatesResponse,
   ReviewFindingType,
   ReviewFindingsResponse,
   ReviewResolutionInput,
@@ -112,32 +111,12 @@ export function useReviewScan(scanId: string | null) {
   })
 }
 
-export function useScanCandidates(scanId: string | null, enabled: boolean) {
+export function useScanHistory(offset: number, limit = 20) {
   return useQuery({
-    queryKey: reviewKeys.candidates(scanId ?? 'none'),
+    queryKey: ['review', 'scans', 'history', offset, limit],
     queryFn: () =>
-      api.get<ReviewCandidatesResponse>(`/review/scans/${scanId}/candidates`),
-    enabled: Boolean(scanId) && enabled,
-  })
-}
-
-export function useAiDecision() {
-  const queryClient = useQueryClient()
-  const invalidate = async () => {
-    await queryClient.invalidateQueries({ queryKey: reviewKeys.all })
-  }
-  return useMutation({
-    mutationFn: ({
-      findingId,
-      decision,
-    }: {
-      findingId: string
-      decision: 'confirmed' | 'rejected'
-    }) =>
-      api.post<{ status: string }>(
-        `/review/findings/ai/${findingId}/decision`,
-        { decision },
-      ),
-    onSuccess: invalidate,
+      api.get<ReviewScanListResponse>('/review/scans', {
+        params: { limit, offset },
+      }),
   })
 }

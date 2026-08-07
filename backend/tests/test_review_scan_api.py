@@ -44,6 +44,42 @@ async def _start_scan(client: AsyncClient, **payload: object) -> dict:
     return response.json()
 
 
+async def _seed_pair(
+    client: AsyncClient,
+    db: AsyncSession,
+    project_id: str,
+    node_id: str,
+) -> tuple[str, str]:
+    entry_a, _ = await _accepted_entry(
+        client, db, project_id=project_id, node_id=node_id
+    )
+    entry_b, _ = await _accepted_entry(
+        client,
+        db,
+        project_id=project_id,
+        node_id=node_id,
+        title="重复候选记录",
+        content="与第一条内容几乎一致。",
+    )
+    return entry_a, entry_b
+
+
+def _duplicate_result(entry_a: str, entry_b: str) -> list[ReviewResult]:
+    return [
+        ReviewResult(
+            review_type="duplicate",
+            description="重复",
+            related_entry_ids=[entry_a, entry_b],
+        )
+    ]
+
+
+async def _scan_and_find(client: AsyncClient, db: AsyncSession, **payload: object):
+    scan = await _start_scan(client, **payload)
+    await process_next_scan(db, ReviewFakeProvider())
+    return scan
+
+
 @pytest.mark.asyncio
 async def test_start_scan_workspace_scope_and_status(
     client: AsyncClient,
@@ -54,48 +90,73 @@ async def test_start_scan_workspace_scope_and_status(
     assert scan["status"] == "pending"
     assert scan["scope_type"] == "workspace"
     assert scan["scope_id"] is None
-
     fetched = (await client.get(f"/api/review/scans/{scan['id']}")).json()
-    assert fetched["id"] == scan["id"]
     assert fetched["status"] == "pending"
     assert await process_next_scan(db, ReviewFakeProvider()) is True
 
 
 @pytest.mark.asyncio
-async def test_list_scans_recent_first_with_started_at(
+async def test_list_scans_with_details_and_pagination(
     client: AsyncClient,
     db: AsyncSession,
 ) -> None:
     await login_owner(client, db)
-    first = await _start_scan(client, scope_type="workspace")
-    await process_next_scan(db, ReviewFakeProvider())
-    second = await _start_scan(client, scope_type="workspace")
+    project = await create_project(client)
+    node = await _create_node(client, project["id"], "冰箱")
+    other_node = await _create_node(client, project["id"], "台面")
+    entry_a, entry_b = await _seed_pair(client, db, project["id"], node["id"])
 
-    scans = (await client.get("/api/review/scans")).json()["scans"]
-    by_id = {scan["id"]: scan for scan in scans}
-    assert set(by_id) == {first["id"], second["id"]}
-    assert by_id[first["id"]]["started_at"] is not None
-    assert by_id[second["id"]]["started_at"] is None
-
-
-@pytest.mark.asyncio
-async def test_concurrent_scan_is_blocked(
-    client: AsyncClient,
-    db: AsyncSession,
-) -> None:
-    await login_owner(client, db)
-    await _start_scan(client, scope_type="workspace")
-    response = await client.post(
-        "/api/review/scans",
-        json={"scope_type": "workspace"},
+    scan_1 = await _start_scan(client, scope_type="workspace")
+    await process_next_scan(
+        db,
+        ReviewFakeProvider(results=_duplicate_result(entry_a, entry_b)),
     )
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "scan_in_progress"
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    ai_item = next(
+        item for item in open_findings if item["target_type"] == "ai_finding"
+    )
+    response = await client.post(
+        f"/api/review/findings/duplicate/ai_finding/{ai_item['target_id']}/resolution",
+        json={"resolution": "resolved"},
+    )
+    assert response.status_code == 200
 
+    scan_2 = await _start_scan(
+        client,
+        scope_type="node",
+        project_id=project["id"],
+        node_id=other_node["id"],
+    )
     await process_next_scan(db, ReviewFakeProvider())
-    scan = await _start_scan(client, scope_type="workspace")
-    assert scan["status"] == "pending"
-    assert await process_next_scan(db, ReviewFakeProvider()) is True
+
+    body = (await client.get("/api/review/scans", params={"limit": 10})).json()
+    assert body["total"] == 2
+    by_id = {item["id"]: item for item in body["scans"]}
+    assert by_id[scan_1["id"]]["scope_name"] is None
+    assert by_id[scan_1["id"]]["duration_seconds"] == 0
+    assert by_id[scan_1["id"]]["decision_summary"] == {
+        "resolved": 1,
+        "rejected": 0,
+        "pending": 0,
+    }
+    assert by_id[scan_2["id"]]["scope_name"] == "台面"
+    assert by_id[scan_2["id"]]["decision_summary"] == {
+        "resolved": 0,
+        "rejected": 0,
+        "pending": 0,
+    }
+
+    paged = (await client.get("/api/review/scans", params={"limit": 1})).json()
+    assert paged["total"] == 2
+    assert len(paged["scans"]) == 1
+    paged_2 = (
+        await client.get(
+            "/api/review/scans",
+            params={"limit": 1, "offset": 1},
+        )
+    ).json()
+    assert len(paged_2["scans"]) == 1
+    assert paged["scans"][0]["id"] != paged_2["scans"][0]["id"]
 
 
 @pytest.mark.asyncio
@@ -141,365 +202,159 @@ async def test_start_scan_validates_scope(
 
 
 @pytest.mark.asyncio
-async def test_scan_produces_candidates_and_confirm_flow(
+async def test_concurrent_scan_is_blocked(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    await _start_scan(client, scope_type="workspace")
+    response = await client.post(
+        "/api/review/scans",
+        json={"scope_type": "workspace"},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "scan_in_progress"
+    assert await process_next_scan(db, ReviewFakeProvider()) is True
+    scan = await _start_scan(client, scope_type="workspace")
+    assert scan["status"] == "pending"
+    assert await process_next_scan(db, ReviewFakeProvider()) is True
+
+
+@pytest.mark.asyncio
+async def test_scan_creates_open_findings_directly(
     client: AsyncClient,
     db: AsyncSession,
 ) -> None:
     await login_owner(client, db)
     project = await create_project(client)
     node = await _create_node(client, project["id"], "冰箱")
-    entry_a, _ = await _accepted_entry(
-        client,
-        db,
-        project_id=project["id"],
-        node_id=node["id"],
-        conditions=["底部散热"],
-    )
-    entry_b, _ = await _accepted_entry(
-        client,
-        db,
-        project_id=project["id"],
-        node_id=node["id"],
-        title="零嵌冰箱侧边预留尺寸",
-        content="零嵌冰箱侧边预留以安装图为准。",
-        conditions=["底部散热"],
-    )
-
+    entry_a, entry_b = await _seed_pair(client, db, project["id"], node["id"])
     scan = await _start_scan(client, scope_type="workspace")
-    provider = ReviewFakeProvider(results=[
-        ReviewResult(
-            review_type="duplicate",
-            description="两条记录语义重复",
-            related_entry_ids=[entry_a, entry_b],
-            suggestion="建议合并为一条",
-            severity="warning",
-        ),
-    ])
-    assert await process_next_scan(db, provider) is True
+    await process_next_scan(
+        db,
+        ReviewFakeProvider(results=_duplicate_result(entry_a, entry_b)),
+    )
 
     fetched = (await client.get(f"/api/review/scans/{scan['id']}")).json()
     assert fetched["status"] == "succeeded"
     assert fetched["findings_count"] == 1
-
-    candidates = (
-        await client.get(f"/api/review/scans/{scan['id']}/candidates")
-    ).json()["candidates"]
-    assert len(candidates) == 1
-    candidate = candidates[0]
-    assert candidate["review_type"] == "duplicate"
-    assert candidate["description"] == "两条记录语义重复"
-    assert candidate["severity"] == "warning"
-    assert {candidate["entry_a"]["id"], candidate["entry_b"]["id"]} == {
-        entry_a,
-        entry_b,
-    }
-    assert candidate["entry_a"]["node_path"] == ["冰箱"]
-
-    # 确认 → 进入待处理
-    response = await client.post(
-        f"/api/review/findings/ai/{candidate['id']}/decision",
-        json={"decision": "confirmed"},
-    )
-    assert response.status_code == 200
-    assert response.json()["status"] == "open"
+    assert fetched["skipped_rejected_count"] == 0
     open_findings = (await client.get("/api/review/findings")).json()["findings"]
     ai_item = next(
         item for item in open_findings if item["target_type"] == "ai_finding"
     )
     assert ai_item["finding_type"] == "duplicate"
-    assert ai_item["ai_description"] == "两条记录语义重复"
     assert " vs " in ai_item["title"]
-    assert ai_item["entry_b_title"] in ("零嵌冰箱侧边预留尺寸", "散热方式决定侧边预留")
 
-    # 解决 → 移出待处理；撤销 → 恢复
+
+@pytest.mark.asyncio
+async def test_three_states_resolve_reject_undo(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    node = await _create_node(client, project["id"], "冰箱")
+    entry_a, entry_b = await _seed_pair(client, db, project["id"], node["id"])
+    await _start_scan(client, scope_type="workspace")
+    await process_next_scan(
+        db,
+        ReviewFakeProvider(results=_duplicate_result(entry_a, entry_b)),
+    )
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    ai_item = next(
+        item for item in open_findings if item["target_type"] == "ai_finding"
+    )
     path = (
         f"/api/review/findings/duplicate/ai_finding/"
-        f"{candidate['id']}/resolution"
+        f"{ai_item['target_id']}/resolution"
     )
-    response = await client.post(path, json={"resolution": "resolved", "note": "已合并"})
-    assert response.status_code == 200
-    open_findings = (await client.get("/api/review/findings")).json()["findings"]
-    assert not any(item["target_type"] == "ai_finding" for item in open_findings)
-    handled = (
+
+    # 已解决 → 已处理视图；撤销 → 待处理
+    await client.post(path, json={"resolution": "resolved", "note": "已处理"})
+    resolved = (
         await client.get("/api/review/findings", params={"status": "resolved"})
     ).json()["findings"]
-    handled_ai = next(
-        item for item in handled if item["target_type"] == "ai_finding"
+    assert any(item["target_type"] == "ai_finding" for item in resolved)
+    assert not any(
+        item["target_type"] == "ai_finding"
+        for item in (await client.get("/api/review/findings")).json()["findings"]
     )
-    assert handled_ai["note"] == "已合并"
-    assert handled_ai["ai_description"] == "两条记录语义重复"
+    assert (await client.delete(path)).json() == {"removed": True}
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    assert any(item["target_type"] == "ai_finding" for item in open_findings)
+
+    # 拒绝 → 已拒绝视图；恢复 → 待处理
+    await client.post(path, json={"resolution": "rejected", "note": "不是问题"})
+    rejected = (
+        await client.get("/api/review/findings", params={"status": "rejected"})
+    ).json()["findings"]
+    assert any(item["target_type"] == "ai_finding" for item in rejected)
+    assert not any(
+        item["target_type"] == "ai_finding"
+        for item in (await client.get("/api/review/findings")).json()["findings"]
+    )
     assert (await client.delete(path)).json() == {"removed": True}
     open_findings = (await client.get("/api/review/findings")).json()["findings"]
     assert any(item["target_type"] == "ai_finding" for item in open_findings)
 
 
 @pytest.mark.asyncio
-async def test_decision_idempotent_and_transition_rules(
+async def test_rescan_dedupe_resurface_and_skip_rejected(
     client: AsyncClient,
     db: AsyncSession,
 ) -> None:
     await login_owner(client, db)
     project = await create_project(client)
     node = await _create_node(client, project["id"], "冰箱")
-    entry_a, _ = await _accepted_entry(
-        client, db, project_id=project["id"], node_id=node["id"]
-    )
-    entry_b, _ = await _accepted_entry(
-        client,
-        db,
-        project_id=project["id"],
-        node_id=node["id"],
-        title="另一条相似记录",
-        content="内容与第一条高度相似。",
-    )
-    scan = await _start_scan(client, scope_type="workspace")
-    provider = ReviewFakeProvider(results=[
-        ReviewResult(
-            review_type="conflict",
-            description="结论相互矛盾",
-            related_entry_ids=[entry_a, entry_b],
-            severity="error",
-        ),
-    ])
-    await process_next_scan(db, provider)
-    candidate = (
-        await client.get(f"/api/review/scans/{scan['id']}/candidates")
-    ).json()["candidates"][0]
-    path = f"/api/review/findings/ai/{candidate['id']}/decision"
+    entry_a, entry_b = await _seed_pair(client, db, project["id"], node["id"])
+    results = _duplicate_result(entry_a, entry_b)
 
-    assert (
-        await client.post(path, json={"decision": "confirmed"})
-    ).json()["status"] == "open"
-    assert (
-        await client.post(path, json={"decision": "confirmed"})
-    ).json()["status"] == "open"
-    response = await client.post(path, json={"decision": "rejected"})
-    assert response.status_code == 409
-
-
-@pytest.mark.asyncio
-async def test_rescan_dedupe_and_regenerate_after_reject(
-    client: AsyncClient,
-    db: AsyncSession,
-) -> None:
-    await login_owner(client, db)
-    project = await create_project(client)
-    node = await _create_node(client, project["id"], "冰箱")
-    entry_a, _ = await _accepted_entry(
-        client, db, project_id=project["id"], node_id=node["id"]
-    )
-    entry_b, _ = await _accepted_entry(
-        client,
-        db,
-        project_id=project["id"],
-        node_id=node["id"],
-        title="重复候选记录",
-        content="与第一条内容几乎一致。",
-    )
-    results = [
-        ReviewResult(
-            review_type="duplicate",
-            description="重复",
-            related_entry_ids=[entry_a, entry_b],
-        )
-    ]
-
-    scan_1 = await _start_scan(client, scope_type="workspace")
+    # 首次扫描 → open
+    await _start_scan(client, scope_type="workspace")
     await process_next_scan(db, ReviewFakeProvider(results=results))
-    candidates_1 = (
-        await client.get(f"/api/review/scans/{scan_1['id']}/candidates")
-    ).json()["candidates"]
-    assert len(candidates_1) == 1
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    ai_item = next(
+        item for item in open_findings if item["target_type"] == "ai_finding"
+    )
+    path = (
+        f"/api/review/findings/duplicate/ai_finding/"
+        f"{ai_item['target_id']}/resolution"
+    )
 
+    # 待处理中重扫 → 不重复
     scan_2 = await _start_scan(client, scope_type="workspace")
     await process_next_scan(db, ReviewFakeProvider(results=results))
     assert (
         await client.get(f"/api/review/scans/{scan_2['id']}")
     ).json()["findings_count"] == 0
-    assert (
-        await client.get(f"/api/review/scans/{scan_2['id']}/candidates")
-    ).json()["candidates"] == []
 
-    # 拒绝后可再次生成
-    await client.post(
-        f"/api/review/findings/ai/{candidates_1[0]['id']}/decision",
-        json={"decision": "rejected"},
-    )
+    # 已解决后重扫 → 重新浮现（resurfaced_count=1，处理记录清除）
+    await client.post(path, json={"resolution": "resolved"})
     scan_3 = await _start_scan(client, scope_type="workspace")
     await process_next_scan(db, ReviewFakeProvider(results=results))
-    candidates_3 = (
-        await client.get(f"/api/review/scans/{scan_3['id']}/candidates")
-    ).json()["candidates"]
-    assert len(candidates_3) == 1
-
-
-@pytest.mark.asyncio
-async def test_rescan_resurfaces_resolved_and_ignored_findings(
-    client: AsyncClient,
-    db: AsyncSession,
-) -> None:
-    await login_owner(client, db)
-    project = await create_project(client)
-    node = await _create_node(client, project["id"], "冰箱")
-    entry_a, _ = await _accepted_entry(
-        client, db, project_id=project["id"], node_id=node["id"]
-    )
-    entry_b, _ = await _accepted_entry(
-        client,
-        db,
-        project_id=project["id"],
-        node_id=node["id"],
-        title="重复候选记录",
-        content="与第一条内容几乎一致。",
-    )
-    results = [
-        ReviewResult(
-            review_type="duplicate",
-            description="重复",
-            related_entry_ids=[entry_a, entry_b],
-        )
-    ]
-
-    scan_1 = await _start_scan(client, scope_type="workspace")
-    await process_next_scan(db, ReviewFakeProvider(results=results))
-    candidate = (
-        await client.get(f"/api/review/scans/{scan_1['id']}/candidates")
-    ).json()["candidates"][0]
-    await client.post(
-        f"/api/review/findings/ai/{candidate['id']}/decision",
-        json={"decision": "confirmed"},
-    )
-
-    # 已解决 → 重扫 → 处理记录清除并重新浮现
-    resolution_path = (
-        f"/api/review/findings/duplicate/ai_finding/"
-        f"{candidate['id']}/resolution"
-    )
-    await client.post(
-        resolution_path,
-        json={"resolution": "resolved", "note": "先放下"},
-    )
-    open_findings = (await client.get("/api/review/findings")).json()["findings"]
-    assert not any(
-        item["target_type"] == "ai_finding" for item in open_findings
-    )
-
-    scan_2 = await _start_scan(client, scope_type="workspace")
-    await process_next_scan(db, ReviewFakeProvider(results=results))
+    fetched = (await client.get(f"/api/review/scans/{scan_3['id']}")).json()
+    assert fetched["resurfaced_count"] == 1
     resolution_count = await db.scalar(
         select(func.count(ReviewResolution.id)).where(
-            ReviewResolution.target_id == candidate["id"]
+            ReviewResolution.target_id == ai_item["target_id"]
         )
     )
     assert resolution_count == 0
-    assert (
-        await client.get(f"/api/review/scans/{scan_2['id']}")
-    ).json()["resurfaced_count"] == 1
-    open_findings = (await client.get("/api/review/findings")).json()["findings"]
-    assert any(
-        item["target_type"] == "ai_finding"
-        and item["target_id"] == candidate["id"]
-        for item in open_findings
-    )
 
-
-@pytest.mark.asyncio
-async def test_rescan_resurfaces_only_within_scope(
-    client: AsyncClient,
-    db: AsyncSession,
-) -> None:
-    await login_owner(client, db)
-    project = await create_project(client)
-    node_a = await _create_node(client, project["id"], "冰箱")
-    node_b = await _create_node(client, project["id"], "台面")
-    entry_a, _ = await _accepted_entry(
-        client, db, project_id=project["id"], node_id=node_a["id"]
-    )
-    entry_b, _ = await _accepted_entry(
-        client,
-        db,
-        project_id=project["id"],
-        node_id=node_a["id"],
-        title="重复候选记录",
-        content="与第一条内容几乎一致。",
-    )
-    results = [
-        ReviewResult(
-            review_type="duplicate",
-            description="重复",
-            related_entry_ids=[entry_a, entry_b],
-        )
-    ]
-    scan_1 = await _start_scan(client, scope_type="workspace")
+    # 拒绝后重扫 → 跳过（skipped_rejected_count=1，仍是已拒绝）
+    await client.post(path, json={"resolution": "rejected"})
+    scan_4 = await _start_scan(client, scope_type="workspace")
     await process_next_scan(db, ReviewFakeProvider(results=results))
-    candidate = (
-        await client.get(f"/api/review/scans/{scan_1['id']}/candidates")
-    ).json()["candidates"][0]
-    await client.post(
-        f"/api/review/findings/ai/{candidate['id']}/decision",
-        json={"decision": "confirmed"},
-    )
-    resolution_path = (
-        f"/api/review/findings/duplicate/ai_finding/"
-        f"{candidate['id']}/resolution"
-    )
-    await client.post(resolution_path, json={"resolution": "resolved"})
-
-    # 扫描不覆盖该节点的范围 → 不重新浮现
-    scan_b = await _start_scan(
-        client,
-        scope_type="node",
-        project_id=project["id"],
-        node_id=node_b["id"],
-    )
-    await process_next_scan(db, ReviewFakeProvider())
-    resolution_count = await db.scalar(
-        select(func.count(ReviewResolution.id)).where(
-            ReviewResolution.target_id == candidate["id"]
-        )
-    )
-    assert resolution_count == 1
-    assert (
-        await client.get(f"/api/review/scans/{scan_b['id']}")
-    ).json()["resurfaced_count"] == 0
-
-    # 扫描覆盖该节点 → 重新浮现
-    scan_a = await _start_scan(
-        client,
-        scope_type="node",
-        project_id=project["id"],
-        node_id=node_a["id"],
-    )
-    await process_next_scan(db, ReviewFakeProvider())
-    resolution_count = await db.scalar(
-        select(func.count(ReviewResolution.id)).where(
-            ReviewResolution.target_id == candidate["id"]
-        )
-    )
-    assert resolution_count == 0
-    assert (
-        await client.get(f"/api/review/scans/{scan_a['id']}")
-    ).json()["resurfaced_count"] == 1
+    fetched = (await client.get(f"/api/review/scans/{scan_4['id']}")).json()
+    assert fetched["skipped_rejected_count"] == 1
+    assert fetched["findings_count"] == 0
     open_findings = (await client.get("/api/review/findings")).json()["findings"]
-    assert any(
-        item["target_type"] == "ai_finding"
-        and item["target_id"] == candidate["id"]
-        for item in open_findings
-    )
-
-    # 忽略 → 重扫 → 同样重新浮现
-    await client.post(
-        resolution_path,
-        json={"resolution": "ignored"},
-    )
-    await _start_scan(client, scope_type="workspace")
-    await process_next_scan(db, ReviewFakeProvider(results=results))
-    open_findings = (await client.get("/api/review/findings")).json()["findings"]
-    assert any(
-        item["target_type"] == "ai_finding"
-        and item["target_id"] == candidate["id"]
-        for item in open_findings
-    )
+    assert not any(item["target_type"] == "ai_finding" for item in open_findings)
+    rejected = (
+        await client.get("/api/review/findings", params={"status": "rejected"})
+    ).json()["findings"]
+    assert any(item["target_type"] == "ai_finding" for item in rejected)
 
 
 @pytest.mark.asyncio
@@ -537,12 +392,7 @@ async def test_scan_failure_marks_failed(
     await login_owner(client, db)
     project = await create_project(client)
     node = await _create_node(client, project["id"], "冰箱")
-    await _accepted_entry(
-        client,
-        db,
-        project_id=project["id"],
-        node_id=node["id"],
-    )
+    await _accepted_entry(client, db, project_id=project["id"], node_id=node["id"])
     scan = await _start_scan(client, scope_type="workspace")
     provider = ReviewFakeProvider(
         error=AIProviderNotConfiguredError("AI 服务未配置")
@@ -554,11 +404,11 @@ async def test_scan_failure_marks_failed(
 
 
 @pytest.mark.asyncio
-async def test_workspace_isolation_for_scans_and_decisions(
+async def test_workspace_isolation(
     client: AsyncClient,
     db: AsyncSession,
 ) -> None:
-    workspace_id = await login_owner(client, db)
+    await login_owner(client, db)
     async with db.begin():
         other_user = await create_account(db, "other", "another password 123")
         other_workspace_id = other_user.workspace.id
@@ -569,7 +419,6 @@ async def test_workspace_isolation_for_scans_and_decisions(
         await client.get(f"/api/review/scans/{scan['id']}")
     ).status_code == 200
 
-    # 其他工作区的扫描与候选不可见
     other_project = Project(workspace_id=other_workspace_id, name="其他项目")
     db.add(other_project)
     await db.flush()
@@ -591,15 +440,10 @@ async def test_workspace_isolation_for_scans_and_decisions(
     other_scan = ReviewScan(
         workspace_id=other_workspace_id,
         scope_type="workspace",
-        status="pending",
+        status="succeeded",
     )
     db.add(other_scan)
-    await db.commit()
-    assert (
-        await client.get(f"/api/review/scans/{other_scan.id}")
-    ).status_code == 404
-
-    # 跨工作区候选决定按不存在处理
+    await db.flush()
     foreign_finding = ReviewAiFinding(
         workspace_id=other_workspace_id,
         scan_id=other_scan.id,
@@ -608,14 +452,16 @@ async def test_workspace_isolation_for_scans_and_decisions(
         entry_b_id=other_entry_b.id,
         description="外部发现",
         severity="info",
-        status="candidate",
+        status="open",
     )
     db.add(foreign_finding)
     await db.commit()
+
+    assert (
+        await client.get(f"/api/review/scans/{other_scan.id}")
+    ).status_code == 404
     response = await client.post(
-        f"/api/review/findings/ai/{foreign_finding.id}/decision",
-        json={"decision": "confirmed"},
+        f"/api/review/findings/duplicate/ai_finding/{foreign_finding.id}/resolution",
+        json={"resolution": "rejected"},
     )
     assert response.status_code == 404
-
-    assert workspace_id != other_workspace_id

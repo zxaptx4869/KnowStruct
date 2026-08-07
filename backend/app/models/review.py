@@ -38,6 +38,7 @@ class FindingTargetType(StrEnum):
 class ResolutionType(StrEnum):
     RESOLVED = "resolved"
     IGNORED = "ignored"
+    REJECTED = "rejected"
 
 
 class ScanScopeType(StrEnum):
@@ -59,9 +60,7 @@ class AiReviewType(StrEnum):
 
 
 class AiFindingStatus(StrEnum):
-    CANDIDATE = "candidate"
     OPEN = "open"
-    REJECTED = "rejected"
 
 
 class ReviewResolution(UUIDMixin, TimestampMixin, Base):
@@ -85,7 +84,7 @@ class ReviewResolution(UUIDMixin, TimestampMixin, Base):
             name="ck_review_resolutions_target_type",
         ),
         CheckConstraint(
-            "resolution IN ('resolved', 'ignored')",
+            "resolution IN ('resolved', 'ignored', 'rejected')",
             name="ck_review_resolutions_resolution",
         ),
         Index("ix_review_resolutions_workspace", "workspace_id"),
@@ -154,6 +153,12 @@ class ReviewScan(UUIDMixin, TimestampMixin, Base):
         default=0,
         server_default="0",
     )
+    skipped_rejected_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
 
 
 class ReviewAiFinding(UUIDMixin, TimestampMixin, Base):
@@ -166,7 +171,7 @@ class ReviewAiFinding(UUIDMixin, TimestampMixin, Base):
             name="ck_review_ai_findings_type",
         ),
         CheckConstraint(
-            "status IN ('candidate', 'open', 'rejected')",
+            "status IN ('open')",
             name="ck_review_ai_findings_status",
         ),
         CheckConstraint(
@@ -219,6 +224,6 @@ class ReviewAiFinding(UUIDMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        default=AiFindingStatus.CANDIDATE.value,
-        server_default=AiFindingStatus.CANDIDATE.value,
+        default=AiFindingStatus.OPEN.value,
+        server_default=AiFindingStatus.OPEN.value,
     )

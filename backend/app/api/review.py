@@ -9,9 +9,6 @@ from app.api.deps import Auth, DbSession
 from app.api.errors import ConflictError, DomainError
 from app.models import ReviewScan, ScanStatus
 from app.schemas.review import (
-    ReviewCandidatesResponse,
-    ReviewDecisionInput,
-    ReviewDecisionResult,
     ReviewFindingsResponse,
     ReviewResolutionHandled,
     ReviewResolutionInput,
@@ -33,7 +30,7 @@ async def list_findings(
     status: str = Query(default="open"),
     finding_type: Annotated[str | None, Query(alias="type")] = None,
 ) -> ReviewFindingsResponse:
-    if status not in ("open", "resolved"):
+    if status not in ("open", "resolved", "rejected"):
         raise DomainError(422, "invalid_status", "不支持的状态")
     parsed_type = (
         review_service.parse_finding_type(finding_type)
@@ -46,8 +43,14 @@ async def list_findings(
             auth.workspace.id,
             parsed_type,
         )
-    else:
+    elif status == "resolved":
         findings = await review_service.list_resolved_findings(
+            db,
+            auth.workspace.id,
+            parsed_type,
+        )
+    else:
+        findings = await review_service.list_rejected_findings(
             db,
             auth.workspace.id,
             parsed_type,
@@ -148,17 +151,57 @@ async def start_review_scan(
 async def list_review_scans(
     auth: Auth,
     db: DbSession,
-    limit: int = Query(default=10, ge=1, le=50),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ) -> ReviewScanListResponse:
-    scans = (
-        await db.scalars(
-            select(ReviewScan)
-            .where(ReviewScan.workspace_id == auth.workspace.id)
-            .order_by(ReviewScan.created_at.desc(), ReviewScan.id.desc())
-            .limit(limit)
+    scans, total = await scan_service.list_scans(
+        db,
+        auth.workspace.id,
+        limit,
+        offset,
+    )
+    names, summaries = await scan_service.scan_display_details(
+        db,
+        auth.workspace.id,
+        scans,
+    )
+    items = []
+    for scan in scans:
+        duration_seconds = None
+        if scan.created_at is not None and scan.finished_at is not None:
+            duration_seconds = max(
+                0,
+                int(
+                    (
+                        scan.finished_at - scan.created_at
+                    ).total_seconds()
+                ),
+            )
+        items.append(
+            ReviewScanResponse(
+                id=scan.id,
+                scope_type=scan.scope_type,
+                scope_id=scan.scope_id,
+                status=scan.status,
+                truncated=scan.truncated,
+                findings_count=scan.findings_count,
+                resurfaced_count=scan.resurfaced_count,
+                skipped_rejected_count=scan.skipped_rejected_count,
+                last_error=scan.last_error,
+                started_at=scan.started_at,
+                created_at=scan.created_at,
+                finished_at=scan.finished_at,
+                scope_name=(
+                    names.get(scan.scope_id) if scan.scope_id else None
+                ),
+                duration_seconds=duration_seconds,
+                decision_summary=summaries.get(
+                    scan.id,
+                    {"resolved": 0, "rejected": 0, "pending": 0},
+                ),
+            )
         )
-    ).all()
-    return ReviewScanListResponse(scans=list(scans))
+    return ReviewScanListResponse(scans=items, total=total)
 
 
 @router.get("/scans/{scan_id}", response_model=ReviewScanResponse)
@@ -177,39 +220,3 @@ async def get_review_scan(
         raise DomainError(404, "scan_not_found", "扫描记录不存在")
     return scan
 
-
-@router.get(
-    "/scans/{scan_id}/candidates",
-    response_model=ReviewCandidatesResponse,
-)
-async def list_scan_candidates(
-    scan_id: str,
-    auth: Auth,
-    db: DbSession,
-) -> ReviewCandidatesResponse:
-    candidates = await scan_service.list_scan_candidates(
-        db,
-        auth.workspace.id,
-        scan_id,
-    )
-    return ReviewCandidatesResponse(candidates=candidates)
-
-
-@router.post(
-    "/findings/ai/{finding_id}/decision",
-    response_model=ReviewDecisionResult,
-)
-async def decide_ai_finding(
-    finding_id: str,
-    payload: ReviewDecisionInput,
-    auth: Auth,
-    db: DbSession,
-) -> ReviewDecisionResult:
-    status = await review_service.decide_ai_finding(
-        db,
-        auth.workspace.id,
-        finding_id,
-        payload.decision,
-    )
-    await db.commit()
-    return ReviewDecisionResult(status=status)

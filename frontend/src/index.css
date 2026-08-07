@@ -2635,10 +2635,10 @@ textarea.field-error {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 16px;
-  padding: 12px;
+  margin-top: 12px;
+  padding: 8px 10px;
   border: 1px solid var(--line, #e5e7eb);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface-2, #f9fafb);
 }
 
@@ -2761,7 +2761,9 @@ textarea.field-error {
 
 .review-scan-status {
   align-items: center;
-  margin-top: 10px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .review-candidates {
@@ -2811,7 +2813,7 @@ textarea.field-error {
 .review-tabs {
   display: flex;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .review-tab {
@@ -2834,7 +2836,7 @@ textarea.field-error {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .review-filter-chip {
@@ -2856,7 +2858,25 @@ textarea.field-error {
 .review-list {
   display: grid;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 12px;
+}
+
+.review-history {
+  margin-top: 12px;
+}
+
+.review-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.review-history-card .review-card-summary {
+  margin-top: 6px;
+}
+
+.review-history-more {
+  display: block;
+  margin: 12px auto 0;
 }
 
 .review-card {

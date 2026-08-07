@@ -1,10 +1,36 @@
-# Review Specification
+## REMOVED Requirements
 
-## Purpose
+### Requirement: Confirm AI candidate findings
+**Reason**: 候选确认步骤取消；AI 审查发现直接进入待处理列表，由用户在待处理内用"标记已解决 / 拒绝"做决定，状态收敛为待处理 / 已处理 / 已拒绝三态。
+**Migration**: 旧 candidate 状态数据升级为 open（直接成为待处理问题）；旧 rejected 数据补写 `resolution='rejected'` 处理记录保留拒绝意图。
 
-定义 P1 Review 的数据驱动问题检查与处理闭环：系统按 Workspace 实时发现缺来源、缺适用条件与长期待确认三类问题，用户可在 Review 页查看证据、标记已解决或忽略并支持撤销，为后续 AI 重复/冲突检测提供界面与数据基础。
+## ADDED Requirements
 
-## Requirements
+### Requirement: Review scan history
+
+系统 SHALL 提供"审查记录"视图，展示每次扫描的开始时间、结束时间、耗时（结束−开始）、范围名称、状态、新问题数、重新浮现数、跳过已拒绝数与决策跟进（已解决/已拒绝/待决定），失败记录 SHALL 可查看原因。记录 SHALL 分页返回（每页 20 条，可加载更多，返回总数），扫描完成时列表 SHALL 自动刷新。
+
+#### Scenario: List scan records with timing and results
+- **WHEN** 用户打开审查记录视图
+- **THEN** 每条记录展示开始/结束时间、耗时、范围名称、状态与结果计数（新问题/重新浮现/跳过已拒绝）
+
+#### Scenario: Show decision follow-up per scan
+- **WHEN** 某次扫描产生的发现后续被处理
+- **THEN** 该记录展示已解决、已拒绝与待决定的条数
+
+#### Scenario: Show failed scans with reasons
+- **WHEN** 某次扫描失败
+- **THEN** 记录展示失败状态并可查看失败原因
+
+#### Scenario: Paginate the history
+- **WHEN** 审查记录超过一页
+- **THEN** 每页 20 条，用户可加载更多，总数正确
+
+#### Scenario: Refresh history on scan completion
+- **WHEN** 新扫描完成
+- **THEN** 审查记录列表自动刷新并包含该记录
+
+## MODIFIED Requirements
 
 ### Requirement: Compute data-driven review findings
 
@@ -35,7 +61,7 @@
 系统 SHALL 允许用户对待处理问题标记"已解决"或"拒绝"（可附备注），同一问题的处理记录 MUST 唯一且操作幂等；撤销处理 MUST 将问题恢复到待处理列表。Review 页 SHALL 提供待处理、已处理、已拒绝三个视图：已处理展示 `resolution='resolved'` 的处理记录，已拒绝展示 `resolution='rejected'` 的处理记录，两个视图均支持撤销/恢复。
 
 #### Scenario: Resolve a finding with a note
-- **WHEN** 用户将一条 `missing_conditions` 问题标记为已解决并填写备注
+- **WHEN** 用户将一条问题标记为已解决并填写备注
 - **THEN** 该问题移出待处理列表，已处理列表出现该记录（含处理时间与备注）
 
 #### Scenario: Reject a finding
@@ -54,38 +80,6 @@
 - **WHEN** 用户处理问题后，另一 Workspace 用户查看 Review
 - **THEN** 处理记录不影响其他 Workspace 的问题列表
 
-### Requirement: Review page interaction states
-
-Review 页 SHALL 在同一响应式 Web 应用中提供桌面与 390px 移动端一致的体验，覆盖加载、无问题、结果、失败与处理中状态。页面 SHALL 提供待处理/已处理两个视图与问题类型筛选；问题卡片 SHALL 支持内联展开证据详情并跳转（长期待确认到确认页，缺来源/缺条件到所属节点或项目）；处理操作失败 MUST 不改变当前列表状态并可重试。
-
-#### Scenario: List open findings with filters
-- **WHEN** 用户打开 Review 页且存在多类问题
-- **THEN** 页面按待处理视图展示问题卡片，可按类型筛选，卡片含类型徽标、标题、摘要与时间
-
-#### Scenario: Show handled findings with undo
-- **WHEN** 用户切换到已处理视图
-- **THEN** 页面展示处理记录（问题类型、目标、处理方式、时间与备注），每条提供撤销操作
-
-#### Scenario: Expand evidence and jump to source
-- **WHEN** 用户展开一条长期待确认问题
-- **THEN** 详情展示该 Source 的标题、类型与待确认条数，并可跳转到对应确认页
-
-#### Scenario: Expand evidence and jump to entry context
-- **WHEN** 用户展开一条缺来源或缺适用条件问题
-- **THEN** 详情展示记录标题、内容、适用条件与节点路径，并可跳转到所属节点或项目
-
-#### Scenario: Show empty state
-- **WHEN** Workspace 没有任何待处理问题
-- **THEN** 页面显示"没有待处理问题"类空态
-
-#### Scenario: Keep state and retry on failure
-- **WHEN** 问题列表加载失败或处理操作失败
-- **THEN** 页面显示失败原因并保留当前状态，提供重试入口，不自动重放请求
-
-#### Scenario: Render on desktop and mobile
-- **WHEN** 用户在桌面视口与 390px 移动视口分别查看 Review 页
-- **THEN** 列表、筛选与详情卡片均可用且不横向溢出
-
 ### Requirement: Run scoped AI review scans
 
 系统 SHALL 允许用户手动发起 AI 审查扫描，范围通过多层级树选择：项目为顶层，可展开到任意节点；选中项目即项目范围，选中节点即节点范围，不提供"全部工作区"选项。扫描 SHALL 异步执行，页面可跟踪进行中/成功/失败状态并显示开始时间与已用时；扫描完成后 SHALL 自动刷新问题列表，使重新浮现的已处理问题立即可见；完成结果 SHALL 区分新问题数量、重新浮现数量与跳过已拒绝数量。AI 审查发现 SHALL 直接以 open 状态进入待处理列表，不再经过候选确认。同一配对重新扫描时：无处理记录则跳过（已在待处理）；已解决则清除处理记录并重新浮现；已拒绝则不再报问题并在结果中计数。用户离开页面后返回 SHALL 自动恢复最近一次扫描的进度与结果。同一 Workspace 存在进行中扫描时，再次发起 MUST 返回冲突并提示等待完成。扫描范围 SHALL 只包含当前 Workspace 的已归档 Entry，按同节点分组批量调用 AI；单次扫描条目数超过上限时 MUST 截断并明确提示建议缩小范围。未配置 AI 服务时扫描 MUST 失败并显示可读原因。
@@ -97,10 +91,6 @@ Review 页 SHALL 在同一响应式 Web 应用中提供桌面与 390px 移动端
 #### Scenario: Require a scope before scanning
 - **WHEN** 用户未选择任何项目或节点就点击开始审查
 - **THEN** 系统提示"请选择审查范围"，不创建扫描
-
-#### Scenario: Track scan progress with timing
-- **WHEN** 扫描进行中
-- **THEN** 页面显示扫描中状态、开始时间与已用时
 
 #### Scenario: Enter findings directly into the pending list
 - **WHEN** AI 审查发现重复或冲突配对
@@ -121,6 +111,10 @@ Review 页 SHALL 在同一响应式 Web 应用中提供桌面与 390px 移动端
 #### Scenario: Report new, re-surfaced, and skipped counts on completion
 - **WHEN** 扫描完成
 - **THEN** 页面显示新问题数量，并在重新浮现或跳过已拒绝数量大于零时分别显示
+
+#### Scenario: Track scan progress with timing
+- **WHEN** 扫描进行中
+- **THEN** 页面显示扫描中状态、开始时间与已用时
 
 #### Scenario: Refresh findings after scan completion
 - **WHEN** 扫描变为成功且重新浮现了已处理问题
@@ -145,47 +139,3 @@ Review 页 SHALL 在同一响应式 Web 应用中提供桌面与 390px 移动端
 #### Scenario: Scan an empty scope
 - **WHEN** 选定项目或节点范围内没有任何已归档 Entry
 - **THEN** 扫描成功完成且发现为空
-
-### Requirement: Review scan history
-
-系统 SHALL 提供"审查记录"视图，展示每次扫描的开始时间、结束时间、耗时（结束−开始）、范围名称、状态、新问题数、重新浮现数、跳过已拒绝数与决策跟进（已解决/已拒绝/待决定），失败记录 SHALL 可查看原因。记录 SHALL 分页返回（每页 20 条，可加载更多，返回总数），扫描完成时列表 SHALL 自动刷新。
-
-#### Scenario: List scan records with timing and results
-- **WHEN** 用户打开审查记录视图
-- **THEN** 每条记录展示开始/结束时间、耗时、范围名称、状态与结果计数（新问题/重新浮现/跳过已拒绝）
-
-#### Scenario: Show decision follow-up per scan
-- **WHEN** 某次扫描产生的发现后续被处理
-- **THEN** 该记录展示已解决、已拒绝与待决定的条数
-
-#### Scenario: Show failed scans with reasons
-- **WHEN** 某次扫描失败
-- **THEN** 记录展示失败状态并可查看失败原因
-
-#### Scenario: Paginate the history
-- **WHEN** 审查记录超过一页
-- **THEN** 每页 20 条，用户可加载更多，总数正确
-
-#### Scenario: Refresh history on scan completion
-- **WHEN** 新扫描完成
-- **THEN** 审查记录列表自动刷新并包含该记录
-
-### Requirement: Show AI findings in the review list
-
-Review 待处理列表 SHALL 同时展示数据驱动问题与 AI 问题；AI 问题 SHALL 带"疑似重复/疑似冲突"类型标识，详情 SHALL 展示两条相关记录的对比与 AI 说明、建议、严重度，并可跳转到任一记录。AI 问题 SHALL 支持与数据驱动问题相同的解决/拒绝/撤销操作，处理记录按 Workspace 隔离。
-
-#### Scenario: List AI findings
-- **WHEN** Workspace 内存在 AI 问题
-- **THEN** 待处理列表按类型展示"疑似重复/疑似冲突"卡片
-
-#### Scenario: Show pair evidence and jump
-- **WHEN** 用户展开一条 AI 问题详情
-- **THEN** 详情展示两条记录的标题与内容、AI 说明、建议与严重度，每条记录可跳转
-
-#### Scenario: Resolve, reject, and undo AI findings
-- **WHEN** 用户对 AI 问题标记已解决、拒绝或撤销
-- **THEN** 行为与数据驱动问题一致，已处理列表可查且可撤销
-
-#### Scenario: Isolate AI findings per workspace
-- **WHEN** 其他 Workspace 存在 AI 问题或候选
-- **THEN** 当前用户的列表与扫描结果不包含任何跨 Workspace 数据

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import AIProvider
@@ -15,14 +15,14 @@ from app.models import (
     FindingTargetType,
     Node,
     Project,
+    ResolutionType,
     ReviewAiFinding,
     ReviewResolution,
     ReviewScan,
     ScanScopeType,
     ScanStatus,
 )
-from app.schemas.review import ReviewAiEntryRef, ReviewCandidateItem
-from app.services.review import _load_projects_and_paths, utc_now
+from app.services.review import utc_now
 
 SCAN_ENTRY_LIMIT = 100
 BATCH_SIZE = 30
@@ -121,15 +121,16 @@ def _entry_dict(entry: Entry) -> dict:
     }
 
 
-async def _create_candidates(
+async def _create_findings(
     db: AsyncSession,
     workspace_id: str,
     scan: ReviewScan,
     entries_by_id: dict[str, Entry],
     results: list,
-) -> int:
-    """把 AI 结果转为候选发现；跳过非 duplicate/conflict 与非同组配对。"""
+) -> tuple[int, int]:
+    """把 AI 结果直接转为 open 发现；返回 (新发现数, 跳过已拒绝数)。"""
     created = 0
+    skipped = 0
     group_entry_ids = set(entries_by_id)
     for result in results:
         if result.review_type not in (
@@ -154,18 +155,25 @@ async def _create_candidates(
             )
         )
         if existing is not None:
-            if existing.status == AiFindingStatus.CANDIDATE.value:
+            resolution = await db.scalar(
+                select(ReviewResolution).where(
+                    ReviewResolution.workspace_id == workspace_id,
+                    ReviewResolution.target_type
+                    == FindingTargetType.AI_FINDING.value,
+                    ReviewResolution.target_id == existing.id,
+                )
+            )
+            if resolution is None:
+                # 已在待处理列表，不重复创建
                 continue
-            if existing.status == AiFindingStatus.OPEN.value:
-                # 已确认（无论是否处理）：不重复生成候选；
-                # 已处理问题的重新浮现由扫描完成时的确定性检查负责
+            if resolution.resolution in (
+                ResolutionType.REJECTED.value,
+                ResolutionType.IGNORED.value,
+            ):
+                # 已拒绝/历史忽略：不再报问题，计入跳过数
+                skipped += 1
                 continue
-            existing.scan_id = scan.id
-            existing.description = result.description
-            existing.suggestion = result.suggestion or None
-            existing.severity = result.severity
-            existing.status = AiFindingStatus.CANDIDATE.value
-            created += 1
+            # 已解决：由扫描完成时的确定性检查清除并重新浮现
             continue
         db.add(
             ReviewAiFinding(
@@ -177,11 +185,11 @@ async def _create_candidates(
                 description=result.description,
                 suggestion=result.suggestion or None,
                 severity=result.severity,
-                status=AiFindingStatus.CANDIDATE.value,
+                status=AiFindingStatus.OPEN.value,
             )
         )
         created += 1
-    return created
+    return created, skipped
 
 
 async def _resurface_handled_in_scope(
@@ -189,7 +197,7 @@ async def _resurface_handled_in_scope(
     workspace_id: str,
     entries: list[Entry],
 ) -> int:
-    """扫描覆盖范围内，仍存在且带处理记录的已确认发现重新浮现。"""
+    """扫描覆盖范围内，已解决且记录仍存在的发现清除处理记录重新浮现。"""
     entry_ids = [entry.id for entry in entries]
     if not entry_ids:
         return 0
@@ -213,7 +221,10 @@ async def _resurface_handled_in_scope(
                 ReviewResolution.target_id == finding.id,
             )
         )
-        if resolution is not None:
+        if (
+            resolution is not None
+            and resolution.resolution == ResolutionType.RESOLVED.value
+        ):
             await db.delete(resolution)
             cleared += 1
     return cleared
@@ -224,7 +235,7 @@ async def run_scan(
     scan: ReviewScan,
     provider: AIProvider,
 ) -> None:
-    """执行扫描：加载范围条目、分批调用 AI、写候选并标记成功。"""
+    """执行扫描：加载范围条目、分批调用 AI、直接写 open 发现并标记成功。"""
     entries, truncated = await load_scan_entries(
         db,
         scan.workspace_id,
@@ -237,19 +248,22 @@ async def run_scan(
     await db.flush()
 
     findings_count = 0
+    skipped_rejected = 0
     for start in range(0, len(entries), BATCH_SIZE):
         batch = entries[start : start + BATCH_SIZE]
         entries_by_id = {entry.id: entry for entry in batch}
         results = await provider.review(
             [_entry_dict(entry) for entry in batch]
         )
-        findings_count += await _create_candidates(
+        created, skipped = await _create_findings(
             db,
             scan.workspace_id,
             scan,
             entries_by_id,
             results,
         )
+        findings_count += created
+        skipped_rejected += skipped
 
     scan.resurfaced_count = await _resurface_handled_in_scope(
         db,
@@ -259,85 +273,106 @@ async def run_scan(
 
     scan.status = ScanStatus.SUCCEEDED.value
     scan.findings_count = findings_count
+    scan.skipped_rejected_count = skipped_rejected
     scan.finished_at = utc_now()
     await db.flush()
 
 
-def _entry_ref(
-    entry: Entry,
-    projects: dict[str, str],
-    paths: dict[str, list[str]],
-) -> ReviewAiEntryRef:
-    return ReviewAiEntryRef(
-        id=entry.id,
-        title=entry.title,
-        content=entry.content,
-        entry_type=entry.entry_type,
-        project_id=entry.project_id,
-        project_name=projects.get(entry.project_id),
-        node_id=entry.node_id,
-        node_path=(
-            paths.get(entry.node_id or "", []) if entry.node_id else []
-        ),
-    )
-
-
-async def list_scan_candidates(
+async def list_scans(
     db: AsyncSession,
     workspace_id: str,
-    scan_id: str,
-) -> list[ReviewCandidateItem]:
-    findings = (
+    limit: int,
+    offset: int,
+) -> tuple[list[ReviewScan], int]:
+    total = await db.scalar(
+        select(func.count(ReviewScan.id)).where(
+            ReviewScan.workspace_id == workspace_id
+        )
+    )
+    scans = (
         await db.scalars(
-            select(ReviewAiFinding)
-            .where(
-                ReviewAiFinding.scan_id == scan_id,
-                ReviewAiFinding.workspace_id == workspace_id,
-                ReviewAiFinding.status == AiFindingStatus.CANDIDATE.value,
-            )
-            .order_by(ReviewAiFinding.created_at, ReviewAiFinding.id)
+            select(ReviewScan)
+            .where(ReviewScan.workspace_id == workspace_id)
+            .order_by(ReviewScan.created_at.desc(), ReviewScan.id.desc())
+            .offset(offset)
+            .limit(limit)
         )
     ).all()
-    if not findings:
-        return []
+    return list(scans), int(total or 0)
 
-    entry_ids = {
-        entry_id
-        for finding in findings
-        for entry_id in (finding.entry_a_id, finding.entry_b_id)
-    }
-    entries = {
-        entry.id: entry
-        for entry in (
+
+async def scan_display_details(
+    db: AsyncSession,
+    workspace_id: str,
+    scans: list[ReviewScan],
+) -> tuple[dict[str, str], dict[str, dict[str, int]]]:
+    """返回 scope_id -> 名称，以及 scan_id -> 决策统计。"""
+    names: dict[str, str] = {}
+    if not scans:
+        return names, {}
+
+    project_ids = [
+        scan.scope_id
+        for scan in scans
+        if scan.scope_type == ScanScopeType.PROJECT.value and scan.scope_id
+    ]
+    node_ids = [
+        scan.scope_id
+        for scan in scans
+        if scan.scope_type == ScanScopeType.NODE.value and scan.scope_id
+    ]
+    if project_ids:
+        projects = (
             await db.scalars(
-                select(Entry).where(
-                    Entry.id.in_(entry_ids),
-                    Entry.workspace_id == workspace_id,
+                select(Project).where(
+                    Project.id.in_(project_ids),
+                    Project.workspace_id == workspace_id,
                 )
             )
         ).all()
-    }
-    projects, paths = await _load_projects_and_paths(
-        db,
-        workspace_id,
-        {entry.project_id for entry in entries.values()},
-    )
-    items: list[ReviewCandidateItem] = []
-    for finding in findings:
-        entry_a = entries.get(finding.entry_a_id)
-        entry_b = entries.get(finding.entry_b_id)
-        if entry_a is None or entry_b is None:
-            continue
-        items.append(
-            ReviewCandidateItem(
-                id=finding.id,
-                review_type=finding.review_type,
-                status=finding.status,
-                description=finding.description,
-                suggestion=finding.suggestion,
-                severity=finding.severity,
-                entry_a=_entry_ref(entry_a, projects, paths),
-                entry_b=_entry_ref(entry_b, projects, paths),
+        names.update({project.id: project.name for project in projects})
+    if node_ids:
+        nodes = (
+            await db.scalars(select(Node).where(Node.id.in_(node_ids)))
+        ).all()
+        names.update({node.id: node.name for node in nodes})
+
+    scan_ids = [scan.id for scan in scans]
+    findings = (
+        await db.scalars(
+            select(ReviewAiFinding).where(
+                ReviewAiFinding.workspace_id == workspace_id,
+                ReviewAiFinding.scan_id.in_(scan_ids),
             )
         )
-    return items
+    ).all()
+    finding_ids = [finding.id for finding in findings]
+    resolution_map: dict[str, str] = {}
+    if finding_ids:
+        resolutions = (
+            await db.scalars(
+                select(ReviewResolution).where(
+                    ReviewResolution.target_type
+                    == FindingTargetType.AI_FINDING.value,
+                    ReviewResolution.target_id.in_(finding_ids),
+                )
+            )
+        ).all()
+        resolution_map = {
+            resolution.target_id: resolution.resolution
+            for resolution in resolutions
+        }
+    summaries: dict[str, dict[str, int]] = {}
+    for finding in findings:
+        summary = summaries.setdefault(
+            finding.scan_id,
+            {"resolved": 0, "rejected": 0, "pending": 0},
+        )
+        state = resolution_map.get(finding.id)
+        if state == ResolutionType.RESOLVED.value:
+            summary["resolved"] += 1
+        elif state == ResolutionType.REJECTED.value:
+            summary["rejected"] += 1
+        else:
+            summary["pending"] += 1
+    return names, summaries
