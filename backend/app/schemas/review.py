@@ -83,8 +83,13 @@ class ReviewScanResponse(BaseModel):
     truncated: bool
     findings_count: int
     last_error: str | None
+    started_at: datetime | None
     created_at: datetime | None
     finished_at: datetime | None
+
+
+class ReviewScanListResponse(BaseModel):
+    scans: list[ReviewScanResponse]
 
 
 class ReviewAiEntryRef(BaseModel):

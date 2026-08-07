@@ -7,7 +7,6 @@ export function scopeKey(userId: string): string {
 }
 
 export const DEFAULT_SCOPE: ReviewScopeSelection = {
-  scope_type: 'workspace',
   project_id: null,
   node_id: null,
 }
@@ -17,17 +16,29 @@ export function readScope(userId: string): ReviewScopeSelection {
   try {
     const raw = window.localStorage.getItem(scopeKey(userId))
     if (!raw) return DEFAULT_SCOPE
-    const parsed = JSON.parse(raw) as Partial<ReviewScopeSelection>
-    if (
-      parsed.scope_type !== 'workspace' &&
-      parsed.scope_type !== 'project' &&
-      parsed.scope_type !== 'node'
-    ) {
-      return DEFAULT_SCOPE
+    const parsed = JSON.parse(raw) as Partial<ReviewScopeSelection> & {
+      scope_type?: 'workspace' | 'project' | 'node'
+    }
+    if (parsed.scope_type === 'workspace') {
+      return { project_id: null, node_id: null }
+    }
+    if (parsed.scope_type === 'node') {
+      return {
+        project_id:
+          typeof parsed.project_id === 'string' ? parsed.project_id : null,
+        node_id: typeof parsed.node_id === 'string' ? parsed.node_id : null,
+      }
+    }
+    if (parsed.scope_type === 'project') {
+      return {
+        project_id:
+          typeof parsed.project_id === 'string' ? parsed.project_id : null,
+        node_id: null,
+      }
     }
     return {
-      scope_type: parsed.scope_type,
-      project_id: typeof parsed.project_id === 'string' ? parsed.project_id : null,
+      project_id:
+        typeof parsed.project_id === 'string' ? parsed.project_id : null,
       node_id: typeof parsed.node_id === 'string' ? parsed.node_id : null,
     }
   } catch {

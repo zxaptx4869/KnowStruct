@@ -92,19 +92,27 @@ Review 页 SHALL 在同一响应式 Web 应用中提供桌面与 390px 移动端
 
 ### Requirement: Run scoped AI review scans
 
-系统 SHALL 允许用户手动发起 AI 审查扫描，范围可为全部工作区、指定项目或指定节点（项目与节点级联选择）；扫描 SHALL 异步执行，页面可跟踪进行中/成功/失败状态，失败时可重新发起。扫描范围 SHALL 只包含当前 Workspace 的已归档 Entry，按同节点分组批量调用 AI；单次扫描条目数超过上限时 MUST 截断并明确提示建议缩小范围。未配置 AI 服务时扫描 MUST 失败并显示可读原因。
+系统 SHALL 允许用户手动发起 AI 审查扫描，范围通过多层级树选择：项目为顶层，可展开到任意节点；选中项目即项目范围，选中节点即节点范围，不提供"全部工作区"选项。扫描 SHALL 异步执行，页面可跟踪进行中/成功/失败状态并显示开始时间与已用时；用户离开页面后返回 SHALL 自动恢复最近一次扫描的进度与结果（进行中继续轮询、已完成展示结果与候选）。同一 Workspace 存在进行中扫描时，再次发起 MUST 返回冲突并提示等待完成。扫描范围 SHALL 只包含当前 Workspace 的已归档 Entry，按同节点分组批量调用 AI；单次扫描条目数超过上限时 MUST 截断并明确提示建议缩小范围。未配置 AI 服务时扫描 MUST 失败并显示可读原因。
 
-#### Scenario: Start a scan for the whole workspace
-- **WHEN** 用户选择"全部工作区"并点击开始审查
-- **THEN** 系统创建扫描任务并异步执行，页面显示扫描中状态
+#### Scenario: Choose a project or node scope from a tree
+- **WHEN** 用户点击"审查范围"并展开项目树
+- **THEN** 用户可点击项目行选择项目范围，或展开后点击节点行选择节点范围
 
-#### Scenario: Start a scan for a project or node
-- **WHEN** 用户选择指定项目或节点并开始审查
-- **THEN** 扫描只覆盖该范围内已归档 Entry，并按同节点分组进行比对
+#### Scenario: Require a scope before scanning
+- **WHEN** 用户未选择任何项目或节点就点击开始审查
+- **THEN** 系统提示"请选择审查范围"，不创建扫描
 
-#### Scenario: Track scan progress and completion
-- **WHEN** 扫描进行中或已完成
-- **THEN** 页面轮询显示进行中状态，完成后展示候选发现数量
+#### Scenario: Track scan progress with timing
+- **WHEN** 扫描进行中
+- **THEN** 页面显示扫描中状态、开始时间与已用时
+
+#### Scenario: Resume the latest scan after returning
+- **WHEN** 用户离开 Review 页后返回，且存在最近一次扫描
+- **THEN** 页面恢复该扫描：进行中继续轮询，已完成展示结果与候选，失败显示原因并可重新发起
+
+#### Scenario: Block concurrent scans
+- **WHEN** 同一 Workspace 已存在 pending/running 扫描时再次发起扫描
+- **THEN** 系统返回冲突并提示"已有扫描进行中，请等待完成"
 
 #### Scenario: Fail and retry when AI is not configured
 - **WHEN** 用户发起扫描但 AI 服务未配置或调用失败
@@ -115,7 +123,7 @@ Review 页 SHALL 在同一响应式 Web 应用中提供桌面与 390px 移动端
 - **THEN** 扫描按上限截断执行，并提示用户本次达到上限、建议缩小范围
 
 #### Scenario: Scan an empty scope
-- **WHEN** 选定范围内没有任何已归档 Entry
+- **WHEN** 选定项目或节点范围内没有任何已归档 Entry
 - **THEN** 扫描成功完成且候选发现为空
 
 ### Requirement: Confirm AI candidate findings

@@ -11,6 +11,8 @@ import type {
   ReviewCandidatesResponse,
   ReviewFinding,
   ReviewFindingsResponse,
+  ReviewScan,
+  ReviewScanListResponse,
 } from '../review/types'
 import ReviewPage from './ReviewPage'
 
@@ -117,17 +119,18 @@ interface MockState {
   handled: Set<string>
   notes: Map<string, string>
   resolutions: Map<string, 'resolved' | 'ignored'>
-  scan: {
-    id: string
-    status: string
-    findings_count: number
-    truncated: boolean
-    last_error: string | null
-  } | null
+  scans: ReviewScan[]
+  scanPolls: Map<string, number>
+  rejectScan: boolean
 }
 
 function reviewFetchMock(
-  opts: { openFindings?: ReviewFinding[]; candidates?: ReviewCandidate[] } = {},
+  opts: {
+    openFindings?: ReviewFinding[]
+    candidates?: ReviewCandidate[]
+    scans?: ReviewScan[]
+    rejectScan?: boolean
+  } = {},
 ) {
   const state: MockState = {
     findings: [...(opts.openFindings ?? [])],
@@ -135,7 +138,9 @@ function reviewFetchMock(
     handled: new Set(),
     notes: new Map(),
     resolutions: new Map(),
-    scan: null,
+    scans: [...(opts.scans ?? [])],
+    scanPolls: new Map(),
+    rejectScan: opts.rejectScan ?? false,
   }
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     const target = String(url)
@@ -145,29 +150,60 @@ function reviewFetchMock(
       return Promise.resolve(jsonResponse([{ id: 'project-1', name: '新房装修' }]))
     }
     if (target.includes('/api/projects/project-1/nodes')) {
-      return Promise.resolve(jsonResponse([{ id: 'node-fridge', name: '冰箱' }]))
+      return Promise.resolve(jsonResponse([
+        { id: 'node-fridge', project_id: 'project-1', parent_id: null, name: '冰箱' },
+      ]))
     }
-    if (target.includes('/api/review/scans') && !target.includes('/candidates')) {
+    if (target === '/api/review/scans') {
       if (method === 'POST') {
-        state.scan = {
-          id: 'scan-1',
-          status: 'pending',
-          findings_count: 0,
-          truncated: false,
-          last_error: null,
+        if (state.rejectScan) {
+          return Promise.resolve(jsonResponse(
+            { detail: { code: 'scan_in_progress', message: '已有扫描进行中，请等待完成' } },
+            409,
+          ))
         }
-        return Promise.resolve(jsonResponse(state.scan))
+        const scan: ReviewScan = {
+          id: `scan-${state.scans.length + 1}`,
+          scope_type: 'project',
+          scope_id: 'project-1',
+          status: 'pending',
+          truncated: false,
+          findings_count: 0,
+          last_error: null,
+          started_at: null,
+          created_at: '2026-08-07T10:00:00',
+          finished_at: null,
+        }
+        state.scans.push(scan)
+        return Promise.resolve(jsonResponse(scan))
       }
-      if (state.scan) {
-        state.scan.status = 'succeeded'
-        state.scan.findings_count = state.candidates.length
-      }
-      return Promise.resolve(jsonResponse(state.scan))
+      return Promise.resolve(
+        jsonResponse({
+          scans: [...state.scans].reverse(),
+        } satisfies ReviewScanListResponse),
+      )
     }
-    if (target.includes('/candidates')) {
+    if (target.includes('/api/review/scans/') && target.includes('/candidates')) {
       return Promise.resolve(
         jsonResponse({ candidates: state.candidates } satisfies ReviewCandidatesResponse),
       )
+    }
+    if (target.includes('/api/review/scans/')) {
+      const scanId = target.split('/scans/')[1].split('/')[0]
+      const polls = (state.scanPolls.get(scanId) ?? 0) + 1
+      state.scanPolls.set(scanId, polls)
+      const scan = state.scans.find((item) => item.id === scanId)
+      if (scan && (scan.status === 'pending' || scan.status === 'running')) {
+        if (polls === 1) {
+          scan.status = 'running'
+          scan.started_at = '2026-08-07T10:00:00'
+        } else if (polls >= 2) {
+          scan.status = 'succeeded'
+          scan.findings_count = state.candidates.length
+          scan.finished_at = '2026-08-07T10:02:00'
+        }
+      }
+      return Promise.resolve(jsonResponse(scan))
     }
     if (target.includes('/api/review/findings/ai/')) {
       const findingId = target.split('/findings/ai/')[1].split('/')[0]
@@ -269,6 +305,11 @@ function renderReviewPage() {
   )
 }
 
+async function selectProjectScope() {
+  await userEvent.click(screen.getByRole('button', { name: /请选择审查范围/ }))
+  await userEvent.click(screen.getByRole('button', { name: /^新房装修/ }))
+}
+
 describe('ReviewPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -360,9 +401,36 @@ describe('ReviewPage', () => {
     expect(await screen.findByText('没有待处理问题')).toBeInTheDocument()
   })
 
+  it('requires a scope before scanning', async () => {
+    reviewFetchMock()
+    renderReviewPage()
+
+    await userEvent.click(screen.getByRole('button', { name: '开始审查' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('请选择审查范围')
+  })
+
+  it('selects a node scope from the tree and remembers it', async () => {
+    reviewFetchMock()
+    const first = renderReviewPage()
+
+    await userEvent.click(screen.getByRole('button', { name: /请选择审查范围/ }))
+    await userEvent.click(screen.getByRole('button', { name: /^新房装修/ }))
+    await userEvent.click(screen.getByRole('button', { name: /新房装修/ }))
+    await userEvent.click(screen.getByRole('button', { name: '展开 新房装修' }))
+    await userEvent.click(screen.getByRole('button', { name: /^冰箱/ }))
+
+    expect(window.localStorage.getItem(scopeKey('user-1'))).toContain('node-fridge')
+    first.unmount()
+    renderReviewPage()
+    expect(
+      await screen.findByRole('button', { name: /新房装修 \/ 冰箱/ }),
+    ).toBeInTheDocument()
+  })
+
   it('starts a scan and confirms a candidate into the open list', async () => {
     const { fetchMock } = reviewFetchMock({ candidates: [candidate] })
     renderReviewPage()
+    await selectProjectScope()
 
     await userEvent.click(screen.getByRole('button', { name: '开始审查' }))
     const scanCall = fetchMock.mock.calls.find(
@@ -370,11 +438,12 @@ describe('ReviewPage', () => {
         String(url).includes('/api/review/scans') && (init as RequestInit | undefined)?.method === 'POST',
     )
     expect(scanCall).toBeDefined()
-    expect(String(scanCall![1]?.body)).toContain('workspace')
+    expect(String(scanCall![1]?.body)).toContain('"scope_type":"project"')
 
-    expect(await screen.findByText('扫描完成：发现 1 条候选')).toBeInTheDocument()
+    expect(
+      await screen.findByText('扫描完成：发现 1 条候选', {}, { timeout: 5000 }),
+    ).toBeInTheDocument()
     expect(await screen.findByText('两条记录语义重复，建议合并')).toBeInTheDocument()
-    expect(screen.getByText('建议：建议合并为一条记录')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '确认为问题' }))
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式 vs 零嵌冰箱侧边预留尺寸' })).toBeInTheDocument()
@@ -384,13 +453,67 @@ describe('ReviewPage', () => {
   it('rejects a candidate and it stays out of the list', async () => {
     reviewFetchMock({ candidates: [candidate] })
     renderReviewPage()
+    await selectProjectScope()
 
     await userEvent.click(screen.getByRole('button', { name: '开始审查' }))
-    await screen.findByText('扫描完成：发现 1 条候选')
+    await screen.findByText('扫描完成：发现 1 条候选', {}, { timeout: 5000 })
+    await screen.findByText('两条记录语义重复，建议合并')
     await userEvent.click(screen.getByRole('button', { name: '拒绝' }))
 
     expect(await screen.findByText('没有待处理问题')).toBeInTheDocument()
     expect(screen.queryByText('两条记录语义重复，建议合并')).not.toBeInTheDocument()
+  })
+
+  it('resumes a running scan after returning to the page', async () => {
+    reviewFetchMock({
+      scans: [{
+        id: 'scan-old',
+        scope_type: 'project',
+        scope_id: 'project-1',
+        status: 'pending',
+        truncated: false,
+        findings_count: 0,
+        last_error: null,
+        started_at: null,
+        created_at: '2026-08-07T10:00:00',
+        finished_at: null,
+      }],
+    })
+    renderReviewPage()
+
+    expect(await screen.findByText(/正在扫描该范围/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '扫描中' })).toBeDisabled()
+  })
+
+  it('resumes a succeeded scan and shows its candidates', async () => {
+    reviewFetchMock({
+      candidates: [candidate],
+      scans: [{
+        id: 'scan-done',
+        scope_type: 'project',
+        scope_id: 'project-1',
+        status: 'succeeded',
+        truncated: false,
+        findings_count: 1,
+        last_error: null,
+        started_at: '2026-08-07T10:00:00',
+        created_at: '2026-08-07T10:00:00',
+        finished_at: '2026-08-07T10:02:00',
+      }],
+    })
+    renderReviewPage()
+
+    expect(await screen.findByText('扫描完成：发现 1 条候选')).toBeInTheDocument()
+    expect(await screen.findByText('两条记录语义重复，建议合并')).toBeInTheDocument()
+  })
+
+  it('shows a toast when a concurrent scan is blocked', async () => {
+    reviewFetchMock({ rejectScan: true })
+    renderReviewPage()
+    await selectProjectScope()
+
+    await userEvent.click(screen.getByRole('button', { name: '开始审查' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('已有扫描进行中，请等待完成')
   })
 
   it('shows an AI finding with pair evidence and jumps to record B', async () => {
@@ -402,7 +525,6 @@ describe('ReviewPage', () => {
     await userEvent.click(within(card).getByRole('button', { name: '查看详情' }))
 
     expect(within(card).getByText('两条记录语义重复')).toBeInTheDocument()
-    expect(within(card).getByText('建议合并为一条记录')).toBeInTheDocument()
     expect(within(card).getByText(/记录 A 的内容/)).toBeInTheDocument()
     expect(within(card).getByText(/记录 B 的内容/)).toBeInTheDocument()
 
@@ -423,24 +545,5 @@ describe('ReviewPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '撤销' }))
     await userEvent.click(screen.getByRole('tab', { name: '待处理' }))
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式 vs 零嵌冰箱侧边预留尺寸' })).toBeInTheDocument()
-  })
-
-  it('selects a node scope and remembers it for the next visit', async () => {
-    reviewFetchMock({ openFindings: [] })
-    const first = renderReviewPage()
-
-    const scopeSelect = screen.getByLabelText('审查范围')
-    await userEvent.selectOptions(scopeSelect, 'node')
-    await userEvent.selectOptions(screen.getByLabelText('选择项目'), 'project-1')
-    await userEvent.selectOptions(screen.getByLabelText('选择节点'), 'node-fridge')
-
-    expect(window.localStorage.getItem(scopeKey('user-1'))).toContain('node-fridge')
-
-    first.unmount()
-    renderReviewPage()
-    expect(await screen.findByRole('option', { name: '新房装修' })).toBeInTheDocument()
-    expect(screen.getByLabelText('审查范围')).toHaveValue('node')
-    expect(screen.getByLabelText('选择项目')).toHaveValue('project-1')
-    expect(screen.getByLabelText('选择节点')).toHaveValue('node-fridge')
   })
 })

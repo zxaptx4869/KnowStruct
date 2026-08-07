@@ -6,16 +6,17 @@ import {
   RefreshCw,
   Undo2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { useAuth } from '../auth/useAuth'
 import { useToast } from '../components/useToast'
 import { entryTypeLabels, sourceTypeLabels } from '../inbox/labels'
 import type { EntryType, SourceType } from '../inbox/types'
-import { useNodes, useProjects } from '../projects/queries'
+import ScopePicker from '../review/ScopePicker'
 import {
   useAiDecision,
+  useRecentScans,
   useReviewFindings,
   useReviewMutations,
   useReviewScan,
@@ -27,7 +28,7 @@ import type {
   ReviewCandidate,
   ReviewFinding,
   ReviewFindingType,
-  ReviewScopeType,
+  ReviewScopeSelection,
   ReviewStatus,
 } from '../review/types'
 
@@ -62,6 +63,11 @@ function formatTime(value: string | null | undefined): string {
   return value ? dayjs(value).format('MM-DD HH:mm') : ''
 }
 
+function formatElapsedMinutes(value: string | null | undefined): number {
+  if (!value) return 0
+  return Math.max(0, Math.floor(dayjs().diff(dayjs(value), 'minute')))
+}
+
 function entryJumpPath(
   projectId?: string | null,
   nodeId?: string | null,
@@ -82,15 +88,10 @@ export default function ReviewPage() {
   const [findingType, setFindingType] = useState<ReviewFindingType | 'all'>('all')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
-  const [scopeType, setScopeType] = useState<ReviewScopeType>(
-    initialScope.scope_type,
-  )
-  const [projectId, setProjectId] = useState<string | null>(
-    initialScope.project_id ?? null,
-  )
-  const [nodeId, setNodeId] = useState<string | null>(
-    initialScope.node_id ?? null,
-  )
+  const [scope, setScope] = useState<ReviewScopeSelection>({
+    project_id: initialScope.project_id ?? null,
+    node_id: initialScope.node_id ?? null,
+  })
   const [activeScanId, setActiveScanId] = useState<string | null>(null)
   const { setResolution, undoResolution } = useReviewMutations()
   const startScan = useStartScan()
@@ -100,8 +101,9 @@ export default function ReviewPage() {
     scanQuery.data?.status === 'succeeded',
   )
   const aiDecision = useAiDecision()
-  const projectsQuery = useProjects()
-  const nodesQuery = useNodes(projectId ?? '')
+  const recentScansQuery = useRecentScans()
+  const recentScans = recentScansQuery.data?.scans ?? []
+  const latestScanId = recentScans[0]?.id
 
   const query = useReviewFindings(status, findingType)
   const findings = query.data?.findings ?? []
@@ -111,38 +113,15 @@ export default function ReviewPage() {
   const scanActive =
     scan?.status === 'pending' || scan?.status === 'running'
 
-  function persistScope(next: {
-    scope_type: ReviewScopeType
-    project_id?: string | null
-    node_id?: string | null
-  }) {
-    writeScope(userId, {
-      scope_type: next.scope_type,
-      project_id: next.project_id ?? null,
-      node_id: next.node_id ?? null,
-    })
-  }
+  useEffect(() => {
+    if (!activeScanId && latestScanId) {
+      setActiveScanId(latestScanId)
+    }
+  }, [activeScanId, latestScanId])
 
-  function handleScopeTypeChange(value: ReviewScopeType) {
-    setScopeType(value)
-    setProjectId(null)
-    setNodeId(null)
-    persistScope({ scope_type: value, project_id: null, node_id: null })
-  }
-
-  function handleProjectChange(value: string) {
-    setProjectId(value || null)
-    setNodeId(null)
-    persistScope({ scope_type: scopeType, project_id: value || null, node_id: null })
-  }
-
-  function handleNodeChange(value: string) {
-    setNodeId(value || null)
-    persistScope({
-      scope_type: scopeType,
-      project_id: projectId,
-      node_id: value || null,
-    })
+  function handleScopeChange(next: ReviewScopeSelection) {
+    setScope(next)
+    writeScope(userId, next)
   }
 
   function toggle(key: string) {
@@ -209,19 +188,14 @@ export default function ReviewPage() {
   }
 
   async function handleStartScan() {
-    if (scopeType === 'project' && !projectId) {
-      toast.error('请选择要审查的项目')
-      return
-    }
-    if (scopeType === 'node' && (!projectId || !nodeId)) {
-      toast.error('请选择要审查的项目与节点')
+    if (!scope.project_id) {
+      toast.error('请选择审查范围')
       return
     }
     try {
       const scan = await startScan.mutateAsync({
-        scope_type: scopeType,
-        project_id: projectId,
-        node_id: nodeId,
+        project_id: scope.project_id,
+        node_id: scope.node_id,
       })
       setActiveScanId(scan.id)
       toast.success('已开始审查')
@@ -253,48 +227,7 @@ export default function ReviewPage() {
       </header>
 
       <div className="review-scan-bar">
-        <div className="review-scope">
-          <label htmlFor="review-scope-type">审查范围</label>
-          <select
-            id="review-scope-type"
-            value={scopeType}
-            onChange={(event) =>
-              handleScopeTypeChange(event.target.value as ReviewScopeType)
-            }
-          >
-            <option value="workspace">全部工作区</option>
-            <option value="project">指定项目</option>
-            <option value="node">指定节点</option>
-          </select>
-          {scopeType !== 'workspace' && (
-            <select
-              aria-label="选择项目"
-              value={projectId ?? ''}
-              onChange={(event) => handleProjectChange(event.target.value)}
-            >
-              <option value="">选择项目</option>
-              {projectsQuery.data?.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {scopeType === 'node' && (
-            <select
-              aria-label="选择节点"
-              value={nodeId ?? ''}
-              onChange={(event) => handleNodeChange(event.target.value)}
-            >
-              <option value="">选择节点</option>
-              {nodesQuery.data?.map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+        <ScopePicker value={scope} onChange={handleScopeChange} />
         <button
           type="button"
           className="btn primary review-start-scan"
@@ -314,7 +247,10 @@ export default function ReviewPage() {
           {scanActive ? (
             <>
               <span className="spin state-spinner" />
-              正在扫描该范围，完成后将展示候选发现
+              正在扫描该范围（开始于{' '}
+              {formatTime(scan.started_at ?? scan.created_at)}，已用时{' '}
+              {formatElapsedMinutes(scan.started_at ?? scan.created_at)}{' '}
+              分钟），完成后将展示候选发现
             </>
           ) : scan.status === 'failed' ? (
             <>

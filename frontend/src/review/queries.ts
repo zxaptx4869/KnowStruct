@@ -7,6 +7,7 @@ import type {
   ReviewResolutionInput,
   ReviewResolutionResult,
   ReviewScan,
+  ReviewScanListResponse,
   ReviewScopeSelection,
   ReviewStatus,
   ReviewTargetType,
@@ -81,13 +82,20 @@ export function useStartScan() {
   return useMutation({
     mutationFn: (scope: ReviewScopeSelection) =>
       api.post<ReviewScan>('/review/scans', {
-        scope_type: scope.scope_type,
+        scope_type: scope.node_id ? 'node' : 'project',
         project_id: scope.project_id ?? undefined,
         node_id: scope.node_id ?? undefined,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: reviewKeys.scans })
     },
+  })
+}
+
+export function useRecentScans() {
+  return useQuery({
+    queryKey: reviewKeys.scans,
+    queryFn: () => api.get<ReviewScanListResponse>('/review/scans'),
   })
 }
 

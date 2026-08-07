@@ -54,6 +54,41 @@ async def test_start_scan_workspace_scope_and_status(
 
 
 @pytest.mark.asyncio
+async def test_list_scans_recent_first_with_started_at(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    first = await _start_scan(client, scope_type="workspace")
+    await process_next_scan(db, ReviewFakeProvider())
+    second = await _start_scan(client, scope_type="workspace")
+
+    scans = (await client.get("/api/review/scans")).json()["scans"]
+    assert [scan["id"] for scan in scans] == [second["id"], first["id"]]
+    assert scans[1]["started_at"] is not None
+    assert scans[0]["started_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_scan_is_blocked(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    await _start_scan(client, scope_type="workspace")
+    response = await client.post(
+        "/api/review/scans",
+        json={"scope_type": "workspace"},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "scan_in_progress"
+
+    await process_next_scan(db, ReviewFakeProvider())
+    scan = await _start_scan(client, scope_type="workspace")
+    assert scan["status"] == "pending"
+
+
+@pytest.mark.asyncio
 async def test_start_scan_validates_scope(
     client: AsyncClient,
     db: AsyncSession,

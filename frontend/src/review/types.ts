@@ -57,7 +57,6 @@ export interface ReviewResolutionResult {
 export type ReviewScopeType = 'workspace' | 'project' | 'node'
 
 export interface ReviewScopeSelection {
-  scope_type: ReviewScopeType
   project_id?: string | null
   node_id?: string | null
 }
@@ -70,8 +69,13 @@ export interface ReviewScan {
   truncated: boolean
   findings_count: number
   last_error: string | null
+  started_at: string | null
   created_at: string | null
   finished_at: string | null
+}
+
+export interface ReviewScanListResponse {
+  scans: ReviewScan[]
 }
 
 export interface ReviewAiEntryRef {

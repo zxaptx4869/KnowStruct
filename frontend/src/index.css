@@ -2642,26 +2642,109 @@ textarea.field-error {
   background: var(--surface-2, #f9fafb);
 }
 
-.review-scope {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+.review-scope-picker {
+  position: relative;
 }
 
-.review-scope label {
+.review-scope-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  max-width: 320px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-radius: 8px;
+  background: var(--surface-1, #fff);
   font-size: 13px;
+  color: var(--text, #374151);
+  cursor: pointer;
+}
+
+.review-scope-trigger svg {
+  flex: none;
   color: var(--muted, #6b7280);
 }
 
-.review-scope select {
+.review-scope-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-scope-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 280px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 10px;
+  background: var(--surface-1, #fff);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.review-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.review-scope-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   min-height: 34px;
   padding: 0 10px;
-  border: 1px solid var(--line-strong, #d1d5db);
+  border: 0;
   border-radius: 8px;
+  background: transparent;
   font-size: 13px;
+  text-align: left;
   color: var(--text, #374151);
-  background: var(--surface-1, #fff);
+  cursor: pointer;
+}
+
+.review-scope-item:hover {
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--color-primary, #2563eb);
+}
+
+.review-scope-scope {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+}
+
+.review-scope-expand {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted, #6b7280);
+  cursor: pointer;
+}
+
+.review-scope-children {
+  margin-left: 14px;
+  padding-left: 4px;
+  border-left: 1px solid var(--line, #e5e7eb);
+}
+
+.review-scope-empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--muted, #6b7280);
 }
 
 .review-start-scan {
@@ -2886,9 +2969,22 @@ textarea.field-error {
     flex-direction: column;
   }
 
-  .review-scope {
-    flex-direction: column;
-    align-items: stretch;
+  .review-scope-picker {
+    position: static;
+  }
+
+  .review-scope-trigger {
+    width: 100%;
+    max-width: none;
+  }
+
+  .review-scope-panel {
+    position: fixed;
+    inset: auto 0 0 0;
+    min-width: 0;
+    max-height: 55vh;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
   }
 
   .review-start-scan {

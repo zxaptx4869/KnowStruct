@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import select
 
 from app.api.deps import Auth, DbSession
-from app.api.errors import DomainError
+from app.api.errors import ConflictError, DomainError
 from app.models import ReviewScan, ScanStatus
 from app.schemas.review import (
     ReviewCandidatesResponse,
@@ -17,6 +17,7 @@ from app.schemas.review import (
     ReviewResolutionInput,
     ReviewResolutionResult,
     ReviewScanCreate,
+    ReviewScanListResponse,
     ReviewScanResponse,
 )
 from app.services import review as review_service
@@ -111,6 +112,19 @@ async def start_review_scan(
     auth: Auth,
     db: DbSession,
 ) -> ReviewScanResponse:
+    existing = await db.scalar(
+        select(ReviewScan.id).where(
+            ReviewScan.workspace_id == auth.workspace.id,
+            ReviewScan.status.in_(
+                [ScanStatus.PENDING.value, ScanStatus.RUNNING.value]
+            ),
+        )
+    )
+    if existing is not None:
+        raise ConflictError(
+            "scan_in_progress",
+            "已有扫描进行中，请等待完成",
+        )
     scope_id = await scan_service.validate_scope(
         db,
         auth.workspace.id,
@@ -128,6 +142,23 @@ async def start_review_scan(
     await db.commit()
     await db.refresh(scan)
     return scan
+
+
+@router.get("/scans", response_model=ReviewScanListResponse)
+async def list_review_scans(
+    auth: Auth,
+    db: DbSession,
+    limit: int = Query(default=10, ge=1, le=50),
+) -> ReviewScanListResponse:
+    scans = (
+        await db.scalars(
+            select(ReviewScan)
+            .where(ReviewScan.workspace_id == auth.workspace.id)
+            .order_by(ReviewScan.created_at.desc(), ReviewScan.id.desc())
+            .limit(limit)
+        )
+    ).all()
+    return ReviewScanListResponse(scans=list(scans))
 
 
 @router.get("/scans/{scan_id}", response_model=ReviewScanResponse)
