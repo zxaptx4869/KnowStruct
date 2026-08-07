@@ -60,7 +60,11 @@ class DemoProvider(AIProvider):
         cleaned = content.strip()
         snippet = re.sub(r"\s+", " ", cleaned)[:500]
         first_line = next(
-            (line.strip() for line in cleaned.splitlines() if line.strip()),
+            (
+                line.strip()
+                for line in cleaned.splitlines()
+                if line.strip() and not re.fullmatch(r"图\s*\d+：?", line.strip())
+            ),
             snippet,
         )
         title = first_line[:80]

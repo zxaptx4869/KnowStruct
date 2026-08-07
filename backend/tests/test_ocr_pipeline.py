@@ -52,9 +52,23 @@ async def test_ocr_pipeline_writes_content_then_extracts(
     assert "演示 OCR 识别文本" in detail["content"]
     assert detail["content_status"] == "saved"
     assert detail["title"].startswith("西门子晶蕾洗碗机使用注意事项")
-    assert detail["title"] != "图片资料"
     assert detail["processing_state"] == "pending_confirm"
     assert len(detail["extractions"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_image_with_note_keeps_user_title(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    source = (await upload_image(client, note="晶蕾洗碗机截图")).json()
+    assert source["title"] == "晶蕾洗碗机截图"
+
+    await process_next_task(db, DemoProvider())
+    detail = (await client.get(f"/api/inbox/sources/{source['id']}")).json()
+    assert detail["task"]["status"] == "succeeded"
+    assert detail["title"] == "晶蕾洗碗机截图"
 
 
 @pytest.mark.asyncio
@@ -163,7 +177,7 @@ async def test_ai_extraction_failure_retries_without_reocr(
     assert detail["task"]["status"] == "failed"
     assert detail["task"]["stage"] == "ai_extraction"
     assert detail["content"] == "图 1：\n识别文本：晶蕾烘干需手动勾选"
-    assert detail["title"] == "晶蕾烘干需手动勾选"
+    assert detail["title"] == "未命名记录"
 
     # 失败后先不重试：提取失败时不应留下候选
     extractions = await db.scalar(select(func.count(Extraction.id)))
@@ -177,4 +191,5 @@ async def test_ai_extraction_failure_retries_without_reocr(
     detail = (await client.get(f"/api/inbox/sources/{source['id']}")).json()
     assert detail["task"]["status"] == "succeeded"
     assert detail["content"] == "图 1：\n识别文本：晶蕾烘干需手动勾选"
+    assert detail["title"] == "零嵌冰箱散热方式"
     assert len(detail["extractions"]) == 2

@@ -24,11 +24,11 @@ type Mode = SourceType | 'image'
 type FilterState = 'all' | ProcessingState
 
 const stateChips: Array<{ value: FilterState, label: string }> = [
-  { value: 'all', label: '全部' },
   { value: 'pending_confirm', label: '待确认' },
   { value: 'processing', label: '处理中' },
   { value: 'failed', label: '失败' },
   { value: 'done', label: '已处理' },
+  { value: 'all', label: '全部' },
 ]
 
 function statusClass(state: SourceItem['processing_state']) {

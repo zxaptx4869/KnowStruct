@@ -79,21 +79,6 @@ def file_fingerprint(data: bytes) -> str | None:
         return None
 
 
-def derive_ocr_title(text: str) -> str:
-    """从 OCR 文本生成标题：取首个非空且非"图 N"标记的行，优先使用冒号后的内容。"""
-    line = text.strip()
-    for candidate in (item.strip() for item in text.splitlines() if item.strip()):
-        if re.fullmatch(r"图\s*\d+：?", candidate):
-            continue
-        line = candidate
-        break
-    if "：" in line:
-        after_colon = line.split("：", 1)[1].strip()
-        if after_colon:
-            line = after_colon
-    return line[:80] or "未命名记录"
-
-
 async def create_source(
     db: AsyncSession,
     workspace_id: str,
@@ -788,7 +773,10 @@ async def process_source_extraction(
                 sort_order=index,
             )
         )
-    if source.source_type == SourceType.TEXT.value:
+    if source.source_type == SourceType.TEXT.value or (
+        source.source_type == SourceType.IMAGE.value
+        and source.title == "未命名记录"
+    ):
         first_title = results[0].title.strip() if results[0].title else ""
         if first_title:
             source.title = first_title[:200]
@@ -829,7 +817,5 @@ async def process_source_ocr(
     text = "\n\n".join(parts)
     source.content = text
     source.content_status = SourceContentStatus.SAVED.value
-    if source.title in {"图片资料", "未命名记录"}:
-        source.title = derive_ocr_title(text)
     task.stage = TaskStage.AI_EXTRACTION.value
     await db.flush()
