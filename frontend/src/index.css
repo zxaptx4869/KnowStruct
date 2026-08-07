@@ -1045,6 +1045,12 @@ a {
     min-height: 40px;
   }
 
+  .page-toolbar:not(.confirm-toolbar) h1,
+  .page-toolbar:not(.confirm-toolbar) p,
+  .page-heading h1 {
+    display: none;
+  }
+
   .dialog-backdrop {
     align-items: end;
     padding: 0;
