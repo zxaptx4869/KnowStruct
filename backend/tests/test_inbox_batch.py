@@ -367,6 +367,83 @@ async def test_batch_retry_rejects_non_failed(
 
 
 @pytest.mark.asyncio
+async def test_batch_retry_rejects_running_task(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    source = await capture(client, source_type="text", content="运行中任务")
+    await mark_task_running(db, source["id"])
+
+    response = await client.post(
+        "/api/inbox/sources/batch/retry",
+        json={"source_ids": [source["id"]]},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["blocker_count"] == 1
+    task = await db.scalar(
+        select(ProcessingTask).where(ProcessingTask.source_id == source["id"])
+    )
+    assert task is not None
+    assert task.status == TaskStatus.RUNNING.value
+
+
+@pytest.mark.asyncio
+async def test_batch_retry_second_retry_is_rejected(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    source = await capture(client, source_type="text", content="重复重试")
+    await mark_tasks_failed(db, [source["id"]])
+
+    first = await client.post(
+        "/api/inbox/sources/batch/retry",
+        json={"source_ids": [source["id"]]},
+    )
+    assert first.status_code == 200
+    assert first.json() == {"retried": 1}
+
+    second = await client.post(
+        "/api/inbox/sources/batch/retry",
+        json={"source_ids": [source["id"]]},
+    )
+    assert second.status_code == 409
+    task = await db.scalar(
+        select(ProcessingTask).where(ProcessingTask.source_id == source["id"])
+    )
+    assert task is not None
+    assert task.status == TaskStatus.PENDING.value
+    assert task.attempt_count == 2
+
+
+@pytest.mark.asyncio
+async def test_batch_delete_tolerates_attachment_cleanup_failure(
+    client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await login_owner(client, db)
+    response = await upload_image(client, note="清理失败验证")
+    assert response.status_code == 201
+    source = response.json()
+
+    async def fail_delete(self: object, **kwargs: object) -> None:
+        raise OSError("模拟附件文件删除失败")
+
+    monkeypatch.setattr(LocalAttachmentStorage, "delete", fail_delete)
+
+    delete_response = await client.post(
+        "/api/inbox/sources/batch/delete",
+        json={"source_ids": [source["id"]]},
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"deleted": 1}
+    source_count = await db.scalar(select(func.count(Source.id)))
+    assert source_count == 0
+
+
+@pytest.mark.asyncio
 async def test_duplicate_link_capture_hints_and_lists(
     client: AsyncClient,
     db: AsyncSession,

@@ -145,7 +145,7 @@ TBD - created by archiving change capture-text-to-entry. Update Purpose after ar
 
 ### Requirement: Batch organize sources
 
-系统 SHALL 允许已认证用户对其 Workspace 内的多条 Source 执行批量分配到项目、批量删除与批量重试。批量请求 MUST 为原子操作：任一 Source 标识不存在、属于其他 Workspace、或状态不满足操作前置条件时，MUST 整批拒绝，不产生部分成功；空请求或超过 100 条的请求 MUST 被拒绝。批量分配 MUST 仅允许 `project_id` 为空且未被任何正式 Entry 引用的 Source，目标项目 MUST 属于当前 Workspace，分配后 Source 归属该项目。批量删除 MUST 拒绝被任何正式 Entry 引用、或 Processing Task 处于执行中的 Source，删除 MUST 同时移除数据库记录并清理已上传附件文件。批量重试 MUST 仅对 Processing Task 处于失败状态的 Source 生效，并沿用"从失败步骤重试、不复制 Source/附件/候选/Entry"的既有语义。
+系统 SHALL 允许已认证用户对其 Workspace 内的多条 Source 执行批量分配到项目、批量删除与批量重试。批量请求 MUST 为原子操作：任一 Source 标识不存在、属于其他 Workspace、或状态不满足操作前置条件时，MUST 整批拒绝，不产生部分成功；空请求或超过 100 条的请求 MUST 被拒绝。批量分配 MUST 仅允许 `project_id` 为空且未被任何正式 Entry 引用的 Source，目标项目 MUST 属于当前 Workspace，分配后 Source 归属该项目。批量删除 MUST 拒绝被任何正式 Entry 引用、或 Processing Task 处于执行中的 Source，删除 MUST 同时移除数据库记录，并尝试清理已上传附件文件（清理失败仅记录日志，不阻断删除）。批量重试 MUST 仅对 Processing Task 处于失败状态的 Source 生效，并沿用"从失败步骤重试、不复制 Source/附件/候选/Entry"的既有语义。
 
 #### Scenario: Assign unassigned sources to a project
 - **WHEN** 用户批量分配 2 条未分配且无正式记录引用的 Source 到当前 Workspace 的某项目
@@ -165,7 +165,7 @@ TBD - created by archiving change capture-text-to-entry. Update Purpose after ar
 
 #### Scenario: Delete unreferenced sources with attachments
 - **WHEN** 用户批量删除 3 条无正式记录引用且任务非运行中的 Source（含图片附件）
-- **THEN** 系统在单个事务中删除 Source 及其任务、候选与附件记录，并清理已上传的附件文件
+- **THEN** 系统在单个事务中删除 Source 及其任务、候选与附件记录，并尝试清理已上传的附件文件（失败仅记录日志，不阻断删除）
 
 #### Scenario: Block deletion of a referenced source
 - **WHEN** 批量删除请求中某条 Source 已被正式 Entry 引用

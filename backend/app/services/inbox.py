@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.base import AIProvider, AIProviderError
@@ -595,6 +595,7 @@ async def _load_batch_sources(
                 Source.id.in_(unique_ids),
                 Source.workspace_id == workspace_id,
             )
+            .with_for_update()
         )
     ).all()
     found = {source.id: source for source in rows}
@@ -710,36 +711,27 @@ async def batch_retry_sources(
 ) -> int:
     sources = await _load_batch_sources(db, workspace_id, source_ids)
     ids = list(sources)
-    tasks = list(
-        (
-            await db.scalars(
-                select(ProcessingTask).where(ProcessingTask.source_id.in_(ids))
-            )
-        ).all()
+    result = await db.execute(
+        update(ProcessingTask)
+        .where(
+            ProcessingTask.source_id.in_(ids),
+            ProcessingTask.status == TaskStatus.FAILED.value,
+        )
+        .values(
+            status=TaskStatus.PENDING.value,
+            attempt_count=ProcessingTask.attempt_count + 1,
+            last_error=None,
+            claimed_at=None,
+            started_at=None,
+            finished_at=None,
+        )
     )
-    tasks_by_source = {task.source_id: task for task in tasks}
-
-    non_failed = [
-        source_id
-        for source_id in ids
-        if tasks_by_source.get(source_id) is None
-        or tasks_by_source[source_id].status != TaskStatus.FAILED.value
-    ]
-    if non_failed:
+    if result.rowcount != len(ids):
         raise ConflictError(
             "task_not_failed",
             "只有失败的任务可以批量重试",
-            blocker_count=len(non_failed),
+            blocker_count=len(ids) - result.rowcount,
         )
-
-    for source_id in ids:
-        task = tasks_by_source[source_id]
-        task.status = TaskStatus.PENDING.value
-        task.attempt_count += 1
-        task.last_error = None
-        task.claimed_at = None
-        task.started_at = None
-        task.finished_at = None
     await db.flush()
     return len(ids)
 

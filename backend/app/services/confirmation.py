@@ -26,10 +26,12 @@ async def _get_scoped_source(
     source_id: str,
 ) -> Source:
     source = await db.scalar(
-        select(Source).where(
+        select(Source)
+        .where(
             Source.id == source_id,
             Source.workspace_id == workspace_id,
         )
+        .with_for_update()
     )
     if source is None:
         raise ResourceNotFoundError("source")
