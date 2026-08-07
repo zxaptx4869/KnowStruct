@@ -3426,6 +3426,11 @@ mark.search-highlight {
   text-align: center;
 }
 
+.project-table .source-title-cell {
+  height: auto;
+  min-height: 72px;
+}
+
 .source-select-col input,
 .source-select-cell input {
   width: 14px;
@@ -3500,6 +3505,7 @@ mark.search-highlight {
   display: inline-flex;
   align-items: center;
   align-self: start;
+  justify-self: start;
   border: 1px solid #f0c36d;
   border-radius: 999px;
   padding: 1px 8px;

@@ -78,6 +78,27 @@ async def test_retry_rejected_when_not_failed(
 
 
 @pytest.mark.asyncio
+async def test_processing_updates_source_title_from_first_candidate(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    source = await capture(
+        client,
+        source_type="text",
+        content="零嵌冰箱要看底部散热\n第二条内容",
+    )
+    assert source["title"] == "零嵌冰箱要看底部散热"
+
+    processed = await _run(db, FakeAIProvider())
+    assert processed is True
+
+    stored = await db.scalar(select(Source).where(Source.id == source["id"]))
+    assert stored is not None
+    assert stored.title == "零嵌冰箱散热方式"
+
+
+@pytest.mark.asyncio
 async def test_already_claimed_task_is_not_processed_twice(
     client: AsyncClient,
     db: AsyncSession,

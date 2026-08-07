@@ -46,6 +46,9 @@ export function useSourceDetail(sourceId: string) {
     queryKey: inboxKeys.detail(sourceId),
     queryFn: () => api.get<SourceDetail>(`/inbox/sources/${sourceId}`),
     enabled: Boolean(sourceId),
+    // 详情页处理状态经常变化，禁止 5 分钟缓存，进入页面即重新拉取
+    staleTime: 0,
+    refetchOnMount: 'always',
     refetchInterval: (query) =>
       query.state.data?.processing_state === 'processing'
         ? POLL_WHILE_PROCESSING

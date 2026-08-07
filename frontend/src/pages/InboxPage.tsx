@@ -285,7 +285,7 @@ export default function InboxPage() {
           navigate(`/inbox/${duplicate.id}`)
         }}
       >
-        疑似重复
+        疑似重复采集
       </button>
     )
   }

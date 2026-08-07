@@ -788,6 +788,10 @@ async def process_source_extraction(
                 sort_order=index,
             )
         )
+    if source.source_type == SourceType.TEXT.value:
+        first_title = results[0].title.strip() if results[0].title else ""
+        if first_title:
+            source.title = first_title[:200]
     task.status = TaskStatus.SUCCEEDED.value
     task.finished_at = utc_now()
     await db.flush()

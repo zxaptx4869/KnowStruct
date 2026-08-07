@@ -162,7 +162,7 @@ describe('InboxPage capture and queue', () => {
     vi.stubGlobal('fetch', inboxFetch({ sources: [source, dupSource] }))
     renderRoute(<InboxPage />, '/inbox', '/inbox')
 
-    expect((await screen.findAllByText('疑似重复')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('疑似重复采集')).length).toBeGreaterThan(0)
     expect(screen.getAllByTitle(/与「洗烘套装参数页」相同/).length).toBeGreaterThan(0)
   })
 

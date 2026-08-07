@@ -189,7 +189,7 @@ TBD - created by archiving change capture-text-to-entry. Update Purpose after ar
 
 ### Requirement: Suspected duplicate capture detection
 
-系统 SHALL 为 Workspace 内的 Source 计算去重指纹：text 对去除首尾空白并折叠连续空白后的全文计算 SHA-256；link 对规范化 URL（scheme 与 host 转小写、去除首尾空白、去除 fragment，保留查询参数）计算 SHA-256；image 对每个附件文件原始字节计算 SHA-256。采集提交成功时，系统 MUST 返回该 Source 是否命中当前 Workspace 内已有相同指纹的 Source（含原 Source 标题与采集时间）；命中 MUST NOT 阻断创建。采集箱列表 MUST 为命中指纹的 Source 标记"疑似重复"并指向原 Source。指纹计算或查询失败 MUST 静默降级，不影响采集与列表展示。
+系统 SHALL 为 Workspace 内的 Source 计算去重指纹：text 对去除首尾空白并折叠连续空白后的全文计算 SHA-256；link 对规范化 URL（scheme 与 host 转小写、去除首尾空白、去除 fragment，保留查询参数）计算 SHA-256；image 对每个附件文件原始字节计算 SHA-256。采集提交成功时，系统 MUST 返回该 Source 是否命中当前 Workspace 内已有相同指纹的 Source（含原 Source 标题与采集时间）；命中 MUST NOT 阻断创建。采集箱列表 MUST 为命中指纹的 Source 标记"疑似重复采集"并指向原 Source。指纹计算或查询失败 MUST 静默降级，不影响采集与列表展示。
 
 #### Scenario: Hint on duplicate link capture
 - **WHEN** 用户采集一条链接，其规范化 URL 与 Workspace 内已有 Source 相同
@@ -213,7 +213,7 @@ TBD - created by archiving change capture-text-to-entry. Update Purpose after ar
 
 #### Scenario: Mark duplicates in the inbox list
 - **WHEN** 采集箱列表中某条 Source 的指纹命中另一条 Source
-- **THEN** 该条显示"疑似重复"标记并可跳转原 Source
+- **THEN** 该条显示"疑似重复采集"标记并可跳转原 Source
 
 #### Scenario: Degrade silently on fingerprint failure
 - **WHEN** 指纹计算或查询抛出异常
