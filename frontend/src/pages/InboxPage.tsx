@@ -87,7 +87,7 @@ export default function InboxPage() {
   const previewUrlsRef = useRef<string[]>([])
   const [projectId, setProjectId] = useState<string>(preselectProject ?? '')
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [filterState, setFilterState] = useState<FilterState>('all')
+  const [filterState, setFilterState] = useState<FilterState>('pending_confirm')
   const [filterType, setFilterType] = useState<'all' | SourceType>('all')
   const [keyword, setKeyword] = useState('')
   const [appliedKeyword, setAppliedKeyword] = useState('')
