@@ -50,7 +50,10 @@ async def list_projects(db: AsyncSession, workspace_id: str) -> list[ProjectWith
     )
     entry_count = (
         select(func.count(Entry.id))
-        .where(Entry.project_id == Project.id)
+        .where(
+            Entry.project_id == Project.id,
+            Entry.status == "archived",
+        )
         .correlate(Project)
         .scalar_subquery()
     )
@@ -58,6 +61,7 @@ async def list_projects(db: AsyncSession, workspace_id: str) -> list[ProjectWith
         select(func.count(Entry.id))
         .where(
             Entry.project_id == Project.id,
+            Entry.status == "archived",
             Entry.node_id.is_(None),
         )
         .correlate(Project)
@@ -94,11 +98,15 @@ async def project_with_count(
         select(func.count(Node.id)).where(Node.project_id == project.id)
     )
     entry_count = await db.scalar(
-        select(func.count(Entry.id)).where(Entry.project_id == project.id)
+        select(func.count(Entry.id)).where(
+            Entry.project_id == project.id,
+            Entry.status == "archived",
+        )
     )
     unarchived_count = await db.scalar(
         select(func.count(Entry.id)).where(
             Entry.project_id == project.id,
+            Entry.status == "archived",
             Entry.node_id.is_(None),
         )
     )

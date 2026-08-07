@@ -32,6 +32,7 @@ async def add_entry(
     title: str = "测试记录",
     content: str = "测试内容",
     entry_type: str = "experience",
+    status: str = "archived",
 ) -> str:
     async with db.begin():
         entry = Entry(
@@ -41,7 +42,7 @@ async def add_entry(
             entry_type=entry_type,
             title=title,
             content=content,
-            status="archived",
+            status=status,
         )
         db.add(entry)
         await db.flush()
@@ -149,6 +150,35 @@ async def test_project_records_empty_and_foreign_workspace(
         hidden_id = hidden.id
     hidden_response = await client.get(f"/api/projects/{hidden_id}/entries")
     assert hidden_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_project_counts_exclude_non_archived_entries(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    workspace_id = await login_owner(client, db)
+    project = await create_project(client)
+    await add_entry(
+        db,
+        workspace_id=workspace_id,
+        project_id=project["id"],
+        title="已归档记录",
+    )
+    await add_entry(
+        db,
+        workspace_id=workspace_id,
+        project_id=project["id"],
+        title="冲突状态记录",
+        status="conflict",
+    )
+
+    detail = (await client.get(f"/api/projects/{project['id']}")).json()
+    assert detail["entry_count"] == 1
+    assert detail["unarchived_entry_count"] == 1
+    records = (await client.get(f"/api/projects/{project['id']}/entries")).json()
+    assert records["total"] == 1
+    assert [item["title"] for item in records["items"]] == ["已归档记录"]
 
 
 @pytest.mark.asyncio

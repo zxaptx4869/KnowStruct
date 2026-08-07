@@ -1132,7 +1132,13 @@ export default function ProjectDetailPage() {
                       expanded={expanded.has(node.id)}
                       dropIntent={activeDragId && dropPreview?.overId === node.id && activeDragId !== node.id && dropPreview.intent !== 'root' ? dropPreview.intent : undefined}
                       onToggle={() => toggleExpanded(node.id)}
-                      onSelect={() => organizeMode ? setRecordFilter(node.id) : openNode(node.id)}
+                      onSelect={() => {
+                        if (!organizeMode) {
+                          openNode(node.id)
+                          return
+                        }
+                        setRecordFilter(recordFilter === node.id ? 'all' : node.id)
+                      }}
                       {...nodeActions(node)}
                     />
                   ))}

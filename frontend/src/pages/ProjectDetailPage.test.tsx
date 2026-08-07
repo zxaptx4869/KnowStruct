@@ -528,4 +528,20 @@ describe('project organize mode', () => {
     expect((await screen.findAllByText('全部记录')).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('group', { name: '按状态筛选' }).length).toBeGreaterThan(0)
   })
+
+  it('toggles node filter back to all when clicking the selected node again', async () => {
+    vi.stubGlobal('fetch', organizeFetch())
+    await enterOrganizeMode()
+
+    await userEvent.click(screen.getByRole('button', { name: '大家电' }))
+    await waitFor(() => {
+      expect(screen.queryByText('未归档经验')).not.toBeInTheDocument()
+    })
+    expect(screen.getAllByText('已归档参数').length).toBeGreaterThan(0)
+
+    await userEvent.click(screen.getByRole('button', { name: '大家电' }))
+    await waitFor(() => {
+      expect(screen.getAllByText('未归档经验').length).toBeGreaterThan(0)
+    })
+  })
 })
