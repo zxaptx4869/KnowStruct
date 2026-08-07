@@ -80,7 +80,7 @@
 
 ### Requirement: Organize mode with directory filter
 
-系统 SHALL 在项目工作区提供查看与整理双模式：查看模式维持目录树导航行为；整理模式下目录树变为单选筛选器，提供「全部记录」与「未归档」两个伪选项以及真实节点选项，选中节点即筛选记录列表，再次点击已选中的节点或选择「全部记录」恢复全量。模式与筛选状态 MUST 持久化到 URL query，刷新或后退后保持。移动端 SHALL 提供相同模式入口与记录列表，支持单条编辑，但不提供多选批量操作条。
+系统 SHALL 在项目工作区提供查看与整理双模式：查看模式维持目录树导航行为；整理模式下目录树变为单选筛选器，提供「全部记录」与「未归档」两个伪选项以及真实节点选项，选中节点即筛选记录列表，再次点击已选中的节点或选择「全部记录」恢复全量。模式与筛选状态 MUST 持久化到 URL query，刷新或后退后保持。移动端 SHALL 不提供整理模式按钮，改为提供「未归档记录」直达入口，进入未归档记录列表并支持单条编辑补录归档，不提供多选批量操作条。
 
 #### Scenario: Switch to organize mode via button
 - **WHEN** 用户在查看模式点击「批量整理」按钮
@@ -102,9 +102,9 @@
 - **WHEN** 用户在整理模式并选中某节点后刷新页面或后退
 - **THEN** 页面保持整理模式与所选节点筛选
 
-#### Scenario: Mobile supports list and single edit without batch bar
-- **WHEN** 390px 视口下用户进入整理模式
-- **THEN** 移动端展示记录列表与单条编辑入口，不显示多选与批量操作条
+#### Scenario: Mobile provides an unarchived entry without batch bar
+- **WHEN** 390px 视口下用户在项目内查看
+- **THEN** 移动端显示「未归档记录 N 条」入口，点击进入未归档列表并支持单条编辑补录归档，不提供整理模式按钮与批量操作条
 
 ### Requirement: Batch move and delete records
 
