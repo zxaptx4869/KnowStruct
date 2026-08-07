@@ -13,6 +13,12 @@ from app.models.capture import (
 )
 from app.models.entries import Entry, EntrySource, EntryStatus, EntryType
 from app.models.projects import Node, Project, ProjectStatus
+from app.models.review import (
+    FindingTargetType,
+    FindingType,
+    ResolutionType,
+    ReviewResolution,
+)
 
 __all__ = [
     "AiProviderConfig",
@@ -24,10 +30,14 @@ __all__ = [
     "EntryType",
     "Extraction",
     "ExtractionStatus",
+    "FindingTargetType",
+    "FindingType",
     "Node",
     "ProcessingTask",
     "Project",
     "ProjectStatus",
+    "ResolutionType",
+    "ReviewResolution",
     "Source",
     "SourceAttachment",
     "SourceContentStatus",

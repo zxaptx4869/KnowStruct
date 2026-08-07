@@ -12,6 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.errors import DomainError, NotAuthenticatedError
 from app.api.inbox import router as inbox_router
 from app.api.projects import router as projects_router
+from app.api.review import router as review_router
 from app.api.search import router as search_router
 from app.config import get_settings
 from app.database import dispose_engine
@@ -54,6 +55,7 @@ app.include_router(projects_router)
 app.include_router(inbox_router)
 app.include_router(ai_config_router)
 app.include_router(search_router)
+app.include_router(review_router)
 
 
 @app.exception_handler(NotAuthenticatedError)

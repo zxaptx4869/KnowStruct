@@ -6,16 +6,25 @@ import {
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 
-const navigation = [
+interface NavItem {
+  path: string
+  label: string
+  icon: LucideIcon
+  end?: boolean
+  p1?: boolean
+}
+
+const navigation: NavItem[] = [
   { path: '/', label: '项目', icon: FolderKanban, end: true },
   { path: '/inbox', label: '采集', icon: Inbox },
   { path: '/search', label: '搜索', icon: Search },
   { path: '/me', label: '我的', icon: UserRound },
-  { path: '/review', label: 'Review', icon: ShieldCheck, p1: true },
+  { path: '/review', label: 'Review', icon: ShieldCheck },
 ]
 
 export default function Layout() {
