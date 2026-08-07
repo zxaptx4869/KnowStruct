@@ -350,6 +350,7 @@ async def scan_display_details(
         resolutions = (
             await db.scalars(
                 select(ReviewResolution).where(
+                    ReviewResolution.workspace_id == workspace_id,
                     ReviewResolution.target_type
                     == FindingTargetType.AI_FINDING.value,
                     ReviewResolution.target_id.in_(finding_ids),

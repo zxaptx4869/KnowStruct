@@ -6,7 +6,7 @@ export type ReviewFindingType =
 
 export type ReviewTargetType = 'entry' | 'source' | 'ai_finding'
 
-export type ReviewResolutionKind = 'resolved' | 'ignored' | 'rejected'
+export type ReviewResolutionKind = 'resolved' | 'rejected'
 
 export type ReviewStatus = 'open' | 'resolved' | 'rejected'
 

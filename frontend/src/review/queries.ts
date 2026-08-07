@@ -21,8 +21,6 @@ export const reviewKeys = {
   scan: (scanId: string) => ['review', 'scans', scanId] as const,
   scanFindings: (scanId: string) =>
     ['review', 'scans', scanId, 'findings'] as const,
-  candidates: (scanId: string) =>
-    ['review', 'scans', scanId, 'candidates'] as const,
 }
 
 export function useReviewFindings(
