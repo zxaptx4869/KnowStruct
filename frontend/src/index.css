@@ -3627,13 +3627,10 @@ mark.search-highlight {
   font-weight: 700;
 }
 
-.mobile-organize-entry {
-  padding: 10px 14px 0;
-}
-
-.mobile-organize-entry .secondary-button,
-.mobile-organize-entry .primary-button {
-  width: 100%;
+.mobile-unarchived-entry {
+  display: block;
+  width: calc(100% - 28px);
+  margin: 12px 14px 0;
 }
 
 .node-hero h2,
@@ -3645,4 +3642,10 @@ mark.search-highlight {
 
 .node-edit-inline {
   flex: 0 0 auto;
+}
+
+@media (max-width: 768px) {
+  .project-top-actions .organize-toggle {
+    display: none;
+  }
 }

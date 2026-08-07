@@ -1044,7 +1044,7 @@ export default function ProjectDetailPage() {
         <div className="project-top-actions">
           <button
             type="button"
-            className={organizeMode ? 'secondary-button' : 'primary-button'}
+            className={`organize-toggle ${organizeMode ? 'secondary-button' : 'primary-button'}`}
             onClick={() => setOrganizeMode(!organizeMode)}
           >
             {organizeMode ? '回到查看' : '批量整理'}
@@ -1151,18 +1151,25 @@ export default function ProjectDetailPage() {
 
       <main className="mobile-directory">
         <nav className="mobile-breadcrumbs" aria-label="节点路径">
-          <button type="button" onClick={() => nid ? navigate(path.length > 1 ? `/projects/${id}/nodes/${path[path.length - 2].id}` : `/projects/${id}`) : navigate('/')}><ArrowLeft size={17} />{nid ? '上一层' : '项目列表'}</button>
-          <span>{[project.name, ...path.map((item) => item.name)].join(' / ')}</span>
-        </nav>
-        <div className="mobile-organize-entry">
           <button
             type="button"
-            className={organizeMode ? 'secondary-button' : 'primary-button'}
-            onClick={() => setOrganizeMode(!organizeMode)}
+            onClick={() => {
+              if (organizeMode) {
+                navigate(`/projects/${id}`)
+                return
+              }
+              if (nid) {
+                navigate(path.length > 1 ? `/projects/${id}/nodes/${path[path.length - 2].id}` : `/projects/${id}`)
+                return
+              }
+              navigate('/')
+            }}
           >
-            {organizeMode ? '回到查看' : '批量整理'}
+            <ArrowLeft size={17} />
+            {organizeMode ? '返回项目' : (nid ? '上一层' : '项目列表')}
           </button>
-        </div>
+          <span>{[project.name, ...path.map((item) => item.name)].join(' / ')}</span>
+        </nav>
         {organizeMode ? (
           <ProjectRecordsSection
             projectId={id}
@@ -1172,6 +1179,13 @@ export default function ProjectDetailPage() {
           />
         ) : (
           <>
+            <button
+              type="button"
+              className="secondary-button mobile-unarchived-entry"
+              onClick={() => navigate(`/projects/${id}?mode=organize&filter=unarchived`)}
+            >
+              未归档记录 {project.unarchived_entry_count} 条
+            </button>
             <section className="mobile-node-head">
               <h2>
                 {selectedNode?.name ?? project.name}

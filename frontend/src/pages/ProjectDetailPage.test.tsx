@@ -516,4 +516,16 @@ describe('project organize mode', () => {
       expect(JSON.parse(String(call![1].body))).toEqual({ entry_ids: ['e-1'] })
     })
   })
+
+  it('opens unarchived records from the mobile entry', async () => {
+    vi.stubGlobal('fetch', organizeFetch())
+    renderRoute(<ProjectDetailPage />, '/projects/project-1', '/projects/:id')
+    await screen.findAllByText('家具家电')
+
+    const entry = screen.getByRole('button', { name: '未归档记录 0 条' })
+    await userEvent.click(entry)
+
+    expect((await screen.findAllByText('全部记录')).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('group', { name: '按状态筛选' }).length).toBeGreaterThan(0)
+  })
 })
