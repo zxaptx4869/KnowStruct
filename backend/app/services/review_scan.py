@@ -157,20 +157,8 @@ async def _create_candidates(
             if existing.status == AiFindingStatus.CANDIDATE.value:
                 continue
             if existing.status == AiFindingStatus.OPEN.value:
-                resolution = await db.scalar(
-                    select(ReviewResolution).where(
-                        ReviewResolution.workspace_id == workspace_id,
-                        ReviewResolution.finding_type == result.review_type,
-                        ReviewResolution.target_type
-                        == FindingTargetType.AI_FINDING.value,
-                        ReviewResolution.target_id == existing.id,
-                    )
-                )
-                if resolution is None:
-                    # 已确认且未处理：问题仍在待处理列表，不重复生成
-                    continue
-                # 已解决/忽略但数据未修复：清除处理记录，问题重新浮现
-                await db.delete(resolution)
+                # 已确认（无论是否处理）：不重复生成候选；
+                # 已处理问题的重新浮现由扫描完成时的确定性检查负责
                 continue
             existing.scan_id = scan.id
             existing.description = result.description
@@ -194,6 +182,41 @@ async def _create_candidates(
         )
         created += 1
     return created
+
+
+async def _resurface_handled_in_scope(
+    db: AsyncSession,
+    workspace_id: str,
+    entries: list[Entry],
+) -> int:
+    """扫描覆盖范围内，仍存在且带处理记录的已确认发现重新浮现。"""
+    entry_ids = [entry.id for entry in entries]
+    if not entry_ids:
+        return 0
+    findings = (
+        await db.scalars(
+            select(ReviewAiFinding).where(
+                ReviewAiFinding.workspace_id == workspace_id,
+                ReviewAiFinding.status == AiFindingStatus.OPEN.value,
+                ReviewAiFinding.entry_a_id.in_(entry_ids),
+                ReviewAiFinding.entry_b_id.in_(entry_ids),
+            )
+        )
+    ).all()
+    cleared = 0
+    for finding in findings:
+        resolution = await db.scalar(
+            select(ReviewResolution).where(
+                ReviewResolution.workspace_id == workspace_id,
+                ReviewResolution.target_type
+                == FindingTargetType.AI_FINDING.value,
+                ReviewResolution.target_id == finding.id,
+            )
+        )
+        if resolution is not None:
+            await db.delete(resolution)
+            cleared += 1
+    return cleared
 
 
 async def run_scan(
@@ -227,6 +250,8 @@ async def run_scan(
             entries_by_id,
             results,
         )
+
+    await _resurface_handled_in_scope(db, scan.workspace_id, entries)
 
     scan.status = ScanStatus.SUCCEEDED.value
     scan.findings_count = findings_count

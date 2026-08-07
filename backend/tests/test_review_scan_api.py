@@ -399,6 +399,85 @@ async def test_rescan_resurfaces_resolved_and_ignored_findings(
         for item in open_findings
     )
 
+
+@pytest.mark.asyncio
+async def test_rescan_resurfaces_only_within_scope(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    node_a = await _create_node(client, project["id"], "冰箱")
+    node_b = await _create_node(client, project["id"], "台面")
+    entry_a, _ = await _accepted_entry(
+        client, db, project_id=project["id"], node_id=node_a["id"]
+    )
+    entry_b, _ = await _accepted_entry(
+        client,
+        db,
+        project_id=project["id"],
+        node_id=node_a["id"],
+        title="重复候选记录",
+        content="与第一条内容几乎一致。",
+    )
+    results = [
+        ReviewResult(
+            review_type="duplicate",
+            description="重复",
+            related_entry_ids=[entry_a, entry_b],
+        )
+    ]
+    scan_1 = await _start_scan(client, scope_type="workspace")
+    await process_next_scan(db, ReviewFakeProvider(results=results))
+    candidate = (
+        await client.get(f"/api/review/scans/{scan_1['id']}/candidates")
+    ).json()["candidates"][0]
+    await client.post(
+        f"/api/review/findings/ai/{candidate['id']}/decision",
+        json={"decision": "confirmed"},
+    )
+    resolution_path = (
+        f"/api/review/findings/duplicate/ai_finding/"
+        f"{candidate['id']}/resolution"
+    )
+    await client.post(resolution_path, json={"resolution": "resolved"})
+
+    # 扫描不覆盖该节点的范围 → 不重新浮现
+    await _start_scan(
+        client,
+        scope_type="node",
+        project_id=project["id"],
+        node_id=node_b["id"],
+    )
+    await process_next_scan(db, ReviewFakeProvider())
+    resolution_count = await db.scalar(
+        select(func.count(ReviewResolution.id)).where(
+            ReviewResolution.target_id == candidate["id"]
+        )
+    )
+    assert resolution_count == 1
+
+    # 扫描覆盖该节点 → 重新浮现
+    await _start_scan(
+        client,
+        scope_type="node",
+        project_id=project["id"],
+        node_id=node_a["id"],
+    )
+    await process_next_scan(db, ReviewFakeProvider())
+    resolution_count = await db.scalar(
+        select(func.count(ReviewResolution.id)).where(
+            ReviewResolution.target_id == candidate["id"]
+        )
+    )
+    assert resolution_count == 0
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    assert any(
+        item["target_type"] == "ai_finding"
+        and item["target_id"] == candidate["id"]
+        for item in open_findings
+    )
+
     # 忽略 → 重扫 → 同样重新浮现
     await client.post(
         resolution_path,
