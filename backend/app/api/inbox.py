@@ -1,6 +1,7 @@
 """Authenticated capture inbox APIs."""
 
 import io
+import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Response, UploadFile, status
@@ -13,6 +14,11 @@ from app.config import get_settings
 from app.models import SourceAttachment
 from app.schemas.inbox import (
     AttachmentInfo,
+    BatchAssignRequest,
+    BatchAssignResponse,
+    BatchDeleteResponse,
+    BatchRetryResponse,
+    BatchSourcesRequest,
     CompleteResponse,
     DecideRequest,
     DecideResponse,
@@ -23,13 +29,20 @@ from app.schemas.inbox import (
     SourceListItem,
     TaskInfo,
 )
+from app.schemas.inbox import (
+    DuplicateSourceRef as DuplicateSourceRefSchema,
+)
 from app.services.confirmation import complete_source, decide_extraction
 from app.services.inbox import (
     SourceDetailData,
     SourceListItemData,
+    batch_assign_sources,
+    batch_delete_sources,
+    batch_retry_sources,
     create_image_source,
     create_source,
     derive_processing_state,
+    find_duplicate_source,
     get_source_detail,
     list_sources,
     retry_source_task,
@@ -37,6 +50,8 @@ from app.services.inbox import (
 from app.services.storage import get_attachment_storage
 
 router = APIRouter(prefix="/api/inbox", tags=["inbox"])
+
+logger = logging.getLogger(__name__)
 
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
@@ -85,6 +100,11 @@ def _list_item(item: SourceListItemData) -> SourceListItem:
         processing_state=derive_processing_state(item.task, item.counts),
         candidates=item.counts,
         task=TaskInfo.model_validate(item.task) if item.task else None,
+        duplicate_of=(
+            DuplicateSourceRefSchema.model_validate(vars(item.duplicate_of))
+            if item.duplicate_of
+            else None
+        ),
         created_at=item.source.created_at,
         updated_at=item.source.updated_at,
     )
@@ -115,10 +135,15 @@ async def source_create(
     db: DbSession,
 ) -> SourceDetailResponse:
     source = await create_source(db, auth.workspace.id, payload)
+    duplicate = await find_duplicate_source(db, auth.workspace.id, source)
+    if duplicate is not None:
+        source.duplicate_of_id = duplicate.id
     await db.commit()
-    return _detail_response(
+    response = _detail_response(
         await get_source_detail(db, auth.workspace.id, source.id)
     )
+    response.duplicate_of = duplicate
+    return response
 
 
 @router.post(
@@ -177,10 +202,84 @@ async def source_create_image(
         note=note or None,
         files=prepared,
     )
+    duplicate = await find_duplicate_source(db, auth.workspace.id, source)
+    if duplicate is not None:
+        source.duplicate_of_id = duplicate.id
     await db.commit()
-    return _detail_response(
+    response = _detail_response(
         await get_source_detail(db, auth.workspace.id, source.id)
     )
+    response.duplicate_of = duplicate
+    return response
+
+
+@router.post(
+    "/sources/batch/assign",
+    response_model=BatchAssignResponse,
+)
+async def source_batch_assign(
+    payload: BatchAssignRequest,
+    auth: Auth,
+    db: DbSession,
+) -> BatchAssignResponse:
+    assigned = await batch_assign_sources(
+        db,
+        auth.workspace.id,
+        payload.source_ids,
+        payload.project_id,
+    )
+    await db.commit()
+    return BatchAssignResponse(assigned=assigned)
+
+
+@router.post(
+    "/sources/batch/delete",
+    response_model=BatchDeleteResponse,
+)
+async def source_batch_delete(
+    payload: BatchSourcesRequest,
+    auth: Auth,
+    db: DbSession,
+) -> BatchDeleteResponse:
+    result = await batch_delete_sources(
+        db,
+        auth.workspace.id,
+        payload.source_ids,
+    )
+    await db.commit()
+    storage = get_attachment_storage()
+    for workspace_id, source_id, object_key in result.attachment_keys:
+        try:
+            await storage.delete(
+                workspace_id=workspace_id,
+                source_id=source_id,
+                object_key=object_key,
+            )
+        except Exception:  # 文件清理失败仅记录，不阻断删除
+            logger.exception(
+                "failed to clean attachment file source=%s key=%s",
+                source_id,
+                object_key,
+            )
+    return BatchDeleteResponse(deleted=result.deleted)
+
+
+@router.post(
+    "/sources/batch/retry",
+    response_model=BatchRetryResponse,
+)
+async def source_batch_retry(
+    payload: BatchSourcesRequest,
+    auth: Auth,
+    db: DbSession,
+) -> BatchRetryResponse:
+    retried = await batch_retry_sources(
+        db,
+        auth.workspace.id,
+        payload.source_ids,
+    )
+    await db.commit()
+    return BatchRetryResponse(retried=retried)
 
 
 @router.get("/sources/{source_id}/attachments/{attachment_id}")

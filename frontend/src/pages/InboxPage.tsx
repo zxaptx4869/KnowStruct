@@ -1,14 +1,22 @@
-import { FileText, Image, Link2, Plus, RefreshCw } from 'lucide-react'
+import { FileText, Folder, Image, Link2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { processingDetailLabel, sourceTypeLabels } from '../inbox/labels'
 import {
+  useBatchAssignSources,
+  useBatchDeleteSources,
+  useBatchRetrySources,
   useCreateSource,
   useCreateImageSource,
   useInboxSources,
   useRetrySource,
 } from '../inbox/queries'
-import type { ProcessingState, SourceItem, SourceType } from '../inbox/types'
+import type {
+  DuplicateSourceRef,
+  ProcessingState,
+  SourceItem,
+  SourceType,
+} from '../inbox/types'
 import { mutationMessage } from '../projects/errors'
 import { useProjects } from '../projects/queries'
 
@@ -83,6 +91,10 @@ export default function InboxPage() {
   const [filterType, setFilterType] = useState<'all' | SourceType>('all')
   const [keyword, setKeyword] = useState('')
   const [appliedKeyword, setAppliedKeyword] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchTargetProject, setBatchTargetProject] = useState('')
+  const [batchError, setBatchError] = useState<string | null>(null)
+  const [duplicateNotice, setDuplicateNotice] = useState<DuplicateSourceRef | null>(null)
 
   const projectsQuery = useProjects()
   const sourcesQuery = useInboxSources({
@@ -92,6 +104,76 @@ export default function InboxPage() {
   })
   const createMutation = useCreateSource()
   const createImageMutation = useCreateImageSource()
+  const assignMutation = useBatchAssignSources()
+  const deleteMutation = useBatchDeleteSources()
+  const retryBatchMutation = useBatchRetrySources()
+
+  useEffect(() => {
+    setSelectedIds(new Set())
+    setBatchError(null)
+  }, [filterState, filterType, appliedKeyword])
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      if (sources.length > 0 && sources.every((item) => prev.has(item.id))) {
+        return new Set()
+      }
+      return new Set(sources.map((item) => item.id))
+    })
+  }
+
+  async function runBatchAssign() {
+    if (selectedIds.size === 0 || !batchTargetProject) return
+    setBatchError(null)
+    try {
+      await assignMutation.mutateAsync({
+        sourceIds: [...selectedIds],
+        projectId: batchTargetProject,
+      })
+      setSelectedIds(new Set())
+      setBatchTargetProject('')
+    } catch (error) {
+      setBatchError(mutationMessage(error, '批量分配失败，请重试'))
+    }
+  }
+
+  async function runBatchDelete() {
+    if (selectedIds.size === 0) return
+    const confirmed = window.confirm(
+      `确定删除选中的 ${selectedIds.size} 条资料？已被正式记录引用的资料会被整批拦截。`,
+    )
+    if (!confirmed) return
+    setBatchError(null)
+    try {
+      await deleteMutation.mutateAsync([...selectedIds])
+      setSelectedIds(new Set())
+    } catch (error) {
+      setBatchError(mutationMessage(error, '批量删除失败，请重试'))
+    }
+  }
+
+  async function runBatchRetry() {
+    if (selectedIds.size === 0) return
+    setBatchError(null)
+    try {
+      await retryBatchMutation.mutateAsync([...selectedIds])
+      setSelectedIds(new Set())
+    } catch (error) {
+      setBatchError(mutationMessage(error, '批量重试失败，请重试'))
+    }
+  }
 
   function switchMode(next: Mode) {
     setMode(next)
@@ -153,7 +235,11 @@ export default function InboxPage() {
       })
       clearSelection()
       setImageNote('')
-      navigate(`/inbox/${source.id}`)
+      if (source.duplicate_of) {
+        setDuplicateNotice(source.duplicate_of)
+      } else {
+        navigate(`/inbox/${source.id}`)
+      }
     } catch (error) {
       setSubmitError(mutationMessage(error, '图片上传失败，请重试'))
     }
@@ -173,7 +259,11 @@ export default function InboxPage() {
       })
       setContent('')
       setLinkUrl('')
-      navigate(`/inbox/${source.id}`)
+      if (source.duplicate_of) {
+        setDuplicateNotice(source.duplicate_of)
+      } else {
+        navigate(`/inbox/${source.id}`)
+      }
     } catch (error) {
       setSubmitError(mutationMessage(error, '采集失败，请检查输入后重试'))
     }
@@ -181,6 +271,24 @@ export default function InboxPage() {
 
   const sources = sourcesQuery.data ?? []
   const anyProcessing = sources.some((item) => item.processing_state === 'processing')
+
+  function DuplicateBadge({ source }: { source: SourceItem }) {
+    const duplicate = source.duplicate_of
+    if (!duplicate) return null
+    return (
+      <button
+        type="button"
+        className="duplicate-badge"
+        title={`与「${duplicate.title}」相同，点击查看原资料`}
+        onClick={(event) => {
+          event.stopPropagation()
+          navigate(`/inbox/${duplicate.id}`)
+        }}
+      >
+        疑似重复
+      </button>
+    )
+  }
 
   return (
     <div className="projects-page inbox-page">
@@ -352,6 +460,23 @@ export default function InboxPage() {
             </select>
           </div>
           {submitError && <div className="inline-error" role="alert">{submitError}</div>}
+          {duplicateNotice && (
+            <div className="inline-notice" role="status">
+              已检测到疑似重复：与「{duplicateNotice.title}」
+              （{new Date(duplicateNotice.created_at).toLocaleString('zh-CN')}）相同。
+              已保存并进入处理，
+              <a
+                href={`/inbox/${duplicateNotice.id}`}
+                onClick={(event) => {
+                  event.preventDefault()
+                  navigate(`/inbox/${duplicateNotice.id}`)
+                }}
+              >
+                查看原资料
+              </a>
+              。
+            </div>
+          )}
           <button
             type={mode === 'image' ? 'button' : 'submit'}
             className="primary-button toolbar-button"
@@ -438,18 +563,117 @@ export default function InboxPage() {
                 有资料正在处理中，列表会自动刷新。
               </p>
             )}
+            {selectedIds.size > 0 && (
+              <div className="batch-toolbar" role="group" aria-label="批量操作">
+                <span className="batch-count">已选 {selectedIds.size} 条</span>
+                <select
+                  value={batchTargetProject}
+                  onChange={(event) => setBatchTargetProject(event.target.value)}
+                  aria-label="分配到项目"
+                >
+                  <option value="">选择项目…</option>
+                  {(projectsQuery.data ?? []).map((project) => (
+                    <option key={project.id} value={project.id}>{project.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void runBatchAssign()}
+                  disabled={
+                    !batchTargetProject
+                    || assignMutation.isPending
+                    || deleteMutation.isPending
+                    || retryBatchMutation.isPending
+                  }
+                >
+                  <Folder size={15} />
+                  {assignMutation.isPending ? '分配中…' : '分配到项目'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void runBatchRetry()}
+                  disabled={
+                    retryBatchMutation.isPending
+                    || assignMutation.isPending
+                    || deleteMutation.isPending
+                  }
+                >
+                  <RefreshCw size={15} />
+                  {retryBatchMutation.isPending ? '重试中…' : '重试失败任务'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button danger-button"
+                  onClick={() => void runBatchDelete()}
+                  disabled={
+                    deleteMutation.isPending
+                    || assignMutation.isPending
+                    || retryBatchMutation.isPending
+                  }
+                >
+                  <Trash2 size={15} />
+                  {deleteMutation.isPending ? '删除中…' : '删除'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setSelectedIds(new Set())
+                    setBatchError(null)
+                  }}
+                >
+                  取消选择
+                </button>
+                {batchError && (
+                  <span className="inline-error batch-error" role="alert">
+                    {batchError}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="desktop-projects">
               <div className="project-table-wrap">
                 <table className="project-table source-table">
                   <thead>
-                    <tr><th>原始来源</th><th>所属项目</th><th>处理状态</th><th>候选</th><th>操作</th></tr>
+                    <tr>
+                      <th className="source-select-col">
+                        <input
+                          type="checkbox"
+                          aria-label="全选当前页"
+                          checked={
+                            sources.length > 0
+                            && sources.every((item) => selectedIds.has(item.id))
+                          }
+                          onChange={toggleSelectAll}
+                        />
+                      </th>
+                      <th className="source-title-col">原始来源</th>
+                      <th>所属项目</th>
+                      <th>处理状态</th>
+                      <th>候选</th>
+                      <th>操作</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {sources.map((source) => (
                       <tr key={source.id} onClick={() => navigate(`/inbox/${source.id}`)}>
-                        <td>
+                        <td
+                          className="source-select-cell"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label={`选择 ${source.title}`}
+                            checked={selectedIds.has(source.id)}
+                            onChange={() => toggleSelected(source.id)}
+                          />
+                        </td>
+                        <td className="source-title-cell">
                           <strong>{source.title}</strong>
                           <span>{sourceTypeLabels[source.source_type]} · {new Date(source.created_at).toLocaleString('zh-CN')}</span>
+                          <DuplicateBadge source={source} />
                         </td>
                         <td>{source.project_name ?? '未分配'}</td>
                         <td><span className={statusClass(source.processing_state)}>{processingDetailLabel(source)}</span></td>
@@ -476,6 +700,7 @@ export default function InboxPage() {
                   <div className="project-card-meta">
                     <span className={statusClass(source.processing_state)}>{processingDetailLabel(source)}</span>
                     <span>{source.project_name ?? '未分配'}</span>
+                    <DuplicateBadge source={source} />
                     {source.candidates.pending_confirm + source.candidates.accepted + source.candidates.rejected > 0 && (
                       <span>{source.candidates.pending_confirm} 待确认 · {source.candidates.accepted} 接受 · {source.candidates.rejected} 拒绝</span>
                     )}

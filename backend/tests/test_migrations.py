@@ -135,3 +135,72 @@ def test_0006_backfills_applicable_conditions(tmp_path: Path) -> None:
             for row in connection.execute("PRAGMA table_info(entries)").fetchall()
         }
         assert "applicable_conditions" not in columns
+
+
+def test_0012_source_fingerprints_upgrade_and_downgrade(tmp_path: Path) -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    database_path = tmp_path / "migration-0012.sqlite3"
+    environment = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite+aiosqlite:///{database_path}",
+    }
+    alembic = str(Path(sys.executable).with_name("alembic"))
+
+    subprocess.run(
+        [alembic, "upgrade", "head"],
+        cwd=backend_dir,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        sources_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(sources)").fetchall()
+        }
+        attachments_columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(source_attachments)"
+            ).fetchall()
+        }
+        assert {"content_hash", "link_hash", "duplicate_of_id"} <= sources_columns
+        assert "file_hash" in attachments_columns
+        source_indexes = {
+            row[1]
+            for row in connection.execute("PRAGMA index_list(sources)").fetchall()
+        }
+        attachment_indexes = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA index_list(source_attachments)"
+            ).fetchall()
+        }
+        assert "ix_sources_workspace_content_hash" in source_indexes
+        assert "ix_sources_workspace_link_hash" in source_indexes
+        assert "ix_source_attachments_workspace_file_hash" in attachment_indexes
+
+    subprocess.run(
+        [alembic, "downgrade", "0011_review_merge_ignored"],
+        cwd=backend_dir,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        sources_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(sources)").fetchall()
+        }
+        attachments_columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(source_attachments)"
+            ).fetchall()
+        }
+        assert "content_hash" not in sources_columns
+        assert "link_hash" not in sources_columns
+        assert "duplicate_of_id" not in sources_columns
+        assert "file_hash" not in attachments_columns

@@ -75,6 +75,8 @@ class Source(UUIDMixin, TimestampMixin, Base):
         ),
         Index("ix_sources_workspace_created", "workspace_id", "created_at"),
         Index("ix_sources_project", "project_id"),
+        Index("ix_sources_workspace_content_hash", "workspace_id", "content_hash"),
+        Index("ix_sources_workspace_link_hash", "workspace_id", "link_hash"),
     )
 
     workspace_id: Mapped[str] = mapped_column(
@@ -96,6 +98,19 @@ class Source(UUIDMixin, TimestampMixin, Base):
         nullable=False,
         default=SourceContentStatus.SAVED.value,
         server_default=SourceContentStatus.SAVED.value,
+    )
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    link_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    duplicate_of_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("sources.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     project: Mapped[Project | None] = relationship(back_populates="sources")
@@ -130,6 +145,11 @@ class SourceAttachment(UUIDMixin, TimestampMixin, Base):
             "sort_order",
         ),
         Index("ix_source_attachments_workspace", "workspace_id"),
+        Index(
+            "ix_source_attachments_workspace_file_hash",
+            "workspace_id",
+            "file_hash",
+        ),
     )
 
     source_id: Mapped[str] = mapped_column(
@@ -147,6 +167,10 @@ class SourceAttachment(UUIDMixin, TimestampMixin, Base):
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    file_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
 
     source: Mapped[Source] = relationship(back_populates="attachments")
 

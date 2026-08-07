@@ -129,6 +129,12 @@ class RelatedEntry(BaseModel):
     created_at: datetime
 
 
+class DuplicateSourceRef(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+
+
 class SourceListItem(BaseModel):
     id: str
     source_type: str
@@ -143,6 +149,7 @@ class SourceListItem(BaseModel):
     processing_state: ProcessingStateValue
     candidates: CandidateCounts
     task: TaskInfo | None = None
+    duplicate_of: DuplicateSourceRef | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -195,3 +202,36 @@ class CompleteResponse(BaseModel):
     accepted: int
     rejected: int
     completed: bool
+
+
+class BatchSourcesRequest(BaseModel):
+    source_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @field_validator("source_ids", mode="before")
+    @classmethod
+    def normalize_source_ids(cls, value: object) -> object:
+        if isinstance(value, list):
+            return [
+                item.strip()
+                for item in value
+                if isinstance(item, str) and item.strip()
+            ]
+        return value
+
+
+class BatchAssignRequest(BatchSourcesRequest):
+    project_id: str = Field(min_length=1, max_length=36)
+
+    _strip_project = field_validator("project_id", mode="before")(strip_required)
+
+
+class BatchAssignResponse(BaseModel):
+    assigned: int
+
+
+class BatchDeleteResponse(BaseModel):
+    deleted: int
+
+
+class BatchRetryResponse(BaseModel):
+    retried: int

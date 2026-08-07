@@ -34,6 +34,12 @@ export interface Attachment {
   url: string
 }
 
+export interface DuplicateSourceRef {
+  id: string
+  title: string
+  created_at: string
+}
+
 export interface SourceItem {
   id: string
   source_type: SourceType
@@ -48,6 +54,7 @@ export interface SourceItem {
   processing_state: ProcessingState
   candidates: CandidateCounts
   task: TaskInfo | null
+  duplicate_of?: DuplicateSourceRef | null
   created_at: string
   updated_at: string
 }

@@ -93,6 +93,46 @@ export function useRetrySource(sourceId: string) {
   })
 }
 
+export function useBatchAssignSources() {
+  const invalidate = useInvalidateInbox()
+  return useMutation({
+    mutationFn: ({
+      sourceIds,
+      projectId,
+    }: {
+      sourceIds: string[]
+      projectId: string
+    }) =>
+      api.post<{ assigned: number }>('/inbox/sources/batch/assign', {
+        source_ids: sourceIds,
+        project_id: projectId,
+      }),
+    onSettled: invalidate,
+  })
+}
+
+export function useBatchDeleteSources() {
+  const invalidate = useInvalidateInbox()
+  return useMutation({
+    mutationFn: (sourceIds: string[]) =>
+      api.post<{ deleted: number }>('/inbox/sources/batch/delete', {
+        source_ids: sourceIds,
+      }),
+    onSettled: invalidate,
+  })
+}
+
+export function useBatchRetrySources() {
+  const invalidate = useInvalidateInbox()
+  return useMutation({
+    mutationFn: (sourceIds: string[]) =>
+      api.post<{ retried: number }>('/inbox/sources/batch/retry', {
+        source_ids: sourceIds,
+      }),
+    onSettled: invalidate,
+  })
+}
+
 export function useDecideExtraction(sourceId: string) {
   const invalidate = useInvalidateInbox()
   return useMutation({

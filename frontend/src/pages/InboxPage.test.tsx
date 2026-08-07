@@ -29,16 +29,27 @@ const source: SourceItem = {
   updated_at: '2026-08-05T10:00:00',
 }
 
-function inboxFetch(overrides: { sources?: SourceItem[], failCapture?: boolean } = {}) {
+function inboxFetch(overrides: {
+  sources?: SourceItem[]
+  failCapture?: boolean
+  projects?: Array<{ id: string, name: string }>
+} = {}) {
   const sources = overrides.sources ?? [source]
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
     if (method === 'GET' && url.startsWith('/api/projects')) {
-      return Promise.resolve(jsonResponse([]))
+      return Promise.resolve(jsonResponse(overrides.projects ?? []))
     }
     if (method === 'GET' && url.startsWith('/api/inbox/sources')) {
       return Promise.resolve(jsonResponse(sources))
+    }
+    if (method === 'POST' && url.startsWith('/api/inbox/sources/batch/')) {
+      return Promise.resolve(jsonResponse({
+        assigned: 2,
+        deleted: 2,
+        retried: 2,
+      }, 200))
     }
     if (method === 'POST' && url.startsWith('/api/inbox/sources')) {
       if (overrides.failCapture) {
@@ -135,6 +146,72 @@ describe('InboxPage capture and queue', () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url, init]) =>
         String(url) === '/api/inbox/sources/src-1/retry' && init?.method === 'POST')).toBe(true)
+    })
+  })
+
+  it('marks a suspected duplicate and links to the original', async () => {
+    const dupSource: SourceItem = {
+      ...source,
+      id: 'src-dup',
+      duplicate_of: {
+        id: 'src-orig',
+        title: '洗烘套装参数页',
+        created_at: '2026-08-05T09:00:00',
+      },
+    }
+    vi.stubGlobal('fetch', inboxFetch({ sources: [source, dupSource] }))
+    renderRoute(<InboxPage />, '/inbox', '/inbox')
+
+    expect((await screen.findAllByText('疑似重复')).length).toBeGreaterThan(0)
+    expect(screen.getAllByTitle(/与「洗烘套装参数页」相同/).length).toBeGreaterThan(0)
+  })
+
+  it('batch assigns selected sources to a project', async () => {
+    const fetchMock = inboxFetch({
+      sources: [source, { ...source, id: 'src-2', title: '第二条经验' }],
+      projects: [{ id: 'proj-1', name: '新房装修' }],
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    renderRoute(<InboxPage />, '/inbox', '/inbox')
+
+    const checkboxes = await screen.findAllByRole('checkbox')
+    await user.click(checkboxes[1])
+    await user.click(checkboxes[2])
+    await user.selectOptions(screen.getByLabelText('分配到项目'), 'proj-1')
+    await user.click(screen.getByRole('button', { name: /分配到项目/ }))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url, init]) =>
+        String(url) === '/api/inbox/sources/batch/assign' && init?.method === 'POST') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call![1].body))).toEqual({
+        source_ids: ['src-1', 'src-2'],
+        project_id: 'proj-1',
+      })
+    })
+  })
+
+  it('batch deletes selected sources after confirmation', async () => {
+    const fetchMock = inboxFetch({
+      sources: [source, { ...source, id: 'src-2', title: '第二条经验' }],
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    renderRoute(<InboxPage />, '/inbox', '/inbox')
+
+    const checkboxes = await screen.findAllByRole('checkbox')
+    await user.click(checkboxes[1])
+    await user.click(screen.getByRole('button', { name: /删除/ }))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url, init]) =>
+        String(url) === '/api/inbox/sources/batch/delete' && init?.method === 'POST') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call![1].body))).toEqual({ source_ids: ['src-1'] })
     })
   })
 
