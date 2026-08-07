@@ -1860,19 +1860,23 @@ a {
 }
 
 .source-table th:first-child {
-  width: 34%;
+  width: 36px;
 }
 
 .source-table th:nth-child(2) {
-  width: 16%;
+  width: 38%;
 }
 
 .source-table th:nth-child(3) {
-  width: 14%;
+  width: 16%;
 }
 
 .source-table th:nth-child(4) {
-  width: 22%;
+  width: 14%;
+}
+
+.source-table th:nth-child(5) {
+  width: 20%;
 }
 
 .source-table th:last-child {
@@ -3417,9 +3421,7 @@ mark.search-highlight {
   }
 }
 
-.project-table .source-select-col,
 .project-table .source-select-cell {
-  width: 44px;
   padding: 0;
   text-align: center;
 }
