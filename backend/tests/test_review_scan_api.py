@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
@@ -245,6 +247,58 @@ async def test_scan_creates_open_findings_directly(
     )
     assert ai_item["finding_type"] == "duplicate"
     assert " vs " in ai_item["title"]
+
+
+@pytest.mark.asyncio
+async def test_scan_findings_endpoint_with_resolution(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    node = await _create_node(client, project["id"], "冰箱")
+    entry_a, entry_b = await _seed_pair(client, db, project["id"], node["id"])
+    scan = await _start_scan(client, scope_type="workspace")
+    await process_next_scan(
+        db,
+        ReviewFakeProvider(results=_duplicate_result(entry_a, entry_b)),
+    )
+    open_findings = (await client.get("/api/review/findings")).json()["findings"]
+    ai_item = next(
+        item for item in open_findings if item["target_type"] == "ai_finding"
+    )
+    await client.post(
+        f"/api/review/findings/duplicate/ai_finding/{ai_item['target_id']}/resolution",
+        json={"resolution": "resolved", "note": "已处理"},
+    )
+
+    body = (await client.get(f"/api/review/scans/{scan['id']}/findings")).json()
+    assert len(body["findings"]) == 1
+    item = body["findings"][0]
+    assert item["target_id"] == ai_item["target_id"]
+    assert item["resolution"] == "resolved"
+    assert item["note"] == "已处理"
+    assert " vs " in item["title"]
+
+
+@pytest.mark.asyncio
+async def test_duration_uses_server_clock(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    scan = await _start_scan(client, scope_type="workspace")
+    row = await db.get(ReviewScan, scan["id"])
+    server_now = await db.scalar(func.now())
+    assert row is not None and server_now is not None
+    row.created_at = server_now - timedelta(seconds=5)
+    await db.commit()
+    await process_next_scan(db, ReviewFakeProvider())
+
+    listed = (await client.get("/api/review/scans")).json()["scans"]
+    item = next(item for item in listed if item["id"] == scan["id"])
+    assert item["status"] == "succeeded"
+    assert item["duration_seconds"] >= 4
 
 
 @pytest.mark.asyncio

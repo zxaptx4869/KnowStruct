@@ -157,6 +157,11 @@ function reviewFetchMock(
         } satisfies ReviewScanListResponse),
       )
     }
+    if (path.startsWith('/api/review/scans/') && path.includes('/findings')) {
+      return Promise.resolve(
+        jsonResponse({ findings: [aiFinding] } satisfies ReviewFindingsResponse),
+      )
+    }
     if (path.startsWith('/api/review/scans/')) {
       const scanId = path.split('/scans/')[1].split('/')[0]
       const polls = (state.scanPolls.get(scanId) ?? 0) + 1
@@ -436,6 +441,19 @@ describe('ReviewPage', () => {
     const card = (await screen.findByText('失败', { selector: '.badge' })).closest('article') as HTMLElement
     await userEvent.click(within(card).getByRole('button', { name: '详情' }))
     expect(await within(card).findByText('AI 服务未配置')).toBeInTheDocument()
+  })
+
+  it('shows scan findings when expanding a history record', async () => {
+    reviewFetchMock({ scans: [makeScan('scan-done')] })
+    renderReviewPage()
+
+    await userEvent.click(screen.getByRole('tab', { name: '审查记录' }))
+    const card = (await screen.findByText('成功', { selector: '.badge' })).closest('article') as HTMLElement
+    await userEvent.click(within(card).getByRole('button', { name: '详情' }))
+    expect(
+      await within(card).findByText(aiFinding.title),
+    ).toBeInTheDocument()
+    expect(within(card).getByText('待处理')).toBeInTheDocument()
   })
 
   it('shows an AI finding with pair evidence and jumps to record B', async () => {

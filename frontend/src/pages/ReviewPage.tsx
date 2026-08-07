@@ -21,6 +21,7 @@ import {
   useReviewFindings,
   useReviewMutations,
   useReviewScan,
+  useScanFindings,
   useScanHistory,
   useStartScan,
 } from '../review/queries'
@@ -52,6 +53,65 @@ const scanStatusLabels: Record<string, string> = {
   running: '进行中',
   succeeded: '成功',
   failed: '失败',
+}
+
+function HistoryScanDetail({
+  scanItem,
+  open,
+}: {
+  scanItem: ReviewScan
+  open: boolean
+}) {
+  const findingsQuery = useScanFindings(
+    open && scanItem.status === 'succeeded' ? scanItem.id : null,
+    open && scanItem.status === 'succeeded',
+  )
+  if (!open) return null
+  if (scanItem.status === 'failed') {
+    return (
+      <div className="review-detail">
+        <div className="review-detail-row">
+          <span>失败原因</span>
+          <p>{scanItem.last_error ?? '未知错误'}</p>
+        </div>
+      </div>
+    )
+  }
+  if (findingsQuery.isPending) {
+    return (
+      <div className="review-detail">
+        <span className="spin state-spinner" />
+        正在加载本次发现的记录
+      </div>
+    )
+  }
+  const findings = findingsQuery.data?.findings ?? []
+  if (findings.length === 0) {
+    return (
+      <div className="review-detail">
+        <p className="review-card-summary">本次扫描没有产生新的问题</p>
+      </div>
+    )
+  }
+  return (
+    <div className="review-detail">
+      {findings.map((item) => (
+        <div key={item.target_id} className="review-scan-finding-row">
+          <span className="badge">
+            {findingTypeLabels[item.finding_type] ?? item.finding_type}
+          </span>
+          <span className="review-scan-finding-title">{item.title}</span>
+          <span className="review-scan-finding-state">
+            {item.resolution === 'resolved'
+              ? '已解决'
+              : item.resolution === 'rejected'
+                ? '已拒绝'
+                : '待处理'}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 type ReviewTab = 'open' | 'resolved' | 'rejected' | 'history'
@@ -402,7 +462,7 @@ export default function ReviewPage() {
         >
           {scanActive ? (
             <span>
-              正在扫描（开始于 {formatTime(scan.started_at ?? scan.created_at)}）
+              正在扫描（开始于 {formatTime(scan.created_at)}）
             </span>
           ) : scan.status === 'failed' ? (
             <>
@@ -530,14 +590,7 @@ export default function ReviewPage() {
                         决策跟进：已解决 {summary.resolved} · 已拒绝{' '}
                         {summary.rejected} · 待决定 {summary.pending}
                       </p>
-                      {isOpen && scanItem.status === 'failed' && (
-                        <div className="review-detail">
-                          <div className="review-detail-row">
-                            <span>失败原因</span>
-                            <p>{scanItem.last_error ?? '未知错误'}</p>
-                          </div>
-                        </div>
-                      )}
+                      <HistoryScanDetail scanItem={scanItem} open={isOpen} />
                     </article>
                   )
                 })}

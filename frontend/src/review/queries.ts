@@ -19,6 +19,8 @@ export const reviewKeys = {
     ['review', 'findings', status, findingType] as const,
   scans: ['review', 'scans'] as const,
   scan: (scanId: string) => ['review', 'scans', scanId] as const,
+  scanFindings: (scanId: string) =>
+    ['review', 'scans', scanId, 'findings'] as const,
   candidates: (scanId: string) =>
     ['review', 'scans', scanId, 'candidates'] as const,
 }
@@ -120,5 +122,14 @@ export function useScanHistory(offset: number, limit = 20) {
       api.get<ReviewScanListResponse>('/review/scans', {
         params: { limit, offset },
       }),
+  })
+}
+
+export function useScanFindings(scanId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: reviewKeys.scanFindings(scanId ?? 'none'),
+    queryFn: () =>
+      api.get<ReviewFindingsResponse>(`/review/scans/${scanId}/findings`),
+    enabled: Boolean(scanId) && enabled,
   })
 }

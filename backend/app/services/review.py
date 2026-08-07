@@ -248,22 +248,51 @@ async def compute_open_findings(
     return items[:FINDINGS_LIMIT]
 
 
-async def _ai_open_items(
+def _ai_finding_item(
+    finding: ReviewAiFinding,
+    entry_a: Entry,
+    entry_b: Entry,
+    projects: dict[str, str],
+    paths: dict[str, list[str]],
+    resolution: ReviewResolution | None = None,
+) -> ReviewFindingItem:
+    item = ReviewFindingItem(
+        finding_type=FindingType(finding.review_type),
+        target_type=FindingTargetType.AI_FINDING,
+        target_id=finding.id,
+        title=f"{entry_a.title} vs {entry_b.title}",
+        summary=finding.description,
+        created_at=finding.created_at,
+        entry_type=entry_a.entry_type,
+        content=entry_a.content,
+        conditions=entry_a.applicable_conditions,
+        project_id=entry_a.project_id,
+        project_name=projects.get(entry_a.project_id),
+        node_id=entry_a.node_id,
+        node_path=(
+            paths.get(entry_a.node_id or "", []) if entry_a.node_id else []
+        ),
+        entry_b_id=entry_b.id,
+        entry_b_title=entry_b.title,
+        entry_b_content=entry_b.content,
+        entry_b_project_id=entry_b.project_id,
+        entry_b_node_id=entry_b.node_id,
+        ai_description=finding.description,
+        ai_suggestion=finding.suggestion,
+        ai_severity=finding.severity,
+    )
+    if resolution is not None:
+        item.resolution = ResolutionType(resolution.resolution)
+        item.note = resolution.note
+        item.resolved_at = resolution.created_at
+    return item
+
+
+async def _load_ai_entries(
     db: AsyncSession,
     workspace_id: str,
-    resolved: set[tuple[str, str, str]],
-    finding_type: FindingType | None,
-) -> list[ReviewFindingItem]:
-    stmt = select(ReviewAiFinding).where(
-        ReviewAiFinding.workspace_id == workspace_id,
-        ReviewAiFinding.status == AiFindingStatus.OPEN.value,
-    )
-    if finding_type is not None:
-        stmt = stmt.where(ReviewAiFinding.review_type == finding_type.value)
-    findings = (await db.scalars(stmt)).all()
-    if not findings:
-        return []
-
+    findings: list[ReviewAiFinding],
+) -> tuple[dict[str, Entry], dict[str, str], dict[str, list[str]]]:
     entry_ids = {
         entry_id
         for finding in findings
@@ -285,6 +314,86 @@ async def _ai_open_items(
         workspace_id,
         {entry.project_id for entry in entries.values()},
     )
+    return entries, projects, paths
+
+
+async def list_scan_findings(
+    db: AsyncSession,
+    workspace_id: str,
+    scan_id: str,
+) -> list[ReviewFindingItem]:
+    findings = (
+        await db.scalars(
+            select(ReviewAiFinding)
+            .where(
+                ReviewAiFinding.scan_id == scan_id,
+                ReviewAiFinding.workspace_id == workspace_id,
+            )
+            .order_by(ReviewAiFinding.created_at, ReviewAiFinding.id)
+        )
+    ).all()
+    if not findings:
+        return []
+    entries, projects, paths = await _load_ai_entries(
+        db,
+        workspace_id,
+        list(findings),
+    )
+    finding_ids = [finding.id for finding in findings]
+    resolution_map: dict[str, ReviewResolution] = {}
+    if finding_ids:
+        resolutions = (
+            await db.scalars(
+                select(ReviewResolution).where(
+                    ReviewResolution.workspace_id == workspace_id,
+                    ReviewResolution.target_type
+                    == FindingTargetType.AI_FINDING.value,
+                    ReviewResolution.target_id.in_(finding_ids),
+                )
+            )
+        ).all()
+        resolution_map = {row.target_id: row for row in resolutions}
+
+    items: list[ReviewFindingItem] = []
+    for finding in findings:
+        entry_a = entries.get(finding.entry_a_id)
+        entry_b = entries.get(finding.entry_b_id)
+        if entry_a is None or entry_b is None:
+            continue
+        items.append(
+            _ai_finding_item(
+                finding,
+                entry_a,
+                entry_b,
+                projects,
+                paths,
+                resolution_map.get(finding.id),
+            )
+        )
+    return items
+
+
+async def _ai_open_items(
+    db: AsyncSession,
+    workspace_id: str,
+    resolved: set[tuple[str, str, str]],
+    finding_type: FindingType | None,
+) -> list[ReviewFindingItem]:
+    stmt = select(ReviewAiFinding).where(
+        ReviewAiFinding.workspace_id == workspace_id,
+        ReviewAiFinding.status == AiFindingStatus.OPEN.value,
+    )
+    if finding_type is not None:
+        stmt = stmt.where(ReviewAiFinding.review_type == finding_type.value)
+    findings = (await db.scalars(stmt)).all()
+    if not findings:
+        return []
+
+    entries, projects, paths = await _load_ai_entries(
+        db,
+        workspace_id,
+        list(findings),
+    )
 
     items: list[ReviewFindingItem] = []
     for finding in findings:
@@ -299,35 +408,7 @@ async def _ai_open_items(
         entry_b = entries.get(finding.entry_b_id)
         if entry_a is None or entry_b is None:
             continue
-        items.append(
-            ReviewFindingItem(
-                finding_type=FindingType(finding.review_type),
-                target_type=FindingTargetType.AI_FINDING,
-                target_id=finding.id,
-                title=f"{entry_a.title} vs {entry_b.title}",
-                summary=finding.description,
-                created_at=finding.created_at,
-                entry_type=entry_a.entry_type,
-                content=entry_a.content,
-                conditions=entry_a.applicable_conditions,
-                project_id=entry_a.project_id,
-                project_name=projects.get(entry_a.project_id),
-                node_id=entry_a.node_id,
-                node_path=(
-                    paths.get(entry_a.node_id or "", [])
-                    if entry_a.node_id
-                    else []
-                ),
-                entry_b_id=entry_b.id,
-                entry_b_title=entry_b.title,
-                entry_b_content=entry_b.content,
-                entry_b_project_id=entry_b.project_id,
-                entry_b_node_id=entry_b.node_id,
-                ai_description=finding.description,
-                ai_suggestion=finding.suggestion,
-                ai_severity=finding.severity,
-            )
-        )
+        items.append(_ai_finding_item(finding, entry_a, entry_b, projects, paths))
     return items
 
 

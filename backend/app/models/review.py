@@ -37,7 +37,6 @@ class FindingTargetType(StrEnum):
 
 class ResolutionType(StrEnum):
     RESOLVED = "resolved"
-    IGNORED = "ignored"
     REJECTED = "rejected"
 
 
@@ -84,7 +83,7 @@ class ReviewResolution(UUIDMixin, TimestampMixin, Base):
             name="ck_review_resolutions_target_type",
         ),
         CheckConstraint(
-            "resolution IN ('resolved', 'ignored', 'rejected')",
+            "resolution IN ('resolved', 'rejected')",
             name="ck_review_resolutions_resolution",
         ),
         Index("ix_review_resolutions_workspace", "workspace_id"),

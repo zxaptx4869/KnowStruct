@@ -166,11 +166,8 @@ async def _create_findings(
             if resolution is None:
                 # 已在待处理列表，不重复创建
                 continue
-            if resolution.resolution in (
-                ResolutionType.REJECTED.value,
-                ResolutionType.IGNORED.value,
-            ):
-                # 已拒绝/历史忽略：不再报问题，计入跳过数
+            if resolution.resolution == ResolutionType.REJECTED.value:
+                # 已拒绝：不再报问题，计入跳过数
                 skipped += 1
                 continue
             # 已解决：由扫描完成时的确定性检查清除并重新浮现
@@ -274,7 +271,8 @@ async def run_scan(
     scan.status = ScanStatus.SUCCEEDED.value
     scan.findings_count = findings_count
     scan.skipped_rejected_count = skipped_rejected
-    scan.finished_at = utc_now()
+    server_now = await db.scalar(func.now())
+    scan.finished_at = server_now if server_now is not None else utc_now()
     await db.flush()
 
 

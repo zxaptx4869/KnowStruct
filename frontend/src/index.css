@@ -2879,6 +2879,27 @@ textarea.field-error {
   margin: 12px auto 0;
 }
 
+.review-scan-finding-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.review-scan-finding-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text, #374151);
+  word-break: break-word;
+}
+
+.review-scan-finding-state {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+}
+
 .review-card {
   padding: 14px 16px;
   border: 1px solid var(--line, #e5e7eb);

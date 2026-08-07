@@ -220,3 +220,27 @@ async def get_review_scan(
         raise DomainError(404, "scan_not_found", "扫描记录不存在")
     return scan
 
+
+@router.get(
+    "/scans/{scan_id}/findings",
+    response_model=ReviewFindingsResponse,
+)
+async def get_scan_findings(
+    scan_id: str,
+    auth: Auth,
+    db: DbSession,
+) -> ReviewFindingsResponse:
+    scan = await db.scalar(
+        select(ReviewScan).where(
+            ReviewScan.id == scan_id,
+            ReviewScan.workspace_id == auth.workspace.id,
+        )
+    )
+    if scan is None:
+        raise DomainError(404, "scan_not_found", "扫描记录不存在")
+    findings = await review_service.list_scan_findings(
+        db,
+        auth.workspace.id,
+        scan_id,
+    )
+    return ReviewFindingsResponse(findings=findings)
