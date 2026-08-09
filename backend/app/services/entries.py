@@ -1,12 +1,13 @@
 """Formal entry queries for directory browsing and source tracing."""
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ConflictError, ResourceNotFoundError
 from app.models import Entry, EntrySource, Node, Source
 from app.schemas.projects import EntryUpdate, NodeEntryResponse, NodeEntrySourceRef
 from app.services.projects import get_project
+from app.services.search import escape_like
 
 NODE_ENTRY_LIMIT = 200
 MAX_ENTRY_SOURCES = 3
@@ -126,21 +127,35 @@ async def list_project_entries(
     db: AsyncSession,
     workspace_id: str,
     project_id: str,
-) -> tuple[list[NodeEntryResponse], int, int]:
+    q: str | None = None,
+) -> tuple[list[NodeEntryResponse], int, int, int]:
     """项目级记录列表（含未归档），返回 (items, total, unarchived_count)。"""
     await get_project(db, workspace_id, project_id)
+    keyword = q.strip() if q else ""
+    filters = [
+        Entry.workspace_id == workspace_id,
+        Entry.project_id == project_id,
+        Entry.status == "archived",
+    ]
+    if keyword:
+        pattern = f"%{escape_like(keyword)}%"
+        filters.append(
+            or_(
+                Entry.title.like(pattern, escape="\\"),
+                Entry.content.like(pattern, escape="\\"),
+            )
+        )
     entries = (
         await db.scalars(
             select(Entry)
-            .where(
-                Entry.workspace_id == workspace_id,
-                Entry.project_id == project_id,
-                Entry.status == "archived",
-            )
+            .where(*filters)
             .order_by(Entry.created_at.desc(), Entry.id.desc())
             .limit(NODE_ENTRY_LIMIT)
         )
     ).all()
+    matched_total = await db.scalar(
+        select(func.count(Entry.id)).where(*filters)
+    )
     total = await db.scalar(
         select(func.count(Entry.id)).where(
             Entry.workspace_id == workspace_id,
@@ -177,7 +192,12 @@ async def list_project_entries(
         )
         for entry in entries
     ]
-    return items, int(total or 0), int(unarchived_count or 0)
+    return (
+        items,
+        int(total or 0),
+        int(unarchived_count or 0),
+        int(matched_total or 0),
+    )
 
 
 def _unique_entry_ids(entry_ids: list[str]) -> list[str]:

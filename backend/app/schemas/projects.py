@@ -139,6 +139,7 @@ class ProjectRecordsResponse(BaseModel):
     items: list[NodeEntryResponse] = Field(default_factory=list)
     total: int = 0
     unarchived_count: int = 0
+    matched_count: int = 0
 
 
 class BatchEntryMoveRequest(BaseModel):

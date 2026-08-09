@@ -421,6 +421,7 @@ function organizeFetch(overrides: { records?: unknown } = {}) {
         items: organizeEntries,
         total: 2,
         unarchived_count: 1,
+        matched_count: 2,
       }))
     }
     if (path.endsWith('/entries/batch/move') && init?.method === 'POST') {
@@ -434,10 +435,11 @@ function organizeFetch(overrides: { records?: unknown } = {}) {
 }
 
 async function enterOrganizeMode() {
-  renderRoute(<ProjectDetailPage />, '/projects/project-1', '/projects/:id')
+  const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1', '/projects/:id')
   await screen.findAllByText('家具家电')
   await userEvent.click(screen.getAllByRole('button', { name: '批量整理' })[0])
   await screen.findAllByText('全部记录')
+  return container
 }
 
 describe('project organize mode', () => {
@@ -455,6 +457,67 @@ describe('project organize mode', () => {
     expect(screen.getAllByText('已归档参数').length).toBeGreaterThan(0)
     expect(screen.getAllByText('未归档').length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: '回到查看' }).length).toBeGreaterThan(0)
+  })
+
+  it('searches records by keyword and clears the query on desktop organize mode', async () => {
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      const path = String(url)
+      if (path.startsWith('/api/projects/project-1/entries')) {
+        const q = new URL(path, 'http://local.test').searchParams.get('q')
+        const items = q
+          ? organizeEntries.filter(
+              (entry) =>
+                entry.title.includes(q) || entry.content.includes(q),
+            )
+          : organizeEntries
+        return Promise.resolve(jsonResponse({
+          items,
+          total: 2,
+          unarchived_count: 1,
+          matched_count: items.length,
+        }))
+      }
+      return mockProjectApi()(url)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const container = await enterOrganizeMode()
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+
+    await userEvent.type(screen.getByRole('textbox', { name: '搜索记录' }), '参数')
+    await userEvent.click(screen.getByRole('button', { name: '搜索' }))
+
+    expect(await within(desktop).findByText('已归档参数')).toBeInTheDocument()
+    expect(within(desktop).queryByText('未归档经验')).not.toBeInTheDocument()
+    expect(within(desktop).getByText('共 2 条 · 匹配 1 条')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '清除' }))
+    expect(await within(desktop).findByText('未归档经验')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '搜索记录' })).toHaveValue('')
+  })
+
+  it('shows the no-match hint when a keyword search has no results', async () => {
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      const path = String(url)
+      if (path.startsWith('/api/projects/project-1/entries')) {
+        const q = new URL(path, 'http://local.test').searchParams.get('q')
+        return Promise.resolve(jsonResponse({
+          items: q ? [] : organizeEntries,
+          total: 2,
+          unarchived_count: 1,
+          matched_count: q ? 0 : 2,
+        }))
+      }
+      return mockProjectApi()(url)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const container = await enterOrganizeMode()
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+
+    await userEvent.type(screen.getByRole('textbox', { name: '搜索记录' }), '找不到的内容')
+    await userEvent.click(screen.getByRole('button', { name: '搜索' }))
+
+    expect(await within(desktop).findByText('没有找到匹配的记录')).toBeInTheDocument()
+    expect(within(desktop).queryByText('还没有正式记录')).not.toBeInTheDocument()
   })
 
   it('filters records by unarchived status', async () => {

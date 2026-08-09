@@ -509,9 +509,10 @@ function ProjectRecordsSection({
   mobile?: boolean
 }) {
   const navigate = useNavigate()
-  const recordsQuery = useProjectEntries(projectId)
   const nodesQuery = useNodes(projectId)
   const [typeFilter, setTypeFilter] = useState<'all' | string>('all')
+  const [keyword, setKeyword] = useState('')
+  const [appliedKeyword, setAppliedKeyword] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchTargetNode, setBatchTargetNode] = useState('')
   const [batchError, setBatchError] = useState<string | null>(null)
@@ -522,14 +523,21 @@ function ProjectRecordsSection({
   const moveMutation = useBatchMoveEntries(projectId)
   const deleteBatchMutation = useBatchDeleteEntries(projectId)
 
+  const recordsQuery = useProjectEntries(projectId, appliedKeyword || undefined)
   const records = recordsQuery.data?.items ?? []
   const total = recordsQuery.data?.total ?? 0
   const unarchivedCount = recordsQuery.data?.unarchived_count ?? 0
+  const matchedCount = recordsQuery.data?.matched_count ?? records.length
 
   useEffect(() => {
     setSelectedIds(new Set())
     setBatchError(null)
-  }, [filter, typeFilter])
+  }, [filter, typeFilter, appliedKeyword])
+
+  function submitKeyword() {
+    setAppliedKeyword(keyword.trim())
+    setSelectedIds(new Set())
+  }
 
   const filtered = records.filter((entry) => {
     if (filter === 'unarchived' && entry.node_id !== null) return false
@@ -537,8 +545,8 @@ function ProjectRecordsSection({
     if (typeFilter !== 'all' && entry.entry_type !== typeFilter) return false
     return true
   })
-  const noRecords = records.length === 0
-  const noMatches = records.length > 0 && filtered.length === 0
+  const noRecords = records.length === 0 && total === 0
+  const noMatches = !noRecords && filtered.length === 0
 
   function toggleSelected(id: string) {
     setSelectedIds((prev) => {
@@ -613,8 +621,12 @@ function ProjectRecordsSection({
     <section className="records-section">
       <header className="records-head">
         <div>
-          <h3>全部记录</h3>
-          <span>{total} 条 · 未归档 {unarchivedCount} 条</span>
+          <h3>{appliedKeyword ? '搜索记录' : '全部记录'}</h3>
+          <span>
+            {appliedKeyword
+              ? `共 ${total} 条 · 匹配 ${matchedCount} 条`
+              : `${total} 条 · 未归档 ${unarchivedCount} 条`}
+          </span>
         </div>
         {mobile && (
           <div className="record-type-chips" role="group" aria-label="按状态筛选">
@@ -635,6 +647,35 @@ function ProjectRecordsSection({
           </div>
         )}
       </header>
+      {!mobile && (
+        <form
+          className="record-search-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submitKeyword()
+          }}
+        >
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="搜索记录标题或内容"
+            aria-label="搜索记录"
+          />
+          <button type="submit" className="secondary-button">搜索</button>
+          {appliedKeyword && (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setKeyword('')
+                setAppliedKeyword('')
+              }}
+            >
+              清除
+            </button>
+          )}
+        </form>
+      )}
       <div className="record-type-chips" role="group" aria-label="按记录类型筛选">
         <button
           type="button"
@@ -685,8 +726,8 @@ function ProjectRecordsSection({
         <div className="inline-empty">
           <FileText size={22} />
           <div>
-            <strong>当前筛选下没有记录</strong>
-            <span>切换筛选或类型查看其他记录。</span>
+            <strong>没有找到匹配的记录</strong>
+            <span>调整关键词或筛选条件查看其他记录。</span>
           </div>
         </div>
       )}

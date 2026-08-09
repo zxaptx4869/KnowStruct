@@ -55,10 +55,13 @@ export function useNodeEntries(projectId: string, nodeId: string) {
   })
 }
 
-export function useProjectEntries(projectId: string) {
+export function useProjectEntries(projectId: string, q?: string) {
   return useQuery({
-    queryKey: projectKeys.projectEntries(projectId),
-    queryFn: () => api.get<ProjectRecords>(`/projects/${projectId}/entries`),
+    queryKey: [...projectKeys.projectEntries(projectId), q ?? ''],
+    queryFn: () =>
+      api.get<ProjectRecords>(`/projects/${projectId}/entries`, {
+        params: q ? { q } : undefined,
+      }),
     enabled: Boolean(projectId),
   })
 }

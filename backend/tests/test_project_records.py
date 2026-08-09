@@ -103,6 +103,103 @@ async def test_project_records_list_includes_unarchived(
 
 
 @pytest.mark.asyncio
+async def test_project_records_search_by_keyword(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    workspace_id = await login_owner(client, db)
+    project = await create_project(client)
+    title_id = await add_entry(
+        db,
+        workspace_id=workspace_id,
+        project_id=project["id"],
+        title="零嵌冰箱散热方式",
+        content="底部散热更省空间",
+    )
+    content_id = await add_entry(
+        db,
+        workspace_id=workspace_id,
+        project_id=project["id"],
+        title="安装余量记录",
+        content="侧边预留与底部散热相关",
+    )
+    other_id = await add_entry(
+        db,
+        workspace_id=workspace_id,
+        project_id=project["id"],
+        title="瓷砖铺贴",
+        content="留缝与美缝剂",
+    )
+
+    by_title = (
+        await client.get(
+            f"/api/projects/{project['id']}/entries",
+            params={"q": "散热"},
+        )
+    ).json()
+    assert {item["id"] for item in by_title["items"]} == {title_id, content_id}
+    assert by_title["matched_count"] == 2
+
+    by_content = (
+        await client.get(
+            f"/api/projects/{project['id']}/entries",
+            params={"q": "美缝"},
+        )
+    ).json()
+    assert {item["id"] for item in by_content["items"]} == {other_id}
+    assert by_content["matched_count"] == 1
+
+    no_match = (
+        await client.get(
+            f"/api/projects/{project['id']}/entries",
+            params={"q": "不存在的关键词"},
+        )
+    ).json()
+    assert no_match["items"] == []
+    assert no_match["total"] == 3
+    assert no_match["matched_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_project_records_search_treats_wildcards_literally(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    workspace_id = await login_owner(client, db)
+    project = await create_project(client)
+    await add_entry(
+        db,
+        workspace_id=workspace_id,
+        project_id=project["id"],
+        title="100%棉床品",
+        content="纯棉材质",
+    )
+    await add_entry(
+        db,
+        workspace_id=workspace_id,
+        project_id=project["id"],
+        title="普通棉床品",
+        content="纯棉材质",
+    )
+
+    body = (
+        await client.get(
+            f"/api/projects/{project['id']}/entries",
+            params={"q": "100%棉"},
+        )
+    ).json()
+    assert [item["title"] for item in body["items"]] == ["100%棉床品"]
+
+    empty = (
+        await client.get(
+            f"/api/projects/{project['id']}/entries",
+            params={"q": "   "},
+        )
+    ).json()
+    assert empty["total"] == 2
+
+
+@pytest.mark.asyncio
 async def test_project_counts_in_detail_and_list(
     client: AsyncClient,
     db: AsyncSession,
@@ -140,7 +237,12 @@ async def test_project_records_empty_and_foreign_workspace(
     await login_owner(client, db)
     project = await create_project(client)
     empty = (await client.get(f"/api/projects/{project['id']}/entries")).json()
-    assert empty == {"items": [], "total": 0, "unarchived_count": 0}
+    assert empty == {
+        "items": [],
+        "total": 0,
+        "unarchived_count": 0,
+        "matched_count": 0,
+    }
 
     async with db.begin():
         other = await create_account(db, "other", "another valid password")

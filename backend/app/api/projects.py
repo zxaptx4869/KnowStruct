@@ -1,6 +1,6 @@
 """Authenticated project and knowledge-directory APIs."""
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import Auth, DbSession
 from app.schemas.projects import (
@@ -107,16 +107,19 @@ async def project_entries(
     project_id: str,
     auth: Auth,
     db: DbSession,
+    q: str | None = Query(default=None, max_length=100),
 ) -> ProjectRecordsResponse:
-    items, total, unarchived_count = await list_project_entries(
+    items, total, unarchived_count, matched_count = await list_project_entries(
         db,
         auth.workspace.id,
         project_id,
+        q,
     )
     return ProjectRecordsResponse(
         items=items,
         total=total,
         unarchived_count=unarchived_count,
+        matched_count=matched_count,
     )
 
 

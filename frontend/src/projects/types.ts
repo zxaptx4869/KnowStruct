@@ -79,6 +79,7 @@ export interface ProjectRecords {
   items: NodeEntry[]
   total: number
   unarchived_count: number
+  matched_count: number
 }
 
 export interface BatchEntryMoveInput {
