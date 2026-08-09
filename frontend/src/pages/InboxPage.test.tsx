@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jsonResponse, renderRoute } from '../projects/testUtils'
-import type { SourceItem } from '../inbox/types'
+import type { SourceDetail, SourceItem } from '../inbox/types'
 import InboxPage from './InboxPage'
 
 const source: SourceItem = {
@@ -284,5 +284,75 @@ describe('InboxPage capture and queue', () => {
 
     expect(await screen.findByText('已选 3/3 张')).toBeInTheDocument()
     expect(screen.getByText(/最多选择 3 张，已忽略 1 张/)).toBeInTheDocument()
+  })
+
+  it('opens the batch confirm dialog for selected pending sources', async () => {
+    const detail: SourceDetail = {
+      ...source,
+      extractions: [
+        {
+          id: 'ex-1',
+          source_id: source.id,
+          status: 'pending_confirm',
+          title: '底部散热更省空间',
+          content: '底部散热内容',
+          entry_type: 'pitfall',
+          suggested_node_path: null,
+          applicable_conditions: [],
+          risk_points: [],
+          confidence: 0.9,
+          decided_at: null,
+          created_at: '2026-08-05T10:00:00',
+          updated_at: '2026-08-05T10:00:00',
+        },
+      ],
+      entries: [],
+    }
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (method === 'GET' && url.startsWith('/api/projects')) {
+        return Promise.resolve(jsonResponse([{ id: 'p1', name: '新房装修' }]))
+      }
+      if (method === 'GET' && url.startsWith('/api/inbox/sources/src-1')) {
+        return Promise.resolve(jsonResponse(detail))
+      }
+      if (method === 'GET' && url.startsWith('/api/inbox/sources')) {
+        return Promise.resolve(jsonResponse([source]))
+      }
+      if (method === 'POST' && url === '/api/inbox/sources/batch/confirm') {
+        return Promise.resolve(jsonResponse({
+          confirmed_sources: 1,
+          entries_created: 1,
+          skipped_low_confidence: 0,
+        }, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: { code: 'not_found', message: '未找到' } }, 404))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    renderRoute(<InboxPage />, '/inbox', '/inbox')
+
+    await screen.findAllByText('零嵌冰箱散热方式')
+    await user.click(screen.getByRole('checkbox', { name: '选择 零嵌冰箱散热方式' }))
+
+    const confirmButton = screen.getByRole('button', { name: /批量确认/ })
+    expect(confirmButton).toBeEnabled()
+    await user.click(confirmButton)
+
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('批量确认候选')
+    expect(await screen.findByText('底部散热更省空间')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '确认生成 1 条正式记录' })).toBeDisabled()
+  })
+
+  it('keeps mobile cards free of batch selection controls', async () => {
+    vi.stubGlobal('fetch', inboxFetch())
+    renderRoute(<InboxPage />, '/inbox', '/inbox')
+
+    await screen.findAllByText('零嵌冰箱散热方式')
+    const mobileList = document.querySelector('.mobile-projects')
+    expect(mobileList).not.toBeNull()
+    expect(mobileList!.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /批量确认/ })).not.toBeInTheDocument()
   })
 })

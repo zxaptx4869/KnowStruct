@@ -1,6 +1,7 @@
-import { FileText, Folder, Image, Link2, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { CheckCheck, FileText, Folder, Image, Link2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import BatchConfirmDialog from '../inbox/BatchConfirmDialog'
 import { processingDetailLabel, sourceTypeLabels } from '../inbox/labels'
 import {
   useBatchAssignSources,
@@ -94,6 +95,7 @@ export default function InboxPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchTargetProject, setBatchTargetProject] = useState('')
   const [batchError, setBatchError] = useState<string | null>(null)
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false)
   const [duplicateNotice, setDuplicateNotice] = useState<DuplicateSourceRef | null>(null)
 
   const projectsQuery = useProjects()
@@ -271,6 +273,10 @@ export default function InboxPage() {
 
   const sources = sourcesQuery.data ?? []
   const anyProcessing = sources.some((item) => item.processing_state === 'processing')
+  const confirmableSources = sources.filter(
+    (item) =>
+      selectedIds.has(item.id) && item.processing_state === 'pending_confirm',
+  )
 
   function DuplicateBadge({ source }: { source: SourceItem }) {
     const duplicate = source.duplicate_of
@@ -566,6 +572,23 @@ export default function InboxPage() {
             {selectedIds.size > 0 && (
               <div className="batch-toolbar" role="group" aria-label="批量操作">
                 <span className="batch-count">已选 {selectedIds.size} 条</span>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setBatchError(null)
+                    setBatchConfirmOpen(true)
+                  }}
+                  disabled={
+                    confirmableSources.length === 0
+                    || assignMutation.isPending
+                    || deleteMutation.isPending
+                    || retryBatchMutation.isPending
+                  }
+                >
+                  <CheckCheck size={15} />
+                  批量确认
+                </button>
                 <select
                   value={batchTargetProject}
                   onChange={(event) => setBatchTargetProject(event.target.value)}
@@ -711,6 +734,16 @@ export default function InboxPage() {
           </>
         )}
       </section>
+      {batchConfirmOpen && (
+        <BatchConfirmDialog
+          sources={confirmableSources}
+          onClose={() => {
+            setBatchConfirmOpen(false)
+            setSelectedIds(new Set())
+            setBatchError(null)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -730,6 +730,10 @@ a {
   width: min(430px, 100%);
 }
 
+.dialog-panel-wide {
+  width: min(680px, 100%);
+}
+
 .dialog-header {
   display: flex;
   align-items: flex-start;
@@ -762,6 +766,136 @@ a {
 .form-stack {
   display: grid;
   gap: 14px;
+}
+
+.batch-confirm-summary {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-subtle, #f8fafc);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.batch-summary-skip {
+  margin-left: 4px;
+  color: var(--color-warning, #b45309);
+  font-weight: 500;
+}
+
+.batch-confirm-source-list {
+  display: grid;
+  gap: 10px;
+  max-height: 38vh;
+  overflow-y: auto;
+  margin-bottom: 14px;
+  padding-right: 4px;
+}
+
+.batch-source-row {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.batch-source-row.disabled {
+  opacity: 0.55;
+  background: var(--color-bg-subtle, #f8fafc);
+}
+
+.batch-source-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.batch-source-check input {
+  flex: none;
+}
+
+.batch-source-check span {
+  display: grid;
+  gap: 2px;
+}
+
+.batch-source-check small {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.batch-source-hint {
+  margin-left: 26px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.batch-candidate-list {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0 26px;
+  padding: 0;
+  list-style: none;
+}
+
+.batch-candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.batch-candidate.low-confidence {
+  opacity: 0.6;
+}
+
+.batch-candidate-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-candidate-confidence {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.batch-candidate.low-confidence .batch-candidate-confidence {
+  color: var(--color-warning, #b45309);
+}
+
+.batch-confirm-fields {
+  grid-template-columns: 1fr 1fr;
+}
+
+.record-search-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.record-search-form input {
+  flex: 1;
+  max-width: 340px;
+  min-height: 40px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  padding: 0 12px;
+  outline: none;
+  background: #fff;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.record-search-form input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgb(39 103 216 / 16%);
 }
 
 .form-field textarea,
@@ -1079,6 +1213,18 @@ a {
     max-height: calc(100dvh - 16px);
     border-radius: 8px 8px 0 0;
     padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .batch-confirm-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-candidate {
+    align-items: flex-start;
+  }
+
+  .batch-candidate-confidence {
+    margin-left: 0;
   }
 }
 
@@ -3476,6 +3622,12 @@ mark.search-highlight {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface-muted);
+}
+
+@media (max-width: 767px) {
+  .batch-toolbar {
+    display: none;
+  }
 }
 
 .batch-toolbar select {

@@ -16,6 +16,8 @@ from app.schemas.inbox import (
     AttachmentInfo,
     BatchAssignRequest,
     BatchAssignResponse,
+    BatchConfirmRequest,
+    BatchConfirmResponse,
     BatchDeleteResponse,
     BatchRetryResponse,
     BatchSourcesRequest,
@@ -32,7 +34,11 @@ from app.schemas.inbox import (
 from app.schemas.inbox import (
     DuplicateSourceRef as DuplicateSourceRefSchema,
 )
-from app.services.confirmation import complete_source, decide_extraction
+from app.services.confirmation import (
+    batch_confirm_sources,
+    complete_source,
+    decide_extraction,
+)
 from app.services.inbox import (
     SourceDetailData,
     SourceListItemData,
@@ -280,6 +286,30 @@ async def source_batch_retry(
     )
     await db.commit()
     return BatchRetryResponse(retried=retried)
+
+
+@router.post(
+    "/sources/batch/confirm",
+    response_model=BatchConfirmResponse,
+)
+async def source_batch_confirm(
+    payload: BatchConfirmRequest,
+    auth: Auth,
+    db: DbSession,
+) -> BatchConfirmResponse:
+    result = await batch_confirm_sources(
+        db,
+        auth.workspace.id,
+        payload.source_ids,
+        payload.project_id,
+        payload.node_id,
+    )
+    await db.commit()
+    return BatchConfirmResponse(
+        confirmed_sources=result.confirmed_sources,
+        entries_created=result.entries_created,
+        skipped_low_confidence=result.skipped_low_confidence,
+    )
 
 
 @router.get("/sources/{source_id}/attachments/{attachment_id}")

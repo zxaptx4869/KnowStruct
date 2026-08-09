@@ -142,6 +142,18 @@ export interface DecideResponse {
   entry: EntrySummary | null
 }
 
+export interface BatchConfirmInput {
+  sourceIds: string[]
+  projectId: string
+  nodeId?: string
+}
+
+export interface BatchConfirmResponse {
+  confirmed_sources: number
+  entries_created: number
+  skipped_low_confidence: number
+}
+
 export interface SourceListParams {
   state?: ProcessingState
   source_type?: SourceType

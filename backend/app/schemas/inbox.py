@@ -235,3 +235,17 @@ class BatchDeleteResponse(BaseModel):
 
 class BatchRetryResponse(BaseModel):
     retried: int
+
+
+class BatchConfirmRequest(BatchSourcesRequest):
+    project_id: str = Field(min_length=1, max_length=36)
+    node_id: str | None = None
+
+    _strip_project = field_validator("project_id", mode="before")(strip_required)
+    _strip_node = field_validator("node_id", mode="before")(strip_optional)
+
+
+class BatchConfirmResponse(BaseModel):
+    confirmed_sources: int
+    entries_created: int
+    skipped_low_confidence: int

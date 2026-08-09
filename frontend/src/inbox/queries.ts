@@ -3,6 +3,8 @@ import { api } from '../lib/api'
 import type {
   AiConfig,
   AiConfigUpdate,
+  BatchConfirmInput,
+  BatchConfirmResponse,
   DecideInput,
   DecideResponse,
   ImageSourceCreateInput,
@@ -133,6 +135,44 @@ export function useBatchRetrySources() {
         source_ids: sourceIds,
       }),
     onSettled: invalidate,
+  })
+}
+
+export function useBatchConfirmSources() {
+  const invalidate = useInvalidateInbox()
+  return useMutation({
+    mutationFn: ({ sourceIds, projectId, nodeId }: BatchConfirmInput) =>
+      api.post<BatchConfirmResponse>('/inbox/sources/batch/confirm', {
+        source_ids: sourceIds,
+        project_id: projectId,
+        ...(nodeId ? { node_id: nodeId } : {}),
+      }),
+    onSettled: invalidate,
+  })
+}
+
+export function useBatchConfirmDetails(sourceIds: string[]) {
+  return useQuery({
+    queryKey: [
+      'inbox',
+      'batch-confirm-preview',
+      [...sourceIds].sort().join(','),
+    ] as const,
+    queryFn: async () => {
+      const details: SourceDetail[] = []
+      for (let start = 0; start < sourceIds.length; start += 10) {
+        const chunk = sourceIds.slice(start, start + 10)
+        const part = await Promise.all(
+          chunk.map((sourceId) =>
+            api.get<SourceDetail>(`/inbox/sources/${sourceId}`),
+          ),
+        )
+        details.push(...part)
+      }
+      return details
+    },
+    enabled: sourceIds.length > 0,
+    staleTime: 0,
   })
 }
 
