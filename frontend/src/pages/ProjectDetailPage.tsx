@@ -34,6 +34,8 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import DraftPanel from '../directoryDraft/DraftPanel'
+import { useCreateDraft, useDirectoryDraft } from '../directoryDraft/queries'
 import ConfirmDialog from '../projects/ConfirmDialog'
 import MoveNodeDialog from '../projects/MoveNodeDialog'
 import NodeDialog from '../projects/NodeDialog'
@@ -908,6 +910,8 @@ export default function ProjectDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const projectQuery = useProject(id)
   const nodesQuery = useNodes(id)
+  const draftQuery = useDirectoryDraft(id)
+  const createDraftMutation = useCreateDraft(id)
   const organizeMode = searchParams.get('mode') === 'organize'
   const recordFilter = searchParams.get('filter') ?? 'all'
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -916,6 +920,7 @@ export default function ProjectDetailPage() {
   const [deletingNode, setDeletingNode] = useState<Node | null>(null)
   const [editingProject, setEditingProject] = useState(false)
   const [deletingProject, setDeletingProject] = useState(false)
+  const [discardDraftInput, setDiscardDraftInput] = useState<NodeInput | null>(null)
   const [moveError, setMoveError] = useState<unknown>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [dropPreview, setDropPreview] = useState<{ overId: string, intent: DropIntent } | null>(null)
@@ -927,6 +932,7 @@ export default function ProjectDetailPage() {
   const updateProjectMutation = useUpdateProject(id)
   const deleteProjectMutation = useDeleteProject(id)
   const nodes = useMemo(() => nodesQuery.data ?? [], [nodesQuery.data])
+  const draft = draftQuery.data?.draft ?? null
   const selectedNode = nid ? nodes.find((node) => node.id === nid) : undefined
   const path = breadcrumbs(nid, nodes)
   const currentChildren = childrenOf(nid ?? null, nodes)
@@ -994,15 +1000,34 @@ export default function ProjectDetailPage() {
     navigate('/')
   }
 
+  function scrollToDraftPanel() {
+    const panel =
+      document.getElementById('draft-panel')
+      ?? document.getElementById('draft-panel-mobile')
+    panel?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   async function saveNode(input: NodeInput) {
     try {
       if (nodeEditor?.mode === 'edit') await updateNodeMutation.mutateAsync(input)
-      else await createNodeMutation.mutateAsync(input)
+      else if (draft && !discardDraftInput) {
+        setDiscardDraftInput(input)
+        return
+      } else {
+        await createNodeMutation.mutateAsync(input)
+      }
       setNodeEditor(null)
+      setDiscardDraftInput(null)
     } catch {
       // Mutation error remains visible with the preserved form input.
     }
   }
+
+  useEffect(() => {
+    if (nodes.length > 0) {
+      void draftQuery.refetch()
+    }
+  }, [nodes.length, draftQuery])
 
   async function moveNode(nodeId: string, parentId: string | null, position: number) {
     setMoveError(null)
@@ -1151,7 +1176,14 @@ export default function ProjectDetailPage() {
             </div>
           )}
           {nodes.length === 0 ? (
-            <div className="tree-empty"><Folder size={24} /><strong>知识目录为空</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}>创建第一个节点</button></div>
+            <div className="tree-empty">
+              <Folder size={24} />
+              <strong>知识目录为空</strong>
+              <span>{draft ? '有 AI 草稿待处理，也可手动创建节点。' : '可手动创建节点，或让 AI 起草目录。'}</span>
+              {draft && <button type="button" className="primary-button" onClick={scrollToDraftPanel}>继续处理草稿</button>}
+              {!draft && <button type="button" className="primary-button" onClick={() => void createDraftMutation.mutateAsync(undefined)} disabled={createDraftMutation.isPending}>AI 起草目录</button>}
+              <button type="button" className="secondary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}>创建第一个节点</button>
+            </div>
           ) : (
             <DndContext
               sensors={sensors}
@@ -1226,10 +1258,16 @@ export default function ProjectDetailPage() {
               </div>
             </section>
           )}
+          {draft && !organizeMode && (
+            <div id="draft-panel">
+              <DraftPanel projectId={id} draft={draft} />
+            </div>
+          )}
         </main>
       </div>
 
       <main className="mobile-directory">
+        {draft && <div id="draft-panel-mobile"><DraftPanel projectId={id} draft={draft} /></div>}
         {organizeMode ? (
           <ProjectRecordsSection
             projectId={id}
@@ -1266,7 +1304,7 @@ export default function ProjectDetailPage() {
               </section>
             )}
             <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} {selectedNode ? '个子节点' : '个一级目录'}</span></div><button type="button" className="icon-action" aria-label={selectedNode ? '创建子节点' : '创建根节点'} onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
-              {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>手动创建节点，不会自动采用 AI 目录。</span><button type="button" className="primary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
+              {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>{draft ? '有 AI 草稿待处理，也可手动创建节点。' : '可手动创建节点，或让 AI 起草目录。'}</span>{draft && <button type="button" className="primary-button" onClick={scrollToDraftPanel}>继续处理草稿</button>}{!draft && <button type="button" className="primary-button" onClick={() => void createDraftMutation.mutateAsync(undefined)} disabled={createDraftMutation.isPending}>AI 起草目录</button>}<button type="button" className="secondary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
             </section>
             {selectedNode && <NodeRecordsSection projectId={id} nodeId={selectedNode.id} />}
           </>
@@ -1288,6 +1326,25 @@ export default function ProjectDetailPage() {
       {deletingNode && <ConfirmDialog title={`删除“${deletingNode.name}”子树？`} description={`将永久删除 ${descendants(deletingNode.id, nodes).length + 1} 个目录节点，当前版本无法恢复。`} pending={deleteNodeMutation.isPending} error={deleteNodeMutation.error} onClose={() => { setDeletingNode(null); deleteNodeMutation.reset() }} onConfirm={confirmDeleteNode} />}
       {editingProject && <ProjectDialog project={project} pending={updateProjectMutation.isPending} error={updateProjectMutation.error} onClose={() => { setEditingProject(false); updateProjectMutation.reset() }} onSubmit={saveProject} />}
       {deletingProject && <ConfirmDialog title={`删除“${project.name}”项目？`} description="项目和全部目录节点将被永久删除。" confirmLabel="删除项目" pending={deleteProjectMutation.isPending} error={deleteProjectMutation.error} onClose={() => { setDeletingProject(false); deleteProjectMutation.reset() }} onConfirm={confirmDeleteProject} />}
+      {discardDraftInput && draft && (
+        <ConfirmDialog
+          title="放弃当前 AI 草稿？"
+          description="创建节点将放弃当前 AI 草稿，继续？"
+          confirmLabel="继续创建"
+          pending={createNodeMutation.isPending}
+          error={createNodeMutation.error}
+          onClose={() => setDiscardDraftInput(null)}
+          onConfirm={async () => {
+            try {
+              await createNodeMutation.mutateAsync(discardDraftInput)
+              setNodeEditor(null)
+              setDiscardDraftInput(null)
+            } catch {
+              // Mutation error remains visible in the dialog.
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

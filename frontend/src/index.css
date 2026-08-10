@@ -2699,6 +2699,360 @@ textarea.field-error {
   margin-left: auto;
 }
 
+/* ===== AI 目录起草面板 ===== */
+
+.draft-panel {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-radius: 10px;
+  background: var(--surface-1, #fff);
+}
+
+.draft-panel-head,
+.draft-step-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-primary-active, #1e40af);
+}
+
+.draft-panel-head strong {
+  font-size: 14px;
+}
+
+.draft-step {
+  margin-top: 10px;
+}
+
+.draft-step-head {
+  margin-bottom: 8px;
+  color: var(--text-strong, #111827);
+}
+
+.draft-step-head span {
+  margin-left: auto;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+.draft-questions {
+  display: grid;
+  gap: 10px;
+}
+
+.draft-question {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-radius: 8px;
+}
+
+.draft-question legend {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.draft-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.draft-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.draft-option input {
+  accent-color: var(--color-primary, #2563eb);
+}
+
+.draft-question-text {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.draft-tree {
+  display: grid;
+  gap: 2px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line-soft, #e5e7eb);
+  border-radius: 8px;
+}
+
+.draft-node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  font-size: 13px;
+}
+
+.draft-node-check {
+  flex: none;
+  accent-color: var(--color-primary, #2563eb);
+}
+
+.draft-node-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.draft-node-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+.draft-node-name-input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--color-primary, #2563eb);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 13px;
+}
+
+.draft-node-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0.45;
+}
+
+.draft-node-row:hover .draft-node-actions {
+  opacity: 1;
+}
+
+.draft-intent {
+  margin: 8px 0 0;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+.draft-refine {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.draft-refine-label {
+  font-size: 12px;
+  color: var(--text-strong, #111827);
+}
+
+.draft-refine-input {
+  width: 100%;
+  min-height: 64px;
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.draft-chat-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.draft-tree-pane {
+  min-width: 0;
+}
+
+.draft-chat {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.draft-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-strong, #111827);
+}
+
+.draft-chat-head span {
+  margin-left: auto;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+.draft-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  min-height: 120px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--line-soft, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface-1, #f9fafb);
+}
+
+.draft-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.draft-msg-user {
+  justify-content: flex-end;
+}
+
+.draft-msg-assistant {
+  justify-content: flex-start;
+}
+
+.draft-msg-bubble {
+  max-width: 86%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.draft-msg-user .draft-msg-bubble {
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  border-bottom-right-radius: 2px;
+}
+
+.draft-msg-assistant .draft-msg-bubble {
+  background: var(--surface-1, #fff);
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-bottom-left-radius: 2px;
+}
+
+.draft-msg-pending {
+  align-items: center;
+}
+
+.draft-msg-pending .spin {
+  color: var(--muted, #6b7280);
+}
+
+.draft-msg-system {
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+  text-align: center;
+}
+
+.draft-msg-applied {
+  color: var(--color-success, #287a4b);
+  font-weight: 600;
+}
+
+.draft-msg-warn {
+  color: var(--color-danger, #dc2626);
+}
+
+.draft-chat-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.draft-chat-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.draft-chat-send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .draft-chat-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .draft-chat {
+    max-height: none;
+  }
+
+  .draft-chat-list {
+    max-height: 300px;
+  }
+}
+
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.draft-panel-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft, #e5e7eb);
+}
+
+.draft-panel-foot .btn.primary {
+  margin-left: auto;
+}
+
+.draft-redraft {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed var(--line-strong, #d1d5db);
+  border-radius: 8px;
+}
+
+.draft-error {
+  margin: 8px 0 0;
+  color: var(--color-danger, #dc2626);
+  font-size: 12px;
+}
+
+.draft-slow-hint {
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
 .search-guidance {
   display: grid;
   justify-items: center;

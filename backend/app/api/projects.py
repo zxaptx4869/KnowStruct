@@ -20,6 +20,7 @@ from app.schemas.projects import (
     ProjectResponse,
     ProjectUpdate,
 )
+from app.services.directory_draft import discard_active_draft
 from app.services.entries import (
     batch_delete_entries,
     batch_move_entries,
@@ -238,6 +239,7 @@ async def node_create(
     auth: Auth,
     db: DbSession,
 ) -> NodeResponse:
+    await discard_active_draft(db, auth.workspace.id, project_id)
     node = await create_node(db, auth.workspace.id, project_id, payload)
     await db.commit()
     await db.refresh(node)

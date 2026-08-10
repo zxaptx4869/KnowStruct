@@ -7,11 +7,20 @@ from openai import AsyncOpenAI
 from app.ai.base import (
     AIProvider,
     AIProviderError,
+    ChatRoundResult,
+    ClarifyResult,
     ExtractionResult,
     OutlineNode,
     ReviewResult,
 )
-from app.ai.openai_compat import request_json_candidates, request_json_review
+from app.ai.openai_compat import (
+    request_chat_round,
+    request_json_candidates,
+    request_json_clarify,
+    request_json_intent,
+    request_json_outline,
+    request_json_review,
+)
 
 DOUBAO_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
@@ -35,7 +44,12 @@ class DoubaoProvider(AIProvider):
         model: str,
     ) -> None:
         self.model = model
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=300.0,
+            max_retries=0,
+        )
 
     async def extract_candidates(
         self,
@@ -91,7 +105,36 @@ class DoubaoProvider(AIProvider):
     async def generate_outline(
         self, goal: str, context: str = ""
     ) -> list[OutlineNode]:
-        raise AIProviderError("AI 目录生成能力尚未实现")
+        return await request_json_outline(self._client, self.model, goal, context)
+
+    async def draft_clarify(
+        self, goal: str, context: str = ""
+    ) -> ClarifyResult:
+        return await request_json_clarify(self._client, self.model, goal, context)
+
+    async def draft_chat(
+        self,
+        tree: list[dict],
+        messages: list[dict],
+        summary: str | None = None,
+    ) -> ChatRoundResult:
+        return await request_chat_round(
+            self._client,
+            self.model,
+            tree,
+            messages,
+            summary,
+        )
+
+    async def summarize_intent(
+        self, intent_note: str, instruction: str
+    ) -> str:
+        return await request_json_intent(
+            self._client,
+            self.model,
+            intent_note,
+            instruction,
+        )
 
     async def suggest_archive(
         self, entry: dict, nodes: list[dict]

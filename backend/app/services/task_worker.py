@@ -12,12 +12,19 @@ from app.ai import AIProvider, get_ai_provider
 from app.config import get_settings
 from app.database import AsyncSessionFactory
 from app.models import (
+    DirectoryDraft,
+    DraftStatus,
     ProcessingTask,
+    Project,
     ReviewScan,
     ScanStatus,
     Source,
     TaskStage,
     TaskStatus,
+)
+from app.services.directory_draft import (
+    generate_draft_step,
+    recover_stale_drafts,
 )
 from app.services.inbox import (
     process_source_extraction,
@@ -183,6 +190,66 @@ async def process_next_task(
     return True
 
 
+async def process_next_draft(
+    db: AsyncSession,
+    provider: AIProvider | None = None,
+) -> bool:
+    """处理至多一个 AI 目录草稿；返回是否处理了草稿。"""
+    draft = await claim_next_draft(db)
+    if draft is None:
+        return False
+    draft_id = draft.id
+    try:
+        project = await db.get(Project, draft.project_id)
+        if project is None:
+            await db.delete(draft)
+            await db.commit()
+            return True
+        provider = provider or await get_ai_provider(db, project.workspace_id)
+        await generate_draft_step(db, draft, provider)
+        await db.commit()
+        logger.info("directory draft %s processing succeeded", draft_id)
+    except Exception as exc:  # noqa: BLE001 - 任何失败都落库并可重试
+        await db.rollback()
+        failed_draft = await db.get(DirectoryDraft, draft_id)
+        if failed_draft is not None:
+            failed_draft.status = DraftStatus.FAILED
+            failed_draft.last_error = str(exc)[:2000]
+            failed_draft.finished_at = utc_now()
+            await db.commit()
+        logger.warning("directory draft %s processing failed: %s", draft_id, exc)
+    return True
+
+
+async def claim_next_draft(db: AsyncSession) -> DirectoryDraft | None:
+    """乐观领取最旧的起草中草稿。"""
+    draft = await db.scalar(
+        select(DirectoryDraft)
+        .where(
+            DirectoryDraft.status == DraftStatus.DRAFTING,
+            DirectoryDraft.claimed_at.is_(None),
+        )
+        .order_by(DirectoryDraft.created_at, DirectoryDraft.id)
+        .limit(1)
+    )
+    if draft is None:
+        return None
+    result = await db.execute(
+        update(DirectoryDraft)
+        .where(
+            DirectoryDraft.id == draft.id,
+            DirectoryDraft.status == DraftStatus.DRAFTING,
+            DirectoryDraft.claimed_at.is_(None),
+        )
+        .values(claimed_at=utc_now(), started_at=utc_now())
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        return None
+    await db.commit()
+    return draft
+
+
 async def run_task_worker() -> None:
     """进程内队列 worker：常驻循环，随应用 lifespan 启停。"""
     settings = get_settings()
@@ -194,8 +261,11 @@ async def run_task_worker() -> None:
                 if now_monotonic - last_recovery >= 30:
                     await recover_stale_tasks(db, settings.TASK_STALE_SECONDS)
                     await recover_stale_scans(db, settings.TASK_STALE_SECONDS)
+                    await recover_stale_drafts(db, settings.TASK_STALE_SECONDS)
                     last_recovery = now_monotonic
                 processed = await process_next_task(db)
+                if not processed:
+                    processed = await process_next_draft(db)
                 if not processed:
                     processed = await process_next_scan(db)
             if not processed:

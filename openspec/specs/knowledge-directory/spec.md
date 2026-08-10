@@ -44,7 +44,10 @@
 
 ### Requirement: Editable node details and paths
 
-系统 SHALL 允许用户修改节点名称；节点名称 MUST 为去除首尾空白后的 1 至 100 字符。节点说明 SHALL 在界面中仅作展示，P0 MUST NOT 提供节点说明的创建或编辑入口；说明字段 SHALL 保留在数据模型中供后续能力使用。节点改名 MUST 保留节点和所有后代身份，完整路径 SHALL 由当前父链展示。
+系统 SHALL 允许用户修改节点名称；节点名称 MUST 为去除首尾空白后的 1 至 100 字符。
+节点说明 SHALL 在界面中仅作展示，手动界面 MUST NOT 提供节点说明的创建或编辑入口；
+AI 起草目录确认时 MAY 将候选说明写入节点说明字段；说明字段 SHALL 保留在数据模型中。
+节点改名 MUST 保留节点和所有后代身份，完整路径 SHALL 由当前父链展示。
 
 #### Scenario: Rename a node without rewriting descendants
 - **WHEN** 用户将“大家电”改名为“厨房大家电”
@@ -53,6 +56,10 @@
 #### Scenario: Show a node description without editing
 - **WHEN** 用户打开包含说明的节点
 - **THEN** 界面展示节点名称与说明，且不提供说明的创建或编辑入口
+
+#### Scenario: Accept a description written by the AI draft
+- **WHEN** 用户确认包含节点说明的 AI 起草候选
+- **THEN** 正式节点保存该说明并可在节点详情展示，手动编辑入口仍不出现
 
 #### Scenario: Reject an invalid rename
 - **WHEN** 用户将节点改为空白、超长或与同级现有节点冲突的名称
@@ -104,7 +111,8 @@
 
 #### Scenario: Show an empty project directory
 - **WHEN** 用户进入没有任何节点的项目
-- **THEN** 桌面和移动界面都显示空目录说明和“创建第一个节点”操作，不自动采用 AI 生成目录
+- **THEN** 桌面和移动界面都显示空目录说明，并提供「创建第一个节点」与「AI 起草目录」两个
+  操作，不自动执行 AI 起草，也不在无节点时伪造正式记录数量
 
 #### Scenario: Browse and maintain the directory on desktop
 - **WHEN** 桌面用户进入有多级节点的项目

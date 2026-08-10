@@ -7,7 +7,41 @@ from dataclasses import dataclass, field
 class OutlineNode:
     """AI 生成的目录节点"""
     title: str
+    description: str | None = None
     children: list["OutlineNode"] = field(default_factory=list)
+
+
+@dataclass
+class ClarifyQuestion:
+    """AI 生成的单轮澄清问题"""
+    id: str
+    text: str
+    options: list[str] = field(default_factory=list)
+    multiple: bool = False
+
+
+@dataclass
+class ClarifyResult:
+    """信息充分性判断与澄清问题"""
+    needs_more: bool
+    questions: list[ClarifyQuestion] = field(default_factory=list)
+
+
+@dataclass
+class OutlineAction:
+    """增量微调动作：add / rename / remove / move"""
+    type: str
+    path: list[str]
+    name: str | None = None
+    description: str | None = None
+    to_parent_path: list[str] | None = None
+
+
+@dataclass
+class ChatRoundResult:
+    """会话式微调的一轮结果：纯讨论只返回文字；应用目录时附带完整目标树。"""
+    reply_text: str
+    tree: list[dict] | None = None
 
 
 @dataclass
@@ -50,6 +84,27 @@ class AIProvider(ABC):
     ) -> list[OutlineNode]:
         """根据项目目标生成知识目录"""
         ...
+
+    async def draft_clarify(
+        self, goal: str, context: str = ""
+    ) -> ClarifyResult:
+        """判断信息是否充足；不足时生成单轮澄清问题。"""
+        raise AIProviderError("AI 澄清能力尚未实现")
+
+    async def draft_chat(
+        self,
+        tree: list[dict],
+        messages: list[dict],
+        summary: str | None = None,
+    ) -> ChatRoundResult:
+        """会话式微调：模型可只讨论（返回文字），或通过 apply_directory_tree 提交完整目标树。"""
+        raise AIProviderError("AI 会话式微调能力尚未实现")
+
+    async def summarize_intent(
+        self, intent_note: str, instruction: str
+    ) -> str:
+        """把历史意图与本次意见浓缩成一段当前有效意图。"""
+        raise AIProviderError("AI 意图浓缩能力尚未实现")
 
     @abstractmethod
     async def extract_info(
