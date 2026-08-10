@@ -82,6 +82,37 @@ INTENT_SYSTEM_PROMPT = (
 )
 
 
+def _parse_json_content(content: str) -> dict:
+    """从 AI 输出中解析 JSON 对象，容忍 Markdown 围栏与前后杂质。"""
+    text = (content or "").strip()
+    if not text:
+        raise AIProviderError("AI 输出为空，请重试")
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 2:
+            text = "\n".join(lines[1:])
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+        text = text.strip()
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return payload
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char not in "{[":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(text[index:])
+            if isinstance(payload, dict):
+                return payload
+        except json.JSONDecodeError:
+            continue
+    raise AIProviderError("AI 输出不是有效 JSON，请重试")
+
+
 class _CandidateModel(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=20000)
@@ -188,7 +219,7 @@ async def request_json_candidates(
 
     message = response.choices[0].message.content if response.choices else ""
     try:
-        payload = json.loads(message or "")
+        payload = _parse_json_content(message or "")
     except json.JSONDecodeError as exc:
         raise AIProviderError("AI 输出不是有效 JSON，请重试") from exc
 
@@ -261,7 +292,7 @@ async def _request_json(
 
     message = response.choices[0].message.content if response.choices else ""
     try:
-        payload = json.loads(message or "")
+        payload = _parse_json_content(message or "")
     except json.JSONDecodeError as exc:
         raise AIProviderError("AI 输出不是有效 JSON，请重试") from exc
     if not isinstance(payload, dict):
@@ -421,7 +452,7 @@ async def request_json_review(
 
     message = response.choices[0].message.content if response.choices else ""
     try:
-        parsed = json.loads(message or "")
+        parsed = _parse_json_content(message or "")
     except json.JSONDecodeError as exc:
         raise AIProviderError("AI 输出不是有效 JSON，请重试") from exc
 

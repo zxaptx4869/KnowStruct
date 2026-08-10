@@ -11,6 +11,7 @@ from app.ai.base import (
     OutlineNode,
 )
 from app.ai.demo import DemoProvider
+from app.ai.openai_compat import _parse_json_content
 from app.models import DirectoryDraft, DraftStatus
 from app.services.accounts import create_account
 from app.services.directory_draft import utc_now
@@ -224,6 +225,21 @@ async def test_claimed_draft_is_not_reclaimed(
     await db.commit()
 
     assert await process_next_draft(db, DemoProvider()) is False
+
+
+def test_parse_json_content_tolerates_markdown_fences() -> None:
+    payload = _parse_json_content('```json\n{"nodes": []}\n```')
+    assert payload == {"nodes": []}
+
+
+def test_parse_json_content_tolerates_trailing_text() -> None:
+    payload = _parse_json_content('好的，这是结果：{"a": 1} 希望对你有帮助')
+    assert payload == {"a": 1}
+
+
+def test_parse_json_content_rejects_invalid() -> None:
+    with pytest.raises(AIProviderError):
+        _parse_json_content("这不是 JSON")
 
 
 @pytest.mark.asyncio
