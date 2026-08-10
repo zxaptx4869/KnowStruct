@@ -1,6 +1,7 @@
 """AI 目录起草候选服务：生命周期、校验、增量修改与确认创建。"""
 
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select, update
@@ -737,6 +738,7 @@ async def confirm_draft(
             item for item in all_nodes if item.parent_id == parent_id
         ]
         node = Node(
+            id=str(uuid.uuid4()),
             project_id=project.id,
             parent_id=parent_id,
             sibling_scope=sibling_scope(project.id, parent_id),

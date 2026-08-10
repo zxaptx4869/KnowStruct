@@ -424,6 +424,11 @@ async def test_confirm_creates_nodes_and_is_idempotent(
 
     nodes = (await client.get(f"/api/projects/{project_id}/nodes")).json()
     assert len(nodes) == created_count
+    by_name = {node["name"]: node for node in nodes}
+    assert by_name["水电改造"]["parent_id"] == by_name["硬装施工模块"]["id"]
+    assert by_name["瓦工与防水"]["parent_id"] == by_name["硬装施工模块"]["id"]
+    assert by_name["冰箱"]["parent_id"] == by_name["家具家电"]["id"]
+    assert by_name["硬装施工模块"]["parent_id"] is None
     assert (await client.get(f"/api/projects/{project_id}/drafts")).json()[
         "draft"
     ] is None
