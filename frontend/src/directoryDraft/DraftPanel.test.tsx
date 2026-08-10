@@ -103,6 +103,7 @@ describe('DraftPanel', () => {
     }))
 
     expect(screen.getByText('目前处于装修哪个阶段？')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /放弃草稿/ })).toBeInTheDocument()
     await userEvent.click(screen.getByLabelText('施工'))
     await userEvent.click(screen.getByRole('button', { name: '生成目录' }))
 
@@ -215,6 +216,7 @@ describe('DraftPanel', () => {
     renderPanel(draft({ status: 'failed', last_error: 'AI 服务调用失败' }))
 
     expect(screen.getByText('AI 服务调用失败')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /放弃草稿/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /重试/ }))
     await waitFor(() => {
       expect(mock.mock.calls.some(([url]) => String(url).includes('/retry'))).toBe(true)

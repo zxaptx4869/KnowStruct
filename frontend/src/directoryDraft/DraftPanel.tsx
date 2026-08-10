@@ -429,7 +429,12 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
         </div>
       )}
 
-      {(draft.status === 'pending_confirm' || draft.status === 'drafting') && (
+      {(
+        draft.status === 'drafting'
+        || draft.status === 'awaiting_input'
+        || draft.status === 'pending_confirm'
+        || draft.status === 'failed'
+      ) && (
         <footer className="draft-panel-foot">
           <button
             type="button"
