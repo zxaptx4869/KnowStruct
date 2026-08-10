@@ -6,7 +6,10 @@ from typing import ClassVar
 from app.ai.base import (
     AIProvider,
     AIProviderError,
+    ClarifyQuestion,
+    ClarifyResult,
     ExtractionResult,
+    OutlineAction,
     OutlineNode,
     ReviewResult,
 )
@@ -121,7 +124,65 @@ class DemoProvider(AIProvider):
     async def generate_outline(
         self, goal: str, context: str = ""
     ) -> list[OutlineNode]:
-        return [OutlineNode(title="家具家电")]
+        return [
+            OutlineNode(
+                title="硬装施工模块",
+                description="水电、瓦工、木工等施工阶段关注点",
+                children=[
+                    OutlineNode(title="水电改造"),
+                    OutlineNode(title="瓦工与防水"),
+                ],
+            ),
+            OutlineNode(
+                title="主材与辅材",
+                description="地板、瓷砖、涂料等材料选择",
+            ),
+            OutlineNode(
+                title="家具家电",
+                description="大家电与家具选购、安装与避坑",
+                children=[OutlineNode(title="冰箱"), OutlineNode(title="洗衣机")],
+            ),
+            OutlineNode(title="灯光与氛围"),
+        ]
+
+    async def draft_clarify(
+        self, goal: str, context: str = ""
+    ) -> ClarifyResult:
+        if not goal.strip() and not context.strip():
+            return ClarifyResult(
+                needs_more=True,
+                questions=[
+                    ClarifyQuestion(
+                        id="q1",
+                        text="你目前处于装修的哪个阶段？",
+                        options=["设计", "施工", "采购"],
+                    ),
+                    ClarifyQuestion(
+                        id="q2",
+                        text="需要重点覆盖哪些方向？",
+                        options=["硬装施工", "主材选购", "家电家具", "灯光氛围"],
+                    ),
+                ],
+            )
+        return ClarifyResult(needs_more=False, questions=[])
+
+    async def refine_outline(
+        self,
+        draft: list[dict],
+        intent_note: str,
+        instruction: str,
+    ) -> list[OutlineAction]:
+        if any(keyword in instruction for keyword in ("加", "添加", "新增")):
+            return [OutlineAction(type="add", path=[], name="新增节点")]
+        return []
+
+    async def summarize_intent(
+        self, intent_note: str, instruction: str
+    ) -> str:
+        combined = "；".join(
+            part for part in (intent_note, instruction) if part and part.strip()
+        )
+        return combined[:500]
 
     async def ocr(self, image_data: bytes) -> str:
         """确定性演示 OCR：不产生真实识别，供本地验收。"""

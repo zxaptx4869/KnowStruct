@@ -607,4 +607,48 @@ describe('project organize mode', () => {
       expect(screen.getAllByText('未归档经验').length).toBeGreaterThan(0)
     })
   })
+
+  it('shows the AI draft entry for an empty project and renders the draft panel', async () => {
+    let draftPayload: unknown = { draft: null }
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/projects/project-1') {
+        return Promise.resolve(jsonResponse({ ...project, node_count: 0 }))
+      }
+      if (url === '/api/projects/project-1/nodes') {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url === '/api/projects/project-1/drafts') {
+        const method = init?.method ?? 'GET'
+        if (method === 'POST') {
+          draftPayload = {
+            draft: {
+              id: 'draft-1',
+              project_id: 'project-1',
+              status: 'drafting',
+              next_action: 'clarify',
+              intent_note: null,
+              clarify: [],
+              nodes: [],
+              last_error: null,
+              created_at: timestamp,
+              updated_at: timestamp,
+            },
+          }
+        }
+        return Promise.resolve(jsonResponse(draftPayload))
+      }
+      if (url.includes('/entries')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/projects') return Promise.resolve(jsonResponse([project]))
+      return Promise.resolve(jsonResponse({}))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderRoute(<ProjectDetailPage />, '/projects/project-1', '/projects/:id')
+
+    const entries = await screen.findAllByRole('button', { name: 'AI 起草目录' })
+    expect(entries.length).toBeGreaterThan(0)
+    await userEvent.click(entries[0])
+
+    expect((await screen.findAllByText(/正在生成目录草稿/)).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'AI 起草目录' })).not.toBeInTheDocument()
+  })
 })

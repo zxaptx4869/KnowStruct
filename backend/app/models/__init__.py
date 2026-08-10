@@ -11,6 +11,12 @@ from app.models.capture import (
     TaskStage,
     TaskStatus,
 )
+from app.models.directory_draft import (
+    DirectoryDraft,
+    DirectoryDraftNode,
+    DraftNextAction,
+    DraftStatus,
+)
 from app.models.entries import Entry, EntrySource, EntryStatus, EntryType
 from app.models.projects import Node, Project, ProjectStatus
 from app.models.review import (
@@ -32,6 +38,10 @@ __all__ = [
     "AiReviewType",
     "AuthSession",
     "Base",
+    "DirectoryDraft",
+    "DirectoryDraftNode",
+    "DraftNextAction",
+    "DraftStatus",
     "Entry",
     "EntrySource",
     "EntryStatus",

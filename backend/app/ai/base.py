@@ -7,7 +7,33 @@ from dataclasses import dataclass, field
 class OutlineNode:
     """AI 生成的目录节点"""
     title: str
+    description: str | None = None
     children: list["OutlineNode"] = field(default_factory=list)
+
+
+@dataclass
+class ClarifyQuestion:
+    """AI 生成的单轮澄清问题"""
+    id: str
+    text: str
+    options: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ClarifyResult:
+    """信息充分性判断与澄清问题"""
+    needs_more: bool
+    questions: list[ClarifyQuestion] = field(default_factory=list)
+
+
+@dataclass
+class OutlineAction:
+    """增量微调动作：add / rename / remove / move"""
+    type: str
+    path: list[str]
+    name: str | None = None
+    description: str | None = None
+    to_parent_path: list[str] | None = None
 
 
 @dataclass
@@ -50,6 +76,27 @@ class AIProvider(ABC):
     ) -> list[OutlineNode]:
         """根据项目目标生成知识目录"""
         ...
+
+    async def draft_clarify(
+        self, goal: str, context: str = ""
+    ) -> ClarifyResult:
+        """判断信息是否充足；不足时生成单轮澄清问题。"""
+        raise AIProviderError("AI 澄清能力尚未实现")
+
+    async def refine_outline(
+        self,
+        draft: list[dict],
+        intent_note: str,
+        instruction: str,
+    ) -> list[OutlineAction]:
+        """按用户意见对当前草稿做增量修改，未提及节点原样保留。"""
+        raise AIProviderError("AI 增量调整能力尚未实现")
+
+    async def summarize_intent(
+        self, intent_note: str, instruction: str
+    ) -> str:
+        """把历史意图与本次意见浓缩成一段当前有效意图。"""
+        raise AIProviderError("AI 意图浓缩能力尚未实现")
 
     @abstractmethod
     async def extract_info(

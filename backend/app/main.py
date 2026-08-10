@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.api.ai_config import router as ai_config_router
 from app.api.auth import clear_session_cookie
 from app.api.auth import router as auth_router
+from app.api.drafts import router as drafts_router
 from app.api.errors import DomainError, NotAuthenticatedError
 from app.api.inbox import router as inbox_router
 from app.api.projects import router as projects_router
@@ -52,6 +53,7 @@ app.add_middleware(TrustedOriginMiddleware, settings=settings)
 
 app.include_router(auth_router)
 app.include_router(projects_router)
+app.include_router(drafts_router)
 app.include_router(inbox_router)
 app.include_router(ai_config_router)
 app.include_router(search_router)

@@ -5,11 +5,20 @@ from openai import AsyncOpenAI
 from app.ai.base import (
     AIProvider,
     AIProviderError,
+    ClarifyResult,
     ExtractionResult,
+    OutlineAction,
     OutlineNode,
     ReviewResult,
 )
-from app.ai.openai_compat import request_json_candidates, request_json_review
+from app.ai.openai_compat import (
+    request_json_candidates,
+    request_json_clarify,
+    request_json_intent,
+    request_json_outline,
+    request_json_refine,
+    request_json_review,
+)
 
 
 class DeepSeekProvider(AIProvider):
@@ -46,7 +55,36 @@ class DeepSeekProvider(AIProvider):
     async def generate_outline(
         self, goal: str, context: str = ""
     ) -> list[OutlineNode]:
-        raise AIProviderError("AI 目录生成能力尚未实现")
+        return await request_json_outline(self._client, self.model, goal, context)
+
+    async def draft_clarify(
+        self, goal: str, context: str = ""
+    ) -> ClarifyResult:
+        return await request_json_clarify(self._client, self.model, goal, context)
+
+    async def refine_outline(
+        self,
+        draft: list[dict],
+        intent_note: str,
+        instruction: str,
+    ) -> list[OutlineAction]:
+        return await request_json_refine(
+            self._client,
+            self.model,
+            draft,
+            intent_note,
+            instruction,
+        )
+
+    async def summarize_intent(
+        self, intent_note: str, instruction: str
+    ) -> str:
+        return await request_json_intent(
+            self._client,
+            self.model,
+            intent_note,
+            instruction,
+        )
 
     async def ocr(self, image_data: bytes) -> str:
         raise AIProviderError("AI OCR 能力尚未实现")
