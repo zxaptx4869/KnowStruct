@@ -81,7 +81,9 @@ function renderSearchPage(initialEntry = '/search') {
 
 function searchFetchMock(
   handler: (url: string) => Promise<Response> = (url) =>
-    url.includes('/api/search') ? Promise.resolve(jsonResponse(searchResponse())) : Promise.resolve(jsonResponse({})),
+    url.includes('/api/search')
+      ? Promise.resolve(jsonResponse(searchResponse()))
+      : Promise.resolve(jsonResponse([])),
 ) {
   const fetchMock = vi.fn(handler)
   vi.stubGlobal('fetch', fetchMock)
@@ -90,6 +92,11 @@ function searchFetchMock(
 
 function searchCallCount(fetchMock: ReturnType<typeof vi.fn>) {
   return fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/search')).length
+}
+
+function searchCallParams(fetchMock: ReturnType<typeof vi.fn>, index = 0): URLSearchParams {
+  const call = fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/search'))[index]
+  return new URL(String(call![0]), 'http://localhost').searchParams
 }
 
 async function typeKeyword(keyword: string) {
@@ -240,15 +247,18 @@ describe('SearchPage', () => {
 
   it('keeps the keyword and retries after a search failure', async () => {
     let attempts = 0
-    const fetchMock = searchFetchMock(() => {
-      attempts += 1
-      if (attempts === 1) {
-        return Promise.resolve(jsonResponse(
-          { detail: { code: 'request_failed', message: '服务器错误' } },
-          500,
-        ))
+    const fetchMock = searchFetchMock((url) => {
+      if (String(url).includes('/api/search')) {
+        attempts += 1
+        if (attempts === 1) {
+          return Promise.resolve(jsonResponse(
+            { detail: { code: 'request_failed', message: '服务器错误' } },
+            500,
+          ))
+        }
+        return Promise.resolve(jsonResponse(searchResponse()))
       }
-      return Promise.resolve(jsonResponse(searchResponse()))
+      return Promise.resolve(jsonResponse([]))
     })
     renderSearchPage()
 
@@ -376,5 +386,168 @@ describe('SearchPage', () => {
     await userEvent.clear(screen.getByLabelText('搜索关键词'))
     expect(await screen.findByText('输入关键词开始搜索')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '最近搜索' })).not.toBeInTheDocument()
+  })
+
+  it('renders filter controls and loads node options for the selected project', async () => {
+    const fetchMock = searchFetchMock((url) => {
+      if (url === '/api/projects') {
+        return Promise.resolve(jsonResponse([
+          { id: 'project-1', name: '新房装修' },
+          { id: 'project-2', name: '日本旅行' },
+        ]))
+      }
+      if (url === '/api/projects/project-1/nodes') {
+        return Promise.resolve(jsonResponse([
+          { id: 'node-fridge', project_id: 'project-1', parent_id: null, name: '冰箱' },
+          { id: 'node-kitchen', project_id: 'project-1', parent_id: 'node-fridge', name: '台面' },
+        ]))
+      }
+      if (String(url).includes('/api/search')) {
+        return Promise.resolve(jsonResponse(searchResponse()))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    renderSearchPage()
+
+    const projectSelect = screen.getByLabelText('筛选项目')
+    const typeSelect = screen.getByLabelText('筛选类型')
+    const nodeSelect = screen.getByLabelText('筛选节点')
+    expect(projectSelect).toBeInTheDocument()
+    expect(typeSelect).toBeInTheDocument()
+    expect(nodeSelect).toBeDisabled()
+
+    expect(await screen.findByRole('option', { name: '新房装修' })).toBeInTheDocument()
+    await userEvent.selectOptions(projectSelect, 'project-1')
+    expect(await screen.findByRole('option', { name: '冰箱' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /台面/ })).toBeInTheDocument()
+    expect(nodeSelect).toBeEnabled()
+    expect(searchCallCount(fetchMock)).toBe(0)
+  })
+
+  it('sends filters with the search and persists them in the URL', async () => {
+    const fetchMock = searchFetchMock((url) => {
+      if (url === '/api/projects') {
+        return Promise.resolve(jsonResponse([
+          { id: 'project-1', name: '新房装修' },
+        ]))
+      }
+      if (String(url).includes('/api/search')) {
+        return Promise.resolve(jsonResponse(searchResponse()))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    renderSearchPage('/search?q=冰箱&project=project-1&type=pitfall')
+
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: '新房装修' })).toBeInTheDocument()
+    expect(screen.getByLabelText('筛选项目')).toHaveValue('project-1')
+    expect(screen.getByLabelText('筛选类型')).toHaveValue('pitfall')
+    const params = searchCallParams(fetchMock)
+    expect(params.get('q')).toBe('冰箱')
+    expect(params.get('project')).toBe('project-1')
+    expect(params.get('type')).toBe('pitfall')
+  })
+
+  it('re-runs the search when a filter changes after results', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage()
+    await submitByButton('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+
+    await userEvent.selectOptions(screen.getByLabelText('筛选类型'), 'price')
+
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(2)
+    })
+    expect(searchCallParams(fetchMock, 1).get('type')).toBe('price')
+    expect(searchCallParams(fetchMock, 1).get('q')).toBe('冰箱')
+  })
+
+  it('resets the node filter when the project changes', async () => {
+    const fetchMock = searchFetchMock((url) => {
+      if (url === '/api/projects') {
+        return Promise.resolve(jsonResponse([
+          { id: 'project-1', name: '新房装修' },
+          { id: 'project-2', name: '日本旅行' },
+        ]))
+      }
+      if (String(url).startsWith('/api/projects/') && String(url).endsWith('/nodes')) {
+        return Promise.resolve(jsonResponse([
+          { id: 'node-fridge', project_id: 'project-1', parent_id: null, name: '冰箱' },
+        ]))
+      }
+      if (String(url).includes('/api/search')) {
+        return Promise.resolve(jsonResponse(searchResponse()))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    renderSearchPage('/search?q=冰箱&project=project-1&node=node-fridge')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+    expect(searchCallParams(fetchMock).get('node')).toBe('node-fridge')
+
+    await userEvent.selectOptions(screen.getByLabelText('筛选项目'), 'project-2')
+
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(2)
+    })
+    expect(searchCallParams(fetchMock, 1).get('project')).toBe('project-2')
+    expect(searchCallParams(fetchMock, 1).get('node')).toBeNull()
+    expect(screen.getByLabelText('筛选节点')).toHaveValue('')
+  })
+
+  it('offers clear filters on no results under filters', async () => {
+    const fetchMock = searchFetchMock(() => Promise.resolve(jsonResponse({ entries: [], sources: [] })))
+    renderSearchPage()
+    await submitByButton('冰箱')
+    await screen.findByText('没有找到“冰箱”')
+    expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument()
+
+    await userEvent.selectOptions(screen.getByLabelText('筛选类型'), 'price')
+    expect(await screen.findByRole('button', { name: '清除筛选' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '清除筛选' }))
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(3)
+    })
+    expect(searchCallParams(fetchMock, 2).get('type')).toBeNull()
+    expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument()
+  })
+
+  it('shows a readable error and clear filters for invalid URL filter params', async () => {
+    const fetchMock = searchFetchMock((url) => {
+      if (String(url).includes('project=bad-project')) {
+        return Promise.resolve(jsonResponse(
+          { detail: { code: 'invalid_project', message: '项目不存在或不属于当前工作区' } },
+          422,
+        ))
+      }
+      if (String(url).includes('/api/search')) {
+        return Promise.resolve(jsonResponse(searchResponse()))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    renderSearchPage('/search?q=冰箱&project=bad-project')
+
+    expect(await screen.findByText(/项目不存在或不属于当前工作区/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '清除筛选' }))
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(2)
+    })
+    expect(searchCallParams(fetchMock, 1).get('project')).toBeNull()
+    expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
+  })
+
+  it('re-runs a history keyword with the current filters', async () => {
+    const fetchMock = searchFetchMock()
+    renderSearchPage('/search?q=冰箱&project=project-1')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+    await userEvent.clear(screen.getByLabelText('搜索关键词'))
+    await screen.findByRole('heading', { name: '最近搜索' })
+
+    await userEvent.click(screen.getByRole('button', { name: '冰箱' }))
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(2)
+    })
+    expect(searchCallParams(fetchMock, 1).get('q')).toBe('冰箱')
+    expect(searchCallParams(fetchMock, 1).get('project')).toBe('project-1')
   })
 })

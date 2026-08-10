@@ -38,7 +38,7 @@ async function request<T = unknown>(
   if (params) {
     const searchParams = new URLSearchParams()
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined) {
+      if (value !== undefined && value !== '') {
         searchParams.set(key, String(value))
       }
     }

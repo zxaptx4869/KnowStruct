@@ -2657,6 +2657,48 @@ textarea.field-error {
   background: rgba(0, 0, 0, 0.06);
 }
 
+.search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.search-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+.search-filter select {
+  min-height: 32px;
+  max-width: 220px;
+  border: 1px solid var(--line-strong, #d1d5db);
+  border-radius: 6px;
+  padding: 0 8px;
+  outline: none;
+  background: #fff;
+  color: var(--text-strong, #111827);
+  font-size: 12px;
+}
+
+.search-filter select:focus-visible {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.search-filter select:disabled {
+  color: var(--muted, #6b7280);
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.search-filter-clear {
+  margin-left: auto;
+}
+
 .search-guidance {
   display: grid;
   justify-items: center;

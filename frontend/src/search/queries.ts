@@ -4,15 +4,29 @@ import type { SearchResponse } from './types'
 
 export const searchKeys = {
   all: ['search'] as const,
-  query: (keyword: string) => ['search', keyword] as const,
+  query: (keyword: string, filters: SearchFilters) =>
+    ['search', keyword, filters.project ?? '', filters.type ?? '', filters.node ?? ''] as const,
 }
 
-export function useSearch(keyword: string) {
+export interface SearchFilters {
+  project?: string
+  type?: string
+  node?: string
+}
+
+export function useSearch(keyword: string, filters: SearchFilters = {}) {
   const trimmed = keyword.trim()
   return useQuery({
-    queryKey: searchKeys.query(trimmed),
+    queryKey: searchKeys.query(trimmed, filters),
     queryFn: () =>
-      api.get<SearchResponse>('/search', { params: { q: trimmed } }),
+      api.get<SearchResponse>('/search', {
+        params: {
+          q: trimmed,
+          project: filters.project,
+          type: filters.type,
+          node: filters.node,
+        },
+      }),
     enabled: trimmed.length > 0,
     staleTime: 0,
   })

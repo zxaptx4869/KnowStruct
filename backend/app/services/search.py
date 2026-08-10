@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import DomainError
-from app.models import Entry, EntrySource, Node, Project, Source
+from app.models import Entry, EntrySource, EntryType, Node, Project, Source
 from app.schemas.search import EntryHit, SourceHit, SourceRef
 
 MAX_SEARCH_QUERY_LENGTH = 100
@@ -26,6 +26,44 @@ def validate_query(q: str) -> str:
     if len(keyword) > MAX_SEARCH_QUERY_LENGTH:
         raise DomainError(422, "query_too_long", "关键词不能超过 100 字符")
     return keyword
+
+
+async def validate_filters(
+    db: AsyncSession,
+    workspace_id: str,
+    *,
+    project_id: str | None = None,
+    entry_type: str | None = None,
+    node_id: str | None = None,
+) -> None:
+    """校验组合筛选参数，非法时抛出可读 422。"""
+    if entry_type is not None:
+        valid_types = {member.value for member in EntryType}
+        if entry_type not in valid_types:
+            raise DomainError(422, "invalid_type", "无效的记录类型")
+
+    project: Project | None = None
+    if project_id is not None:
+        project = await db.scalar(
+            select(Project).where(
+                Project.id == project_id,
+                Project.workspace_id == workspace_id,
+            )
+        )
+        if project is None:
+            raise DomainError(422, "invalid_project", "项目不存在或不属于当前工作区")
+
+    if node_id is not None:
+        if project_id is None:
+            raise DomainError(422, "node_requires_project", "节点筛选必须同时指定项目")
+        node = await db.scalar(
+            select(Node).where(
+                Node.id == node_id,
+                Node.project_id == project_id,
+            )
+        )
+        if node is None:
+            raise DomainError(422, "node_project_mismatch", "节点不存在或不属于所选项目")
 
 
 def _pattern(keyword: str) -> str:
@@ -138,22 +176,41 @@ async def search(
     db: AsyncSession,
     workspace_id: str,
     q: str,
+    *,
+    project_id: str | None = None,
+    entry_type: str | None = None,
+    node_id: str | None = None,
 ) -> SearchResultData:
     keyword = validate_query(q)
+    await validate_filters(
+        db,
+        workspace_id,
+        project_id=project_id,
+        entry_type=entry_type,
+        node_id=node_id,
+    )
     pattern = _pattern(keyword)
+
+    entry_filters = [
+        Entry.workspace_id == workspace_id,
+        Entry.status == "archived",
+        or_(
+            Entry.title.like(pattern, escape="\\"),
+            Entry.content.like(pattern, escape="\\"),
+        ),
+    ]
+    if project_id is not None:
+        entry_filters.append(Entry.project_id == project_id)
+    if entry_type is not None:
+        entry_filters.append(Entry.entry_type == entry_type)
+    if node_id is not None:
+        entry_filters.append(Entry.node_id == node_id)
 
     entry_rows = (
         await db.execute(
             select(Entry, Project.name)
             .join(Project, Project.id == Entry.project_id)
-            .where(
-                Entry.workspace_id == workspace_id,
-                Entry.status == "archived",
-                or_(
-                    Entry.title.like(pattern, escape="\\"),
-                    Entry.content.like(pattern, escape="\\"),
-                ),
-            )
+            .where(*entry_filters)
             .order_by(Entry.created_at.desc(), Entry.id.desc())
             .limit(SEARCH_RESULT_LIMIT)
         )
@@ -161,18 +218,22 @@ async def search(
     entries = [row[0] for row in entry_rows]
     entry_project_names = {row[0].id: row[1] for row in entry_rows}
 
+    source_filters = [
+        Source.workspace_id == workspace_id,
+        or_(
+            Source.title.like(pattern, escape="\\"),
+            Source.content.like(pattern, escape="\\"),
+            Source.link_url.like(pattern, escape="\\"),
+        ),
+    ]
+    if project_id is not None:
+        source_filters.append(Source.project_id == project_id)
+
     source_rows = (
         await db.execute(
             select(Source, Project.name)
             .outerjoin(Project, Project.id == Source.project_id)
-            .where(
-                Source.workspace_id == workspace_id,
-                or_(
-                    Source.title.like(pattern, escape="\\"),
-                    Source.content.like(pattern, escape="\\"),
-                    Source.link_url.like(pattern, escape="\\"),
-                ),
-            )
+            .where(*source_filters)
             .order_by(Source.created_at.desc(), Source.id.desc())
             .limit(SEARCH_RESULT_LIMIT)
         )

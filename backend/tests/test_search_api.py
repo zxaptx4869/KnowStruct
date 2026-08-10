@@ -48,8 +48,8 @@ async def _accepted_entry(
     return entry["id"], source["id"], project
 
 
-async def _search(client: AsyncClient, q: str) -> dict:
-    response = await client.get("/api/search", params={"q": q})
+async def _search(client: AsyncClient, q: str, **filters: object) -> dict:
+    response = await client.get("/api/search", params={"q": q, **filters})
     assert response.status_code == 200
     return response.json()
 
@@ -406,3 +406,173 @@ async def test_pending_candidates_and_non_archived_entries_excluded(
     body = await _search(client, "关键词")
     assert body["entries"] == []
     assert body["sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_project_filter_scopes_entries_and_sources(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    workspace_id = await login_owner(client, db)
+    project_a = await create_project(client, "新房装修")
+    project_b = await create_project(client, "日本旅行")
+    now = _naive_utc_now()
+    project_a_source_ids: list[str] = []
+    for index, project_id in enumerate([project_a["id"], project_b["id"]]):
+        entry = Entry(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            entry_type="experience",
+            title=f"瓷砖铺贴要点 {index}",
+            content="关键词占位：防滑与留缝",
+            status="archived",
+        )
+        entry.created_at = now + timedelta(minutes=index)
+        db.add(entry)
+        source = Source(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            source_type="text",
+            title=f"铺贴参考 {index}",
+            content="关键词占位：防滑与留缝",
+        )
+        source.created_at = now + timedelta(minutes=index)
+        db.add(source)
+        await db.flush()
+        if project_id == project_a["id"]:
+            project_a_source_ids.append(source.id)
+    unassigned = Source(
+        workspace_id=workspace_id,
+        project_id=None,
+        source_type="text",
+        title="未分配来源",
+        content="关键词占位：防滑与留缝",
+    )
+    unassigned.created_at = now + timedelta(minutes=99)
+    db.add(unassigned)
+    await db.commit()
+
+    body = await _search(client, "防滑与留缝", project=project_a["id"])
+    assert [item["project_id"] for item in body["entries"]] == [project_a["id"]]
+    assert {item["id"] for item in body["sources"]} == set(project_a_source_ids)
+    assert all(item["project_id"] == project_a["id"] for item in body["sources"])
+
+
+@pytest.mark.asyncio
+async def test_type_filter_scopes_entries_only(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    workspace_id = await login_owner(client, db)
+    project = await create_project(client, "新房装修")
+    now = _naive_utc_now()
+    for index, entry_type in enumerate(["experience", "pitfall", "price"]):
+        entry = Entry(
+            workspace_id=workspace_id,
+            project_id=project["id"],
+            entry_type=entry_type,
+            title=f"类型筛选记录 {entry_type}",
+            content="关键词占位：石材选择",
+            status="archived",
+        )
+        entry.created_at = now + timedelta(minutes=index)
+        db.add(entry)
+    source = Source(
+        workspace_id=workspace_id,
+        project_id=project["id"],
+        source_type="text",
+        title="来源命中",
+        content="关键词占位：石材选择",
+    )
+    db.add(source)
+    await db.commit()
+
+    body = await _search(client, "石材选择", type="pitfall")
+    assert [item["entry_type"] for item in body["entries"]] == ["pitfall"]
+    assert [item["title"] for item in body["sources"]] == ["来源命中"]
+
+
+@pytest.mark.asyncio
+async def test_node_filter_excludes_subtree_entries(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    workspace_id = await login_owner(client, db)
+    project = await create_project(client, "新房装修")
+    parent = await client.post(
+        f"/api/projects/{project['id']}/nodes",
+        json={"name": "家电"},
+    )
+    assert parent.status_code == 201
+    child = await client.post(
+        f"/api/projects/{project['id']}/nodes",
+        json={"name": "冰箱", "parent_id": parent.json()["id"]},
+    )
+    assert child.status_code == 201
+    now = _naive_utc_now()
+    for index, node_id in enumerate([parent.json()["id"], child.json()["id"]]):
+        entry = Entry(
+            workspace_id=workspace_id,
+            project_id=project["id"],
+            node_id=node_id,
+            entry_type="experience",
+            title=f"节点记录 {index}",
+            content="关键词占位：散热预留",
+            status="archived",
+        )
+        entry.created_at = now + timedelta(minutes=index)
+        db.add(entry)
+    await db.commit()
+
+    body = await _search(
+        client,
+        "散热预留",
+        project=project["id"],
+        node=child.json()["id"],
+    )
+    assert [item["node_id"] for item in body["entries"]] == [child.json()["id"]]
+
+
+@pytest.mark.asyncio
+async def test_invalid_filter_parameters_rejected(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    async with db.begin():
+        await create_account(db, "other", "other password")
+    project = await create_project(client, "新房装修")
+    node = await client.post(
+        f"/api/projects/{project['id']}/nodes",
+        json={"name": "冰箱"},
+    )
+    assert node.status_code == 201
+    other_project = await client.post("/api/auth/login", json={
+        "account": "other",
+        "password": "other password",
+    })
+    assert other_project.status_code == 200
+    foreign = await create_project(client, "别的项目")
+    foreign_node = await client.post(
+        f"/api/projects/{foreign['id']}/nodes",
+        json={"name": "异项目节点"},
+    )
+    assert foreign_node.status_code == 201
+    await client.post(
+        "/api/auth/login",
+        json={"account": "owner", "password": "correct horse battery"},
+    )
+
+    cases = [
+        ({"project": foreign["id"]}, "invalid_project"),
+        ({"type": "not-a-type"}, "invalid_type"),
+        ({"node": node.json()["id"]}, "node_requires_project"),
+        (
+            {"project": project["id"], "node": foreign_node.json()["id"]},
+            "node_project_mismatch",
+        ),
+    ]
+    for params, code in cases:
+        response = await client.get("/api/search", params={"q": "关键词", **params})
+        assert response.status_code == 422, (params, response.text)
+        assert response.json()["detail"]["code"] == code, params

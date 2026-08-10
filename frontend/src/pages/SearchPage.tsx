@@ -3,12 +3,30 @@ import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { entryTypeLabel, sourceTypeLabels } from '../inbox/labels'
+import { entryTypeLabel, entryTypeOptions, sourceTypeLabels } from '../inbox/labels'
+import { useNodes, useProjects } from '../projects/queries'
+import type { Node } from '../projects/types'
 import { addSearch, clearHistory, readHistory, removeSearch } from '../search/history'
 import type { SearchHistoryItem } from '../search/history'
 import { highlightText } from '../search/highlight'
-import { useSearch } from '../search/queries'
+import { useSearch, type SearchFilters } from '../search/queries'
 import type { SearchEntryHit, SearchResponse, SearchSourceHit } from '../search/types'
+
+function nodeDepth(nodes: Node[], node: Node): number {
+  const index = new Map(nodes.map((item) => [item.id, item]))
+  let depth = 1
+  let current = node
+  const seen = new Set<string>()
+  while (current.parent_id && index.has(current.parent_id)) {
+    if (seen.has(current.id)) break
+    seen.add(current.id)
+    const parent = index.get(current.parent_id)
+    if (!parent) break
+    depth += 1
+    current = parent
+  }
+  return depth
+}
 
 function SearchHistory({
   items,
@@ -154,6 +172,11 @@ export default function SearchPage() {
   const { user } = useAuth()
   const userId = user?.id ?? ''
   const urlKeyword = searchParams.get('q') ?? ''
+  const urlProject = searchParams.get('project') ?? ''
+  const urlType = searchParams.get('type') ?? ''
+  const urlNode = searchParams.get('node') ?? ''
+  const filters: SearchFilters = { project: urlProject, type: urlType, node: urlNode }
+  const hasActiveFilters = Boolean(urlProject || urlType || urlNode)
   const [input, setInput] = useState(urlKeyword)
   const [keyword, setKeyword] = useState(urlKeyword)
   const [history, setHistory] = useState<SearchHistoryItem[]>(() =>
@@ -163,6 +186,10 @@ export default function SearchPage() {
   const lastWrittenRef = useRef(urlKeyword)
   const composingRef = useRef(false)
   const recordedDataRef = useRef<SearchResponse | null>(null)
+  const projectsQuery = useProjects()
+  const nodesQuery = useNodes(urlProject)
+  const projects = Array.isArray(projectsQuery.data) ? projectsQuery.data : []
+  const nodes = Array.isArray(nodesQuery.data) ? nodesQuery.data : []
 
   useEffect(() => {
     if (urlKeyword !== lastWrittenRef.current) {
@@ -172,7 +199,7 @@ export default function SearchPage() {
     }
   }, [urlKeyword])
 
-  const searchQuery = useSearch(keyword)
+  const searchQuery = useSearch(keyword, filters)
   const hasKeyword = keyword.length > 0
   const entries = searchQuery.data?.entries ?? []
   const sources = searchQuery.data?.sources ?? []
@@ -198,10 +225,12 @@ export default function SearchPage() {
       setEmptyHint(true)
       return
     }
+    const params = new URLSearchParams(searchParams)
+    params.set('q', trimmed)
+    setSearchParams(params, { replace: true })
     lastWrittenRef.current = trimmed
     setInput(trimmed)
     setKeyword(trimmed)
-    setSearchParams({ q: trimmed }, { replace: true })
   }
 
   function handleInputChange(value: string) {
@@ -210,8 +239,46 @@ export default function SearchPage() {
     if (value.trim().length === 0) {
       lastWrittenRef.current = ''
       setKeyword('')
-      setSearchParams({}, { replace: true })
+      const params = new URLSearchParams(searchParams)
+      params.delete('q')
+      setSearchParams(params, { replace: true })
     }
+  }
+
+  function updateFilters(next: SearchFilters) {
+    const params = new URLSearchParams(searchParams)
+    if (next.project !== undefined) {
+      if (next.project) {
+        params.set('project', next.project)
+        params.delete('node')
+      } else {
+        params.delete('project')
+        params.delete('node')
+      }
+    }
+    if (next.type !== undefined) {
+      if (next.type) {
+        params.set('type', next.type)
+      } else {
+        params.delete('type')
+      }
+    }
+    if (next.node !== undefined) {
+      if (next.node) {
+        params.set('node', next.node)
+      } else {
+        params.delete('node')
+      }
+    }
+    setSearchParams(params, { replace: true })
+  }
+
+  function clearFilters() {
+    const params = new URLSearchParams(searchParams)
+    params.delete('project')
+    params.delete('type')
+    params.delete('node')
+    setSearchParams(params, { replace: true })
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
@@ -264,6 +331,61 @@ export default function SearchPage() {
         </button>
       </div>
 
+      <div className="search-filters">
+        <label className="search-filter">
+          <span>项目</span>
+          <select
+            value={urlProject}
+            onChange={(event) => updateFilters({ project: event.target.value })}
+            aria-label="筛选项目"
+          >
+            <option value="">全部项目</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="search-filter">
+          <span>类型</span>
+          <select
+            value={urlType}
+            onChange={(event) => updateFilters({ type: event.target.value })}
+            aria-label="筛选类型"
+          >
+            <option value="">全部类型</option>
+            {entryTypeOptions.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="search-filter">
+          <span>节点</span>
+          <select
+            value={urlNode}
+            onChange={(event) => updateFilters({ node: event.target.value })}
+            disabled={!urlProject}
+            aria-label="筛选节点"
+          >
+            <option value="">{urlProject ? '全部节点' : '先选择项目'}</option>
+            {nodes.map((node) => (
+              <option key={node.id} value={node.id}>
+                {'　'.repeat(nodeDepth(nodes, node) - 1)}
+                {node.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {hasActiveFilters && (
+          <button type="button" className="search-filter-clear secondary-button" onClick={clearFilters}>
+            清除筛选
+          </button>
+        )}
+      </div>
+
       {emptyHint && (
         <div className="state-panel search-empty-hint" role="alert">
           请输入搜索关键词
@@ -283,7 +405,7 @@ export default function SearchPage() {
         <div className="state-panel search-guidance" role="status">
           <Search size={22} />
           <strong>输入关键词开始搜索</strong>
-          <span>输入关键词后点击“搜索”或按回车开始搜索。搜索范围包含全部项目中的正式记录，以及原始文字、链接和图片识别内容。</span>
+          <span>输入关键词后点击“搜索”或按回车开始搜索。可先用项目、类型和节点筛选缩小范围；搜索范围包含全部项目中的正式记录，以及原始文字、链接和图片识别内容。</span>
         </div>
       )}
 
@@ -303,7 +425,10 @@ export default function SearchPage() {
       {hasKeyword && searchQuery.isError && (
         <div className="state-panel state-error" role="alert">
           <strong>搜索失败</strong>
-          <span>已保留关键词“{keyword}”，请检查连接后重试。</span>
+          <span>
+            {searchQuery.error.message}
+            {hasActiveFilters ? ' 可尝试清除筛选后重试。' : ' 请检查连接后重试。'}
+          </span>
           <button
             type="button"
             className="secondary-button"
@@ -317,7 +442,9 @@ export default function SearchPage() {
       {hasKeyword && noResults && (
         <div className="state-panel search-no-results" role="status">
           <strong>没有找到“{keyword}”</strong>
-          <span>换个关键词试试，或清除后重新输入。</span>
+          <span>
+            {hasActiveFilters ? '换个关键词试试，或清除筛选后重试。' : '换个关键词试试，或清除后重新输入。'}
+          </span>
           <button type="button" className="secondary-button" onClick={clearKeyword}>
             清除并重新输入
           </button>
