@@ -1,8 +1,10 @@
 import copy
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from httpx import AsyncClient
+from openai import APIConnectionError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,6 +103,18 @@ class AlwaysInvalidChatProvider(DemoProvider):
             {"name": "重复根", "description": None, "children": []},
         ]
         return ChatRoundResult(reply_text="提交一版。", tree=bad)
+
+
+class FailingChatProvider(DemoProvider):
+    """模拟模型调用连接失败。"""
+
+    async def draft_chat(
+        self,
+        tree: list[dict],
+        messages: list[dict],
+        summary: str | None = None,
+    ) -> ChatRoundResult:
+        raise AIProviderError("模拟 AI 连接失败")
 
 
 class RecordingChatProvider(DemoProvider):
@@ -422,6 +436,46 @@ async def test_chat_gives_up_after_bounded_retries(
     ]
     assert len(feedback) == 3
     assert any("已停止自动重试" in message["content"] for message in body["messages"])
+
+
+@pytest.mark.asyncio
+async def test_chat_failure_persists_round_and_feedback(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    ctx = await _create_generated_draft(client, db)
+    project_id = ctx["project"]["id"]
+    draft_id = ctx["draft_id"]
+    node_count = len(ctx["draft"]["nodes"])
+
+    async with db.begin():
+        project = await db.scalar(
+            select(Project).where(Project.id == project_id)
+        )
+        await submit_draft_message(
+            db,
+            project.workspace_id,
+            project_id,
+            draft_id,
+            "同意你的方案，请应用",
+            FailingChatProvider(),
+        )
+
+    body = (await client.get(f"/api/projects/{project_id}/drafts")).json()["draft"]
+    assert body["status"] == "pending_confirm"
+    assert len(body["nodes"]) == node_count
+    assert any(
+        message["role"] == "user" and message["content"] == "同意你的方案，请应用"
+        for message in body["messages"]
+    )
+    assert any(
+        message["role"] == "system" and "未应用变更" in message["content"]
+        for message in body["messages"]
+    )
+    draft = await db.scalar(
+        select(DirectoryDraft).where(DirectoryDraft.id == draft_id)
+    )
+    assert draft.conversation_rounds == 1
 
 
 @pytest.mark.asyncio
@@ -765,6 +819,30 @@ class _FakeClient:
         )
 
 
+class _FlakyChatCompletions:
+    def __init__(self, response: _FakeResponse, failures: int) -> None:
+        self._response = response
+        self._failures = failures
+
+    async def create(self, **kwargs: object) -> _FakeResponse:
+        if self._failures > 0:
+            self._failures -= 1
+            raise APIConnectionError(
+                request=httpx.Request(
+                    "POST",
+                    "https://api.deepseek.com/chat/completions",
+                )
+            )
+        return self._response
+
+
+class _FlakyClient:
+    def __init__(self, response: _FakeResponse, failures: int) -> None:
+        self.chat = SimpleNamespace(
+            completions=_FlakyChatCompletions(response, failures)
+        )
+
+
 @pytest.mark.asyncio
 async def test_request_chat_round_parses_tool_call() -> None:
     response = _FakeResponse(
@@ -840,4 +918,37 @@ async def test_request_chat_round_rejects_invalid_tool_json() -> None:
             "model",
             [],
             [{"role": "user", "content": "请应用目录"}],
+        )
+
+
+@pytest.mark.asyncio
+async def test_request_chat_round_retries_connection_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.ai.openai_compat.CHAT_RETRY_DELAYS", (0.0, 0.0))
+    response = _FakeResponse(
+        _FakeMessage(content="可以，我们先讨论一下。", tool_calls=[])
+    )
+    result = await request_chat_round(
+        _FlakyClient(response, failures=2),
+        "model",
+        [],
+        [{"role": "user", "content": "讨论一下"}],
+    )
+    assert result.tree is None
+    assert result.reply_text == "可以，我们先讨论一下。"
+
+
+@pytest.mark.asyncio
+async def test_request_chat_round_gives_up_after_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.ai.openai_compat.CHAT_RETRY_DELAYS", (0.0, 0.0))
+    response = _FakeResponse(_FakeMessage(content="", tool_calls=[]))
+    with pytest.raises(AIProviderError):
+        await request_chat_round(
+            _FlakyClient(response, failures=99),
+            "model",
+            [],
+            [{"role": "user", "content": "讨论一下"}],
         )

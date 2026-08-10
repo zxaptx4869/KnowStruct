@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Check,
   Info,
   Loader2,
@@ -49,10 +50,11 @@ function nodeDepth(nodes: DraftNode[], node: DraftNode): number {
 function ChatBubble({ message }: { message: DraftMessage }) {
   if (message.role === 'system') {
     const applied = message.content.startsWith('已应用目录')
+    const warned = message.content.startsWith('未应用变更')
     const countMatch = message.content.match(/共 (\d+) 个节点/)
     return (
-      <div className={`draft-msg draft-msg-system${applied ? ' draft-msg-applied' : ''}`}>
-        {applied ? <Check size={12} /> : <Info size={12} />}
+      <div className={`draft-msg draft-msg-system${applied ? ' draft-msg-applied' : ''}${warned ? ' draft-msg-warn' : ''}`}>
+        {applied ? <Check size={12} /> : warned ? <AlertTriangle size={12} /> : <Info size={12} />}
         <span>
           {applied && countMatch
             ? `已更新目录（${countMatch[1]} 个节点）`

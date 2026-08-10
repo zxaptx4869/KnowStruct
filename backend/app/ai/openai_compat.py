@@ -1,8 +1,10 @@
 """OpenAI 兼容 Provider 共用的 JSON 候选请求、结构化解析与会话工具调用。"""
 
+import asyncio
 import json
 import re
 
+from openai import APIConnectionError, APITimeoutError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.ai.base import (
@@ -113,6 +115,8 @@ APPLY_DIRECTORY_TREE_TOOL = {
         },
     },
 }
+
+CHAT_RETRY_DELAYS = (2.0, 4.0)
 
 
 def _parse_json_content(content: str) -> dict:
@@ -303,6 +307,27 @@ def _node_from_dict(item: dict, depth: int) -> OutlineNode:
     return OutlineNode(title=title, description=description, children=children)
 
 
+async def _chat_completion_with_retry(
+    client,
+    *,
+    retry_delays: tuple[float, ...] | None = None,
+    **kwargs: object,
+):
+    """调用 chat.completions.create；连接类错误按退避做有限重试，其余错误直接包装。"""
+    delays = CHAT_RETRY_DELAYS if retry_delays is None else retry_delays
+    attempt = 0
+    while True:
+        try:
+            return await client.chat.completions.create(**kwargs)
+        except (APIConnectionError, APITimeoutError) as exc:
+            if attempt >= len(delays):
+                raise AIProviderError(f"AI 服务调用失败：{exc}") from exc
+            await asyncio.sleep(delays[attempt])
+            attempt += 1
+        except Exception as exc:
+            raise AIProviderError(f"AI 服务调用失败：{exc}") from exc
+
+
 async def _request_json(
     client,
     model: str,
@@ -310,18 +335,16 @@ async def _request_json(
     user_content: str,
 ) -> dict:
     """以 JSON 模式请求一次无状态调用并解析对象。"""
-    try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            temperature=0.2,
-            response_format={"type": "json_object"},
-        )
-    except Exception as exc:
-        raise AIProviderError(f"AI 服务调用失败：{exc}") from exc
+    response = await _chat_completion_with_retry(
+        client,
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.2,
+        response_format={"type": "json_object"},
+    )
 
     message = response.choices[0].message.content if response.choices else ""
     try:
@@ -448,16 +471,14 @@ async def request_chat_round(
     )
     if summary:
         system_content += f"\n\n早期对话摘要（已压缩）：\n{summary}"
-    try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "system", "content": system_content}, *messages],
-            tools=[APPLY_DIRECTORY_TREE_TOOL],
-            tool_choice="auto",
-            temperature=0.3,
-        )
-    except Exception as exc:
-        raise AIProviderError(f"AI 服务调用失败：{exc}") from exc
+    response = await _chat_completion_with_retry(
+        client,
+        model=model,
+        messages=[{"role": "system", "content": system_content}, *messages],
+        tools=[APPLY_DIRECTORY_TREE_TOOL],
+        tool_choice="auto",
+        temperature=0.3,
+    )
 
     message = response.choices[0].message if response.choices else None
     if message is None:

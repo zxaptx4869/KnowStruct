@@ -435,11 +435,20 @@ async def submit_draft_message(
     ]
     retries = 0
     while True:
-        result = await provider.draft_chat(
-            tree,
-            convo,
-            summary=draft.intent_note,
-        )
+        try:
+            result = await provider.draft_chat(
+                tree,
+                convo,
+                summary=draft.intent_note,
+            )
+        except AIProviderError as exc:
+            await _append_draft_message(
+                db,
+                draft.id,
+                "system",
+                f"未应用变更：{exc}。草稿未改动，可重发或换个说法。",
+            )
+            break
         if result.tree is None:
             await _append_draft_message(
                 db,

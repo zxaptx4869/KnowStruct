@@ -2972,6 +2972,10 @@ textarea.field-error {
   font-weight: 600;
 }
 
+.draft-msg-warn {
+  color: var(--color-danger, #dc2626);
+}
+
 .draft-chat-input-row {
   display: flex;
   gap: 8px;
