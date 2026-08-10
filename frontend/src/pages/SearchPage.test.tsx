@@ -388,7 +388,7 @@ describe('SearchPage', () => {
     expect(screen.queryByRole('heading', { name: '最近搜索' })).not.toBeInTheDocument()
   })
 
-  it('renders filter controls and loads node options for the selected project', async () => {
+  it('renders the scope picker and loads node options for the expanded project', async () => {
     const fetchMock = searchFetchMock((url) => {
       if (url === '/api/projects') {
         return Promise.resolve(jsonResponse([
@@ -409,18 +409,15 @@ describe('SearchPage', () => {
     })
     renderSearchPage()
 
-    const projectSelect = screen.getByLabelText('筛选项目')
     const typeSelect = screen.getByLabelText('筛选类型')
-    const nodeSelect = screen.getByLabelText('筛选节点')
-    expect(projectSelect).toBeInTheDocument()
     expect(typeSelect).toBeInTheDocument()
-    expect(nodeSelect).toBeDisabled()
+    expect(screen.getByRole('button', { name: '全部项目' })).toBeInTheDocument()
 
-    expect(await screen.findByRole('option', { name: '新房装修' })).toBeInTheDocument()
-    await userEvent.selectOptions(projectSelect, 'project-1')
-    expect(await screen.findByRole('option', { name: '冰箱' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /台面/ })).toBeInTheDocument()
-    expect(nodeSelect).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: '全部项目' }))
+    expect(screen.getByRole('button', { name: /^新房装修/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '展开 新房装修' }))
+    expect(await screen.findByRole('button', { name: /^冰箱/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^台面/ })).toBeInTheDocument()
     expect(searchCallCount(fetchMock)).toBe(0)
   })
 
@@ -431,6 +428,11 @@ describe('SearchPage', () => {
           { id: 'project-1', name: '新房装修' },
         ]))
       }
+      if (String(url).startsWith('/api/projects/') && String(url).endsWith('/nodes')) {
+        return Promise.resolve(jsonResponse([
+          { id: 'node-fridge', project_id: 'project-1', parent_id: null, name: '冰箱' },
+        ]))
+      }
       if (String(url).includes('/api/search')) {
         return Promise.resolve(jsonResponse(searchResponse()))
       }
@@ -439,8 +441,7 @@ describe('SearchPage', () => {
     renderSearchPage('/search?q=冰箱&project=project-1&type=pitfall')
 
     expect(await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })).toBeInTheDocument()
-    expect(await screen.findByRole('option', { name: '新房装修' })).toBeInTheDocument()
-    expect(screen.getByLabelText('筛选项目')).toHaveValue('project-1')
+    expect(await screen.findByRole('button', { name: /新房装修/ })).toBeInTheDocument()
     expect(screen.getByLabelText('筛选类型')).toHaveValue('pitfall')
     const params = searchCallParams(fetchMock)
     expect(params.get('q')).toBe('冰箱')
@@ -463,7 +464,7 @@ describe('SearchPage', () => {
     expect(searchCallParams(fetchMock, 1).get('q')).toBe('冰箱')
   })
 
-  it('resets the node filter when the project changes', async () => {
+  it('resets the node when the project changes in the scope picker', async () => {
     const fetchMock = searchFetchMock((url) => {
       if (url === '/api/projects') {
         return Promise.resolve(jsonResponse([
@@ -485,14 +486,85 @@ describe('SearchPage', () => {
     await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
     expect(searchCallParams(fetchMock).get('node')).toBe('node-fridge')
 
-    await userEvent.selectOptions(screen.getByLabelText('筛选项目'), 'project-2')
+    await userEvent.click(screen.getByRole('button', { name: /新房装修 \/ 冰箱/ }))
+    await userEvent.click(screen.getByRole('button', { name: /^日本旅行/ }))
 
     await waitFor(() => {
       expect(searchCallCount(fetchMock)).toBe(2)
     })
     expect(searchCallParams(fetchMock, 1).get('project')).toBe('project-2')
     expect(searchCallParams(fetchMock, 1).get('node')).toBeNull()
-    expect(screen.getByLabelText('筛选节点')).toHaveValue('')
+    expect(screen.getByRole('button', { name: /日本旅行/ })).toBeInTheDocument()
+  })
+
+  it('selects a node from the expanded scope picker', async () => {
+    const fetchMock = searchFetchMock((url) => {
+      if (url === '/api/projects') {
+        return Promise.resolve(jsonResponse([
+          { id: 'project-1', name: '新房装修' },
+        ]))
+      }
+      if (String(url).startsWith('/api/projects/') && String(url).endsWith('/nodes')) {
+        return Promise.resolve(jsonResponse([
+          { id: 'node-fridge', project_id: 'project-1', parent_id: null, name: '冰箱' },
+        ]))
+      }
+      if (String(url).includes('/api/search')) {
+        return Promise.resolve(jsonResponse(searchResponse()))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    renderSearchPage()
+    await submitByButton('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+
+    await userEvent.click(screen.getByRole('button', { name: '全部项目' }))
+    await userEvent.click(screen.getByRole('button', { name: /^新房装修/ }))
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(2)
+    })
+    await userEvent.click(screen.getByRole('button', { name: /新房装修/ }))
+    await userEvent.click(screen.getByRole('button', { name: '展开 新房装修' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^冰箱/ }))
+
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(3)
+    })
+    const params = searchCallParams(fetchMock, 2)
+    expect(params.get('project')).toBe('project-1')
+    expect(params.get('node')).toBe('node-fridge')
+    expect(screen.getByRole('button', { name: /新房装修 \/ 冰箱/ })).toBeInTheDocument()
+  })
+
+  it('clears back to all projects from the scope picker', async () => {
+    const fetchMock = searchFetchMock((url) => {
+      if (url === '/api/projects') {
+        return Promise.resolve(jsonResponse([
+          { id: 'project-1', name: '新房装修' },
+        ]))
+      }
+      if (String(url).startsWith('/api/projects/') && String(url).endsWith('/nodes')) {
+        return Promise.resolve(jsonResponse([
+          { id: 'node-fridge', project_id: 'project-1', parent_id: null, name: '冰箱' },
+        ]))
+      }
+      if (String(url).includes('/api/search')) {
+        return Promise.resolve(jsonResponse(searchResponse()))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    renderSearchPage('/search?q=冰箱&project=project-1&node=node-fridge')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+
+    await userEvent.click(screen.getByRole('button', { name: /新房装修 \/ 冰箱/ }))
+    await userEvent.click(screen.getByRole('button', { name: /^全部项目全部/ }))
+
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(2)
+    })
+    expect(searchCallParams(fetchMock, 1).get('project')).toBeNull()
+    expect(searchCallParams(fetchMock, 1).get('node')).toBeNull()
+    expect(screen.getByRole('button', { name: '全部项目' })).toBeInTheDocument()
   })
 
   it('offers clear filters on no results under filters', async () => {

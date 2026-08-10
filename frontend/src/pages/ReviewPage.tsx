@@ -14,7 +14,7 @@ import { useAuth } from '../auth/useAuth'
 import { useToast } from '../components/useToast'
 import { entryTypeLabels, sourceTypeLabels } from '../inbox/labels'
 import type { EntryType, SourceType } from '../inbox/types'
-import ScopePicker from '../review/ScopePicker'
+import ScopePicker from '../components/ScopePicker'
 import {
   reviewKeys,
   useRecentScans,
@@ -443,7 +443,11 @@ export default function ReviewPage() {
       </header>
 
       <div className="review-scan-bar">
-        <ScopePicker value={scope} onChange={handleScopeChange} />
+        <ScopePicker
+          value={scope}
+          onChange={handleScopeChange}
+          placeholder="请选择审查范围"
+        />
         <button
           type="button"
           className="btn primary review-start-scan"

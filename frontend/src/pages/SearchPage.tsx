@@ -3,30 +3,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import ScopePicker, { type ScopeSelection } from '../components/ScopePicker'
 import { entryTypeLabel, entryTypeOptions, sourceTypeLabels } from '../inbox/labels'
-import { useNodes, useProjects } from '../projects/queries'
-import type { Node } from '../projects/types'
 import { addSearch, clearHistory, readHistory, removeSearch } from '../search/history'
 import type { SearchHistoryItem } from '../search/history'
 import { highlightText } from '../search/highlight'
 import { useSearch, type SearchFilters } from '../search/queries'
 import type { SearchEntryHit, SearchResponse, SearchSourceHit } from '../search/types'
-
-function nodeDepth(nodes: Node[], node: Node): number {
-  const index = new Map(nodes.map((item) => [item.id, item]))
-  let depth = 1
-  let current = node
-  const seen = new Set<string>()
-  while (current.parent_id && index.has(current.parent_id)) {
-    if (seen.has(current.id)) break
-    seen.add(current.id)
-    const parent = index.get(current.parent_id)
-    if (!parent) break
-    depth += 1
-    current = parent
-  }
-  return depth
-}
 
 function SearchHistory({
   items,
@@ -186,10 +169,6 @@ export default function SearchPage() {
   const lastWrittenRef = useRef(urlKeyword)
   const composingRef = useRef(false)
   const recordedDataRef = useRef<SearchResponse | null>(null)
-  const projectsQuery = useProjects()
-  const nodesQuery = useNodes(urlProject)
-  const projects = Array.isArray(projectsQuery.data) ? projectsQuery.data : []
-  const nodes = Array.isArray(nodesQuery.data) ? nodesQuery.data : []
 
   useEffect(() => {
     if (urlKeyword !== lastWrittenRef.current) {
@@ -281,6 +260,13 @@ export default function SearchPage() {
     setSearchParams(params, { replace: true })
   }
 
+  function handleScopeChange(scope: ScopeSelection) {
+    updateFilters({
+      project: scope.project_id ?? '',
+      node: scope.node_id ?? '',
+    })
+  }
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') return
     if (event.nativeEvent.isComposing || composingRef.current) return
@@ -332,21 +318,13 @@ export default function SearchPage() {
       </div>
 
       <div className="search-filters">
-        <label className="search-filter">
-          <span>项目</span>
-          <select
-            value={urlProject}
-            onChange={(event) => updateFilters({ project: event.target.value })}
-            aria-label="筛选项目"
-          >
-            <option value="">全部项目</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ScopePicker
+          value={{ project_id: urlProject || null, node_id: urlNode || null }}
+          onChange={handleScopeChange}
+          placeholder="全部项目"
+          allowClear
+          panelAriaLabel="选择范围"
+        />
         <label className="search-filter">
           <span>类型</span>
           <select
@@ -358,23 +336,6 @@ export default function SearchPage() {
             {entryTypeOptions.map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="search-filter">
-          <span>节点</span>
-          <select
-            value={urlNode}
-            onChange={(event) => updateFilters({ node: event.target.value })}
-            disabled={!urlProject}
-            aria-label="筛选节点"
-          >
-            <option value="">{urlProject ? '全部节点' : '先选择项目'}</option>
-            {nodes.map((node) => (
-              <option key={node.id} value={node.id}>
-                {'　'.repeat(nodeDepth(nodes, node) - 1)}
-                {node.name}
               </option>
             ))}
           </select>

@@ -6,14 +6,27 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNodes, useProjects } from '../projects/queries'
-import type { ReviewScopeSelection } from './types'
 
-interface ScopePickerProps {
-  value: ReviewScopeSelection
-  onChange: (value: ReviewScopeSelection) => void
+export interface ScopeSelection {
+  project_id?: string | null
+  node_id?: string | null
 }
 
-export default function ScopePicker({ value, onChange }: ScopePickerProps) {
+interface ScopePickerProps {
+  value: ScopeSelection
+  onChange: (value: ScopeSelection) => void
+  placeholder?: string
+  allowClear?: boolean
+  panelAriaLabel?: string
+}
+
+export default function ScopePicker({
+  value,
+  onChange,
+  placeholder = '请选择范围',
+  allowClear = false,
+  panelAriaLabel = '选择审查范围',
+}: ScopePickerProps) {
   const [open, setOpen] = useState(false)
   const [expandedProject, setExpandedProject] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -32,17 +45,23 @@ export default function ScopePicker({ value, onChange }: ScopePickerProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
 
-  const projects = projectsQuery.data ?? []
-  const nodes = nodesQuery.data ?? []
+  const projects = Array.isArray(projectsQuery.data) ? projectsQuery.data : []
+  const nodes = Array.isArray(nodesQuery.data) ? nodesQuery.data : []
+  const labelNodes = Array.isArray(labelNodesQuery.data) ? labelNodesQuery.data : []
   const projectName = projects.find((item) => item.id === value.project_id)?.name
-  const nodeName = labelNodesQuery.data?.find(
+  const nodeName = labelNodes.find(
     (item) => item.id === value.node_id,
   )?.name
   const selectedLabel = value.project_id
     ? value.node_id && nodeName
       ? `${projectName ?? ''} / ${nodeName}`
-      : (projectName ?? '请选择审查范围')
-    : '请选择审查范围'
+      : (projectName ?? placeholder)
+    : placeholder
+
+  function selectClear() {
+    onChange({ project_id: null, node_id: null })
+    setOpen(false)
+  }
 
   function selectProject(projectId: string) {
     onChange({ project_id: projectId, node_id: null })
@@ -91,7 +110,17 @@ export default function ScopePicker({ value, onChange }: ScopePickerProps) {
       </button>
 
       {open && (
-        <div className="review-scope-panel" role="listbox" aria-label="选择审查范围">
+        <div className="review-scope-panel" role="listbox" aria-label={panelAriaLabel}>
+          {allowClear && (
+            <button
+              type="button"
+              className="review-scope-item"
+              onClick={selectClear}
+            >
+              <span>{placeholder}</span>
+              <span className="review-scope-scope">全部</span>
+            </button>
+          )}
           {projects.map((project) => {
             const expanded = expandedProject === project.id
             return (
