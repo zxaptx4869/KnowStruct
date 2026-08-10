@@ -35,7 +35,7 @@ class DeepSeekProvider(AIProvider):
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=120.0,
+            timeout=300.0,
             max_retries=0,
         )
 

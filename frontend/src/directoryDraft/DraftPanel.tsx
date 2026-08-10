@@ -8,7 +8,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { mutationMessage } from '../projects/errors'
 import {
   useConfirmDraft,
@@ -51,6 +51,7 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
   const [editName, setEditName] = useState('')
   const [redraftOpen, setRedraftOpen] = useState(false)
   const [redraftBackground, setRedraftBackground] = useState('')
+  const [elapsed, setElapsed] = useState(0)
 
   const clarifyMutation = useSubmitClarify(projectId, draftId)
   const refineMutation = useSubmitRefine(projectId, draftId)
@@ -60,6 +61,16 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
   const redraftMutation = useRedraftDraft(projectId, draftId)
   const editNodeMutation = useEditDraftNode(projectId, draftId)
   const deleteNodeMutation = useDeleteDraftNode(projectId, draftId)
+
+  useEffect(() => {
+    if (draft.status !== 'drafting') return
+    setElapsed(0)
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [draft.status])
 
   const childrenMap = new Map<string | null, DraftNode[]>()
   for (const node of draft.nodes) {
@@ -253,7 +264,12 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
       {draft.status === 'drafting' && (
         <div className="draft-step state-panel" role="status">
           <Loader2 size={18} className="spin state-spinner" />
-          <span>AI 正在生成目录草稿…</span>
+          <span>AI 正在生成目录草稿…（已等待 {elapsed} 秒）</span>
+          {elapsed >= 20 && (
+            <span className="draft-slow-hint">
+              真实 AI 生成通常需要几十秒到几分钟，请耐心等待。
+            </span>
+          )}
         </div>
       )}
 
