@@ -2,7 +2,13 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.base import AIProviderError, ClarifyQuestion, ClarifyResult, OutlineNode
+from app.ai.base import (
+    AIProviderError,
+    ClarifyQuestion,
+    ClarifyResult,
+    OutlineAction,
+    OutlineNode,
+)
 from app.ai.demo import DemoProvider
 from app.services.accounts import create_account
 from app.services.task_worker import process_next_draft
@@ -45,6 +51,44 @@ class TooDeepProvider(DemoProvider):
         self, goal: str, context: str = ""
     ) -> list[OutlineNode]:
         return [_deep_tree(7)]
+
+
+class RenameRefineProvider(DemoProvider):
+    """先改名再引用旧名路径的演示 Provider，验证快照解析。"""
+
+    async def refine_outline(
+        self,
+        draft: list[dict],
+        intent_note: str,
+        instruction: str,
+    ) -> list[OutlineAction]:
+        return [
+            OutlineAction(
+                type="rename",
+                path=["硬装施工模块"],
+                name="硬装施工",
+            ),
+            OutlineAction(
+                type="add",
+                path=["硬装施工模块"],
+                name="水电补充",
+            ),
+        ]
+
+    async def summarize_intent(
+        self, intent_note: str, instruction: str
+    ) -> str:
+        return f"{intent_note or ''}；{instruction}".strip("；")[:500]
+
+
+class UnknownPathRefineProvider(DemoProvider):
+    async def refine_outline(
+        self,
+        draft: list[dict],
+        intent_note: str,
+        instruction: str,
+    ) -> list[OutlineAction]:
+        return [OutlineAction(type="remove", path=["不存在的节点"])]
 
 
 async def _create_generated_draft(
@@ -218,6 +262,72 @@ async def test_refine_and_intent_note(
     names = [node["name"] for node in body["nodes"]]
     assert "新增节点" in names
     assert "增加一个收纳节点" in (body["intent_note"] or "")
+
+
+@pytest.mark.asyncio
+async def test_refine_rename_then_old_path_still_resolves(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    ctx = await _create_generated_draft(client, db)
+    project_id = ctx["project"]["id"]
+    draft_id = ctx["draft_id"]
+
+    await client.post(
+        f"/api/projects/{project_id}/drafts/{draft_id}/refine",
+        json={"instruction": "缩短名称并补充水电"},
+    )
+    assert await process_next_draft(db, RenameRefineProvider()) is True
+    body = (await client.get(f"/api/projects/{project_id}/drafts")).json()["draft"]
+    assert body["status"] == "pending_confirm"
+
+    by_id = {node["id"]: node for node in body["nodes"]}
+    renamed = next(
+        node for node in body["nodes"] if node["name"] == "硬装施工"
+    )
+    added = next(node for node in body["nodes"] if node["name"] == "水电补充")
+    assert added["parent_id"] == renamed["id"]
+    assert "硬装施工模块" not in by_id
+
+
+@pytest.mark.asyncio
+async def test_refine_unknown_path_marks_failed(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    ctx = await _create_generated_draft(client, db)
+    project_id = ctx["project"]["id"]
+    draft_id = ctx["draft_id"]
+
+    await client.post(
+        f"/api/projects/{project_id}/drafts/{draft_id}/refine",
+        json={"instruction": "删除某个节点"},
+    )
+    assert await process_next_draft(db, UnknownPathRefineProvider()) is True
+    body = (await client.get(f"/api/projects/{project_id}/drafts")).json()["draft"]
+    assert body["status"] == "failed"
+    assert "引用了不存在的节点路径" in (body["last_error"] or "")
+
+
+@pytest.mark.asyncio
+async def test_refine_shorten_names_with_demo_provider(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    ctx = await _create_generated_draft(client, db)
+    project_id = ctx["project"]["id"]
+    draft_id = ctx["draft_id"]
+
+    await client.post(
+        f"/api/projects/{project_id}/drafts/{draft_id}/refine",
+        json={"instruction": "把目录名称适当缩短"},
+    )
+    assert await process_next_draft(db, DemoProvider()) is True
+    body = (await client.get(f"/api/projects/{project_id}/drafts")).json()["draft"]
+    assert body["status"] == "pending_confirm"
+    names = [node["name"] for node in body["nodes"]]
+    assert "硬装施工" in names
+    assert "硬装施工模块" not in names
 
 
 @pytest.mark.asyncio

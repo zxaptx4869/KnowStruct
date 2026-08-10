@@ -174,6 +174,14 @@ class DemoProvider(AIProvider):
     ) -> list[OutlineAction]:
         if any(keyword in instruction for keyword in ("加", "添加", "新增")):
             return [OutlineAction(type="add", path=[], name="新增节点")]
+        if any(keyword in instruction for keyword in ("缩短", "精简", "改名")):
+            return [
+                OutlineAction(
+                    type="rename",
+                    path=["硬装施工模块"],
+                    name="硬装施工",
+                )
+            ]
         return []
 
     async def summarize_intent(

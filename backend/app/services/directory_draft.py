@@ -298,6 +298,13 @@ def _find_by_path(
     for node in nodes:
         if paths.get(node.id) == path:
             return node
+    normalized_path = [part.strip().casefold() for part in path]
+    for node in nodes:
+        node_path = [
+            part.strip().casefold() for part in paths.get(node.id, [])
+        ]
+        if node_path == normalized_path:
+            return node
     return None
 
 
@@ -323,14 +330,18 @@ async def apply_actions(
     actions: list,
 ) -> None:
     nodes = await _draft_tree_nodes(db, draft)
-    paths = _node_paths(nodes)
+    # 所有动作的路径都基于起草完成时的原始名称快照解析，
+    # 避免先改名再引用旧名的后续动作解析失败。
+    snapshot_paths = _node_paths(nodes)
 
     for action in actions:
         path = action.path
         if action.type == "add":
-            parent = _find_by_path(nodes, paths, path)
+            parent = _find_by_path(nodes, snapshot_paths, path)
             if path and parent is None:
-                raise AIProviderError("AI 增量修改引用了不存在的父路径，请重试")
+                raise AIProviderError(
+                    f"AI 增量修改引用了不存在的父路径 {path}，请重试"
+                )
             if parent is not None and node_depth(parent.id, index_nodes(nodes)) >= MAX_TREE_DEPTH:
                 raise AIProviderError("AI 增量修改会超过 6 层，请重试")
             name = (action.name or "").strip()
@@ -354,11 +365,12 @@ async def apply_actions(
             db.add(draft_node)
             await db.flush()
             nodes.append(draft_node)
-            paths = _node_paths(nodes)
         elif action.type == "rename":
-            node = _find_by_path(nodes, paths, path)
+            node = _find_by_path(nodes, snapshot_paths, path)
             if node is None:
-                raise AIProviderError("AI 增量修改引用了不存在的节点，请重试")
+                raise AIProviderError(
+                    f"AI 增量修改引用了不存在的节点路径 {path}，请重试"
+                )
             name = (action.name or "").strip()
             if not name or len(name) > 100:
                 raise AIProviderError("AI 增量修改包含无效节点名称，请重试")
@@ -370,25 +382,30 @@ async def apply_actions(
             )
             node.name = name
             node.normalized_name = normalize_node_name(name)
-            paths = _node_paths(nodes)
         elif action.type == "remove":
-            node = _find_by_path(nodes, paths, path)
+            node = _find_by_path(nodes, snapshot_paths, path)
             if node is None:
-                raise AIProviderError("AI 增量修改引用了不存在的节点，请重试")
+                raise AIProviderError(
+                    f"AI 增量修改引用了不存在的节点路径 {path}，请重试"
+                )
             await db.execute(
                 delete(DirectoryDraftNode).where(
                     DirectoryDraftNode.id == node.id
                 )
             )
             nodes = [item for item in nodes if item.id != node.id]
-            paths = _node_paths(nodes)
         elif action.type == "move":
-            node = _find_by_path(nodes, paths, path)
+            node = _find_by_path(nodes, snapshot_paths, path)
             if node is None:
-                raise AIProviderError("AI 增量修改引用了不存在的节点，请重试")
-            target = _find_by_path(nodes, paths, action.to_parent_path or [])
+                raise AIProviderError(
+                    f"AI 增量修改引用了不存在的节点路径 {path}，请重试"
+                )
+            target = _find_by_path(nodes, snapshot_paths, action.to_parent_path or [])
             if action.to_parent_path and target is None:
-                raise AIProviderError("AI 增量修改引用了不存在的目标父路径，请重试")
+                raise AIProviderError(
+                    f"AI 增量修改引用了不存在的目标父路径 "
+                    f"{action.to_parent_path}，请重试"
+                )
             target_id = target.id if target else None
             descendants = set(descendant_ids(node.id, nodes))
             if target_id and (target_id == node.id or target_id in descendants):
@@ -408,7 +425,6 @@ async def apply_actions(
                 if item.parent_id == target_id and item.id != node.id
             ]
             node.sort_order = len(siblings)
-            paths = _node_paths(nodes)
 
 
 async def draft_tree_json(db: AsyncSession, draft: DirectoryDraft) -> list[dict]:
