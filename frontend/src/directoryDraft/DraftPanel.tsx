@@ -1,14 +1,17 @@
 import {
   Check,
+  Info,
   Loader2,
+  MessageSquare,
   Pencil,
   RefreshCw,
   RotateCcw,
+  Send,
   Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { mutationMessage } from '../projects/errors'
 import {
   useConfirmDraft,
@@ -17,10 +20,10 @@ import {
   useEditDraftNode,
   useRedraftDraft,
   useRetryDraft,
+  useSendDraftMessage,
   useSubmitClarify,
-  useSubmitRefine,
 } from './queries'
-import type { DirectoryDraft, DraftNode } from './types'
+import type { DirectoryDraft, DraftMessage, DraftNode } from './types'
 
 interface DraftPanelProps {
   projectId: string
@@ -43,20 +46,44 @@ function nodeDepth(nodes: DraftNode[], node: DraftNode): number {
   return depth
 }
 
+function ChatBubble({ message }: { message: DraftMessage }) {
+  if (message.role === 'system') {
+    const applied = message.content.startsWith('已应用目录')
+    const countMatch = message.content.match(/共 (\d+) 个节点/)
+    return (
+      <div className={`draft-msg draft-msg-system${applied ? ' draft-msg-applied' : ''}`}>
+        {applied ? <Check size={12} /> : <Info size={12} />}
+        <span>
+          {applied && countMatch
+            ? `已更新目录（${countMatch[1]} 个节点）`
+            : message.content}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className={`draft-msg draft-msg-${message.role}`}>
+      <span className="draft-msg-bubble">{message.content}</span>
+    </div>
+  )
+}
+
 export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
   const draftId = draft.id
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
   const [otherOpen, setOtherOpen] = useState<Record<string, boolean>>({})
   const [otherText, setOtherText] = useState<Record<string, string>>({})
-  const [instruction, setInstruction] = useState('')
+  const [chatInput, setChatInput] = useState('')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [redraftOpen, setRedraftOpen] = useState(false)
   const [redraftBackground, setRedraftBackground] = useState('')
   const [elapsed, setElapsed] = useState(0)
+  const chatListRef = useRef<HTMLDivElement>(null)
+  const messageCount = draft.messages?.length ?? 0
 
   const clarifyMutation = useSubmitClarify(projectId, draftId)
-  const refineMutation = useSubmitRefine(projectId, draftId)
+  const chatMutation = useSendDraftMessage(projectId, draftId)
   const confirmMutation = useConfirmDraft(projectId, draftId)
   const discardMutation = useDiscardDraft(projectId, draftId)
   const retryMutation = useRetryDraft(projectId, draftId)
@@ -73,6 +100,20 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [draft.status])
+
+  useEffect(() => {
+    const el = chatListRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messageCount, chatMutation.isPending])
+
+  function sendChatMessage() {
+    const content = chatInput.trim()
+    if (!content || chatMutation.isPending) return
+    void chatMutation.mutateAsync(content).then(
+      () => setChatInput(''),
+      () => undefined,
+    )
+  }
 
   function setSingleAnswer(questionId: string, value: string) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }))
@@ -306,39 +347,67 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
   function renderPreview() {
     return (
       <div className="draft-step">
-        <header className="draft-step-head">
-          <Sparkles size={16} />
-          <strong>AI 目录草稿</strong>
-          <span>{draft.nodes.length} 个节点</span>
-        </header>
-        <div className="draft-tree">
-          {childrenMap.get(null)?.map((node) => renderNode(node))}
-        </div>
-        {draft.intent_note && (
-          <p className="draft-intent">当前意图：{draft.intent_note}</p>
-        )}
-        <div className="draft-refine">
-          <label className="draft-refine-label" htmlFor="draft-instruction">
-            调整意见
-          </label>
-          <textarea
-            id="draft-instruction"
-            className="draft-refine-input"
-            value={instruction}
-            placeholder="例如：更侧重施工流程；去掉预算类节点"
-            onChange={(event) => setInstruction(event.target.value)}
-          />
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!instruction.trim() || refineMutation.isPending}
-            onClick={() => {
-              void refineMutation.mutateAsync(instruction.trim())
-              setInstruction('')
-            }}
-          >
-            <RefreshCw size={14} /> 重新生成
-          </button>
+        <div className="draft-chat-layout">
+          <div className="draft-tree-pane">
+            <header className="draft-step-head">
+              <Sparkles size={16} />
+              <strong>AI 目录草稿</strong>
+              <span>{draft.nodes.length} 个节点</span>
+            </header>
+            <div className="draft-tree">
+              {childrenMap.get(null)?.map((node) => renderNode(node))}
+            </div>
+          </div>
+          <div className="draft-chat">
+            <header className="draft-chat-head">
+              <MessageSquare size={14} />
+              <strong>与 AI 调整目录</strong>
+              <span>{(draft.messages ?? []).filter((m) => m.role === 'user').length}/30 轮</span>
+            </header>
+            <div className="draft-chat-list" ref={chatListRef}>
+              {(draft.messages ?? []).map((message) => (
+                <ChatBubble key={message.id} message={message} />
+              ))}
+              {chatMutation.isPending && (
+                <div className="draft-msg draft-msg-user draft-msg-pending">
+                  <span className="draft-msg-bubble">{chatInput.trim()}</span>
+                  <Loader2 size={13} className="spin" />
+                </div>
+              )}
+            </div>
+            {chatMutation.isError && (
+              <p className="draft-error" role="alert">
+                {mutationMessage(chatMutation.error, '发送失败，请重试')}
+              </p>
+            )}
+            <div className="draft-chat-input-row">
+              <textarea
+                className="draft-chat-input"
+                value={chatInput}
+                placeholder="和 AI 讨论目录，确定后发送，例如：把名称缩短；增加一个收纳节点"
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                    sendChatMessage()
+                  }
+                }}
+                disabled={chatMutation.isPending}
+              />
+              <button
+                type="button"
+                className="btn primary draft-chat-send"
+                disabled={!chatInput.trim() || chatMutation.isPending}
+                onClick={sendChatMessage}
+              >
+                {chatMutation.isPending ? (
+                  <Loader2 size={14} className="spin" />
+                ) : (
+                  <Send size={14} />
+                )}
+                发送
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     )

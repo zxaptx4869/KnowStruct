@@ -1,15 +1,16 @@
 """Deterministic demo AI Provider for local acceptance (AI_PROVIDER=demo)."""
 
+import copy
 import re
 from typing import ClassVar
 
 from app.ai.base import (
     AIProvider,
     AIProviderError,
+    ChatRoundResult,
     ClarifyQuestion,
     ClarifyResult,
     ExtractionResult,
-    OutlineAction,
     OutlineNode,
     ReviewResult,
 )
@@ -43,6 +44,7 @@ class DemoProvider(AIProvider):
 
     def __init__(self) -> None:
         self._retried: set[str] = set()
+        self._heal_state: dict[str, int] = {}
 
     def _device_path(self, content: str) -> str | None:
         return next(
@@ -167,23 +169,92 @@ class DemoProvider(AIProvider):
             )
         return ClarifyResult(needs_more=False, questions=[])
 
-    async def refine_outline(
+    def _demo_mutate_tree(
         self,
-        draft: list[dict],
-        intent_note: str,
+        tree: list[dict],
         instruction: str,
-    ) -> list[OutlineAction]:
+    ) -> list[dict]:
+        """按演示规则确定性修改目录，供本地验收与测试。"""
+        tree = copy.deepcopy(tree)
+        if any(keyword in instruction for keyword in ("缩短", "精简")):
+            for node in tree:
+                if node.get("name") == "硬装施工模块":
+                    node["name"] = "硬装施工"
+                    break
+            return tree
+        if any(keyword in instruction for keyword in ("删除", "去掉", "移除")):
+            for index, node in enumerate(tree):
+                if "水电" in node.get("name", "") or "家具" in node.get("name", ""):
+                    del tree[index]
+                    return tree
+            if tree:
+                tree.pop()
+            return tree
         if any(keyword in instruction for keyword in ("加", "添加", "新增")):
-            return [OutlineAction(type="add", path=[], name="新增节点")]
-        if any(keyword in instruction for keyword in ("缩短", "精简", "改名")):
-            return [
-                OutlineAction(
-                    type="rename",
-                    path=["硬装施工模块"],
-                    name="硬装施工",
+            quoted = re.findall(r"['\"「」]([^'\"「」]+)['\"「」]", instruction)
+            if quoted:
+                name = quoted[-1].strip()
+            elif "收纳" in instruction:
+                name = "收纳节点"
+            elif "概览" in instruction:
+                name = "项目概览"
+            else:
+                name = "新增节点"
+            tree.append({"name": name, "description": None, "children": []})
+            return tree
+        tree.append({"name": "新增节点", "description": None, "children": []})
+        return tree
+
+    async def draft_chat(
+        self,
+        tree: list[dict],
+        messages: list[dict],
+        summary: str | None = None,
+    ) -> ChatRoundResult:
+        """演示会话式微调：讨论不改树；关键字触发应用；支持自愈演示。"""
+        last_user = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"),
+            "",
+        )
+        instruction = (last_user or "").strip()
+        if any(
+            keyword in instruction
+            for keyword in ("讨论", "为什么", "怎么看", "?" , "？")
+        ):
+            return ChatRoundResult(
+                reply_text=(
+                    "这是演示讨论回复：可以继续聊目录颗粒度、层级或某一块的划分，"
+                    "讨论不会改动候选树；确定后告诉我「应用」即可。"
                 )
-            ]
-        return []
+            )
+        if "重名" in instruction:
+            attempt = self._heal_state.get("dup", 0) + 1
+            self._heal_state["dup"] = attempt
+            if attempt == 1:
+                tree = copy.deepcopy(tree)
+                tree.append({"name": "硬装施工模块", "description": None, "children": []})
+                return ChatRoundResult(
+                    reply_text="我先提交一版（含同级重名）。",
+                    tree=tree,
+                )
+            return ChatRoundResult(reply_text="已修正重名。", tree=tree)
+        if "超层" in instruction or "6层" in instruction:
+            attempt = self._heal_state.get("deep", 0) + 1
+            self._heal_state["deep"] = attempt
+            if attempt == 1:
+                root = {"name": "层1", "description": None, "children": []}
+                cursor = root
+                for level in range(2, 9):
+                    child = {"name": f"层{level}", "description": None, "children": []}
+                    cursor["children"] = [child]
+                    cursor = child
+                return ChatRoundResult(
+                    reply_text="我先提交一版（超过 6 层）。",
+                    tree=[root],
+                )
+            return ChatRoundResult(reply_text="已压缩层级。", tree=tree)
+        modified = self._demo_mutate_tree(tree, instruction)
+        return ChatRoundResult(reply_text="已按你的要求更新目录。", tree=modified)
 
     async def summarize_intent(
         self, intent_note: str, instruction: str

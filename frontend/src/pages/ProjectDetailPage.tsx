@@ -1175,7 +1175,6 @@ export default function ProjectDetailPage() {
               </button>
             </div>
           )}
-          {draft && <div id="draft-panel"><DraftPanel projectId={id} draft={draft} /></div>}
           {nodes.length === 0 ? (
             <div className="tree-empty">
               <Folder size={24} />
@@ -1263,6 +1262,11 @@ export default function ProjectDetailPage() {
                 <span>{nodes.length ? '从左侧选择节点查看或维护子目录。' : '创建第一个节点后，目录将在此处展开。'}</span>
               </div>
             </section>
+          )}
+          {draft && !organizeMode && (
+            <div id="draft-panel">
+              <DraftPanel projectId={id} draft={draft} />
+            </div>
           )}
         </main>
       </div>

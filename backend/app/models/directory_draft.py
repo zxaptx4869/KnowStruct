@@ -1,6 +1,6 @@
-"""AI 起草目录候选模型：草稿与草稿节点，确认前不触碰正式 Node。"""
+"""AI 起草目录候选模型：草稿、草稿节点与会话消息，确认前不触碰正式 Node。"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -68,6 +68,12 @@ class DirectoryDraft(UUIDMixin, TimestampMixin, Base):
         default=DraftStatus.DRAFTING,
         server_default=DraftStatus.DRAFTING,
     )
+    conversation_rounds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     next_action: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -86,6 +92,11 @@ class DirectoryDraft(UUIDMixin, TimestampMixin, Base):
 
     project: Mapped[Project] = relationship()
     nodes: Mapped[list["DirectoryDraftNode"]] = relationship(
+        back_populates="draft",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    messages: Mapped[list["DirectoryDraftMessage"]] = relationship(
         back_populates="draft",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -134,3 +145,36 @@ class DirectoryDraftNode(UUIDMixin, Base):
     )
 
     draft: Mapped[DirectoryDraft] = relationship(back_populates="nodes")
+
+
+class DirectoryDraftMessage(UUIDMixin, Base):
+    """草稿会话消息：user / assistant / system，确认或放弃后保留可追溯。"""
+
+    __tablename__ = "directory_draft_messages"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'assistant', 'system')",
+            name="ck_directory_draft_messages_role",
+        ),
+        Index(
+            "ix_directory_draft_messages_draft_created",
+            "draft_id",
+            "created_at",
+        ),
+    )
+
+    draft_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("directory_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+    )
+
+    draft: Mapped[DirectoryDraft] = relationship(back_populates="messages")

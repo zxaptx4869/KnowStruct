@@ -13,6 +13,7 @@ from app.models.capture import (
 )
 from app.models.directory_draft import (
     DirectoryDraft,
+    DirectoryDraftMessage,
     DirectoryDraftNode,
     DraftNextAction,
     DraftStatus,
@@ -39,6 +40,7 @@ __all__ = [
     "AuthSession",
     "Base",
     "DirectoryDraft",
+    "DirectoryDraftMessage",
     "DirectoryDraftNode",
     "DraftNextAction",
     "DraftStatus",

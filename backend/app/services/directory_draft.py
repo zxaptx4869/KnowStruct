@@ -13,6 +13,7 @@ from app.ai.base import AIProviderError, OutlineNode
 from app.api.errors import ConflictError, ResourceNotFoundError
 from app.models import (
     DirectoryDraft,
+    DirectoryDraftMessage,
     DirectoryDraftNode,
     DraftNextAction,
     DraftStatus,
@@ -25,7 +26,6 @@ from app.services.projects import get_project
 from app.utils.tree import (
     MAX_TREE_DEPTH,
     ancestor_ids,
-    descendant_ids,
     index_nodes,
     node_depth,
     normalize_node_name,
@@ -34,6 +34,10 @@ from app.utils.tree import (
 
 MAX_SOURCE_SUMMARY_CHARS = 6000
 ACTIVE_STATUSES = DraftStatus.ACTIVE
+MAX_MESSAGE_CHARS = 2000
+MAX_CONVERSATION_ROUNDS = 30
+KEEP_FULL_ROUNDS = 10
+MAX_SELF_HEAL_RETRIES = 2
 
 
 def utc_now() -> datetime:
@@ -186,17 +190,11 @@ async def replace_draft_nodes(
     outline: list[OutlineNode],
 ) -> None:
     _validate_outline(outline)
-    from app.models.directory_draft import DirectoryDraftNode
-
-    existing = (
-        await db.scalars(
-            select(DirectoryDraftNode).where(
-                DirectoryDraftNode.draft_id == draft.id
-            )
+    await db.execute(
+        delete(DirectoryDraftNode).where(
+            DirectoryDraftNode.draft_id == draft.id
         )
-    ).all()
-    for node in existing:
-        await db.delete(node)
+    )
     await db.flush()
 
     created_by_parent: dict[str | None, list[DirectoryDraftNode]] = {None: []}
@@ -244,6 +242,7 @@ async def draft_payload(
 ) -> dict:
     await db.refresh(draft)
     nodes = await _draft_tree_nodes(db, draft)
+    messages = await list_draft_messages(db, draft.id)
     clarify = json.loads(draft.clarify_json or "[]")
     return {
         "id": draft.id,
@@ -263,200 +262,228 @@ async def draft_payload(
             }
             for node in nodes
         ],
+        "messages": [
+            {
+                "id": message.id,
+                "role": message.role,
+                "content": message.content,
+                "created_at": message.created_at,
+            }
+            for message in messages
+        ],
         "last_error": draft.last_error,
         "created_at": draft.created_at,
         "updated_at": draft.updated_at,
     }
 
 
-def _node_paths(
-    nodes: list[DirectoryDraftNode],
-) -> dict[str, list[str]]:
-    index = {node.id: node for node in nodes}
-    paths: dict[str, list[str]] = {}
-
-    def build(node_id: str) -> list[str]:
-        if node_id in paths:
-            return paths[node_id]
-        node = index.get(node_id)
-        if node is None:
-            return []
-        parent_path = build(node.parent_id) if node.parent_id else []
-        path = [*parent_path, node.name]
-        paths[node_id] = path
-        return path
-
-    for node in nodes:
-        build(node.id)
-    return paths
-
-
-def _find_by_path(
-    nodes: list[DirectoryDraftNode],
-    paths: dict[str, list[str]],
-    path: list[str],
-) -> DirectoryDraftNode | None:
-    for node in nodes:
-        if paths.get(node.id) == path:
-            return node
-    normalized_path = [part.strip().casefold() for part in path]
-    for node in nodes:
-        node_path = [
-            part.strip().casefold() for part in paths.get(node.id, [])
-        ]
-        if node_path == normalized_path:
-            return node
-    return None
-
-
-def _find_add_parent(
-    nodes: list[DirectoryDraftNode],
-    paths: dict[str, list[str]],
-    path: list[str],
-) -> DirectoryDraftNode | None:
-    """add 动作的父路径解析：精确 → 忽略空白/大小写 → 后缀 → 末段唯一。"""
-    if not path:
-        return None
-    node = _find_by_path(nodes, paths, path)
-    if node is not None:
-        return node
-    normalized = [part.strip().casefold() for part in path]
-    for candidate in nodes:
-        candidate_path = [
-            part.strip().casefold() for part in paths.get(candidate.id, [])
-        ]
-        if candidate_path[-len(normalized):] == normalized:
-            return candidate
-    last = normalized[-1] if normalized else None
-    if last:
-        matches = [
-            candidate
-            for candidate in nodes
-            if paths.get(candidate.id)
-            and paths[candidate.id][-1].strip().casefold() == last
-        ]
-        if len(matches) == 1:
-            return matches[0]
-    return None
-
-
-def _ensure_sibling_unique(
-    nodes: list[DirectoryDraftNode],
-    parent_id: str | None,
-    normalized_name: str,
+def _tree_dicts_to_outline(
+    items: list[dict],
     *,
-    exclude_id: str | None = None,
+    depth: int = 1,
+    path: tuple[str, ...] = (),
+) -> list[OutlineNode]:
+    """把模型提交的完整嵌套树转为 OutlineNode 并做严格校验（含路径化错误反馈）。"""
+    if depth > MAX_TREE_DEPTH:
+        raise AIProviderError(
+            f"目录层级超过 {MAX_TREE_DEPTH} 层：{' / '.join(path) or '根目录'}"
+        )
+    result: list[OutlineNode] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise AIProviderError("目录树节点必须是对象，请检查提交格式")
+        name = str(item.get("name", "")).strip()
+        node_path = (*path, name or "（空名称）")
+        label = " / ".join(node_path)
+        if not name or len(name) > 100:
+            raise AIProviderError(f"节点名称需为 1-100 字符：{label}")
+        normalized = normalize_node_name(name)
+        if normalized in seen:
+            raise AIProviderError(f"同一父节点下存在重名节点：{label}")
+        seen.add(normalized)
+        description = item.get("description")
+        if description is not None:
+            description = str(description).strip()
+            if len(description) > 1000:
+                raise AIProviderError(f"节点说明最多 1000 字符：{label}")
+            description = description or None
+        children = _tree_dicts_to_outline(
+            item.get("children") or [],
+            depth=depth + 1,
+            path=node_path,
+        )
+        result.append(
+            OutlineNode(title=name, description=description, children=children)
+        )
+    return result
+
+
+async def list_draft_messages(
+    db: AsyncSession,
+    draft_id: str,
+) -> list[DirectoryDraftMessage]:
+    return list(
+        (
+            await db.scalars(
+                select(DirectoryDraftMessage)
+                .where(DirectoryDraftMessage.draft_id == draft_id)
+                .order_by(
+                    DirectoryDraftMessage.created_at,
+                    DirectoryDraftMessage.id,
+                )
+            )
+        ).all()
+    )
+
+
+async def _append_draft_message(
+    db: AsyncSession,
+    draft_id: str,
+    role: str,
+    content: str,
 ) -> None:
-    if any(
-        node.parent_id == parent_id
-        and node.normalized_name == normalized_name
-        and node.id != exclude_id
-        for node in nodes
-    ):
-        raise AIProviderError("增量修改产生同级重名节点，请重试")
+    db.add(
+        DirectoryDraftMessage(
+            draft_id=draft_id,
+            role=role,
+            content=content,
+        )
+    )
+    await db.flush()
 
 
-async def apply_actions(
+def _compose_early_summary_text(
+    messages: list[DirectoryDraftMessage],
+) -> str:
+    role_label = {"user": "用户", "assistant": "助手", "system": "系统"}
+    return "\n".join(
+        f"{role_label.get(message.role, message.role)}：{message.content}"
+        for message in messages
+    )[:4000]
+
+
+async def _compress_history(
     db: AsyncSession,
     draft: DirectoryDraft,
-    actions: list,
+    provider: AIProvider,
+    messages: list[DirectoryDraftMessage],
 ) -> None:
-    nodes = await _draft_tree_nodes(db, draft)
-    # 所有动作的路径都基于起草完成时的原始名称快照解析，
-    # 避免先改名再引用旧名的后续动作解析失败。
-    snapshot_paths = _node_paths(nodes)
+    """保留最近 KEEP_FULL_ROUNDS 轮，更早轮次压缩为早期意图摘要（失败则丢弃）。"""
+    user_indexes = [
+        index
+        for index, message in enumerate(messages)
+        if message.role == "user"
+    ]
+    if len(user_indexes) <= KEEP_FULL_ROUNDS:
+        return
+    cutoff = user_indexes[-KEEP_FULL_ROUNDS]
+    early = messages[:cutoff]
+    if not early:
+        return
+    if not draft.intent_note:
+        try:
+            draft.intent_note = await provider.summarize_intent(
+                "",
+                _compose_early_summary_text(early),
+            )
+        except AIProviderError:
+            draft.intent_note = None
+    for message in early:
+        await db.delete(message)
+    await db.flush()
 
-    for action in actions:
-        path = action.path
-        if action.type == "add":
-            parent = _find_add_parent(nodes, snapshot_paths, path)
-            if path and parent is None:
-                raise AIProviderError(
-                    f"AI 增量修改引用了不存在的父路径 {path}，请重试"
-                )
-            if parent is not None and node_depth(parent.id, index_nodes(nodes)) >= MAX_TREE_DEPTH:
-                raise AIProviderError("AI 增量修改会超过 6 层，请重试")
-            name = (action.name or "").strip()
-            if not name or len(name) > 100:
-                raise AIProviderError("AI 增量修改包含无效节点名称，请重试")
-            _ensure_sibling_unique(nodes, parent.id if parent else None, normalize_node_name(name))
-            siblings = [
-                node
-                for node in nodes
-                if node.parent_id == (parent.id if parent else None)
-            ]
-            draft_node = DirectoryDraftNode(
-                draft_id=draft.id,
-                parent_id=parent.id if parent else None,
-                name=name,
-                normalized_name=normalize_node_name(name),
-                description=(action.description or "").strip()[:1000] or None,
-                selected=True,
-                sort_order=len(siblings),
+
+async def submit_draft_message(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+    draft_id: str,
+    content: str,
+    provider: AIProvider,
+) -> tuple[DirectoryDraft, list[DirectoryDraftMessage]]:
+    """会话轮：追加用户消息 → 注入最新候选树调用模型 → 应用/反馈 → 有界自愈重试。"""
+    draft = await get_draft(db, workspace_id, project_id, draft_id)
+    if draft.status != DraftStatus.PENDING_CONFIRM:
+        raise ConflictError("draft_not_confirmable", "草稿当前不能会话调整")
+    content = content.strip()
+    if not content:
+        raise ConflictError("message_empty", "消息内容不能为空")
+    if len(content) > MAX_MESSAGE_CHARS:
+        raise ConflictError(
+            "message_too_long",
+            f"消息最长 {MAX_MESSAGE_CHARS} 字符",
+        )
+
+    if draft.conversation_rounds >= MAX_CONVERSATION_ROUNDS:
+        raise ConflictError(
+            "draft_conversation_limit",
+            f"会话轮次已达上限（{MAX_CONVERSATION_ROUNDS}），请重新起草开启新会话",
+        )
+
+    await _append_draft_message(db, draft.id, "user", content)
+    draft.conversation_rounds = draft.conversation_rounds + 1
+    await db.flush()
+    messages = await list_draft_messages(db, draft.id)
+    await _compress_history(db, draft, provider, messages)
+    messages = await list_draft_messages(db, draft.id)
+
+    tree = await draft_tree_json(db, draft)
+    convo = [
+        {"role": message.role, "content": message.content}
+        for message in messages
+    ]
+    retries = 0
+    while True:
+        result = await provider.draft_chat(
+            tree,
+            convo,
+            summary=draft.intent_note,
+        )
+        if result.tree is None:
+            await _append_draft_message(
+                db,
+                draft.id,
+                "assistant",
+                result.reply_text.strip() or "（已收到你的消息）",
             )
-            db.add(draft_node)
-            await db.flush()
-            nodes.append(draft_node)
-        elif action.type == "rename":
-            node = _find_by_path(nodes, snapshot_paths, path)
-            if node is None:
-                raise AIProviderError(
-                    f"AI 增量修改引用了不存在的节点路径 {path}，请重试"
-                )
-            name = (action.name or "").strip()
-            if not name or len(name) > 100:
-                raise AIProviderError("AI 增量修改包含无效节点名称，请重试")
-            _ensure_sibling_unique(
-                nodes,
-                node.parent_id,
-                normalize_node_name(name),
-                exclude_id=node.id,
+            break
+        try:
+            outline = _tree_dicts_to_outline(result.tree)
+            await replace_draft_nodes(db, draft, outline)
+            node_count = _count_outline(outline)
+            await _append_draft_message(
+                db,
+                draft.id,
+                "assistant",
+                result.reply_text.strip() or "（已提交目录树）",
             )
-            node.name = name
-            node.normalized_name = normalize_node_name(name)
-        elif action.type == "remove":
-            node = _find_by_path(nodes, snapshot_paths, path)
-            if node is None:
-                raise AIProviderError(
-                    f"AI 增量修改引用了不存在的节点路径 {path}，请重试"
-                )
-            await db.execute(
-                delete(DirectoryDraftNode).where(
-                    DirectoryDraftNode.id == node.id
-                )
+            await _append_draft_message(
+                db,
+                draft.id,
+                "system",
+                f"已应用目录，共 {node_count} 个节点",
             )
-            nodes = [item for item in nodes if item.id != node.id]
-        elif action.type == "move":
-            node = _find_by_path(nodes, snapshot_paths, path)
-            if node is None:
-                raise AIProviderError(
-                    f"AI 增量修改引用了不存在的节点路径 {path}，请重试"
+            break
+        except AIProviderError as exc:
+            feedback = f"未应用变更：{exc}"
+            await _append_draft_message(db, draft.id, "system", feedback)
+            convo.append({"role": "system", "content": feedback})
+            if retries >= MAX_SELF_HEAL_RETRIES:
+                await _append_draft_message(
+                    db,
+                    draft.id,
+                    "system",
+                    "已停止自动重试，请人工处理：可直接在目录预览中修改，或修改描述后重新发送。",
                 )
-            target = _find_by_path(nodes, snapshot_paths, action.to_parent_path or [])
-            if action.to_parent_path and target is None:
-                raise AIProviderError(
-                    f"AI 增量修改引用了不存在的目标父路径 "
-                    f"{action.to_parent_path}，请重试"
-                )
-            target_id = target.id if target else None
-            descendants = set(descendant_ids(node.id, nodes))
-            if target_id and (target_id == node.id or target_id in descendants):
-                raise AIProviderError("AI 增量修改产生循环移动，请重试")
-            if target is not None and node_depth(target.id, index_nodes(nodes)) >= MAX_TREE_DEPTH:
-                raise AIProviderError("AI 增量修改会超过 6 层，请重试")
-            _ensure_sibling_unique(
-                nodes,
-                target_id,
-                node.normalized_name,
-                exclude_id=node.id,
-            )
-            node.parent_id = target_id
-            siblings = [
-                item
-                for item in nodes
-                if item.parent_id == target_id and item.id != node.id
-            ]
-            node.sort_order = len(siblings)
+                break
+            retries += 1
+
+    return draft, await list_draft_messages(db, draft.id)
+
+
+def _count_outline(nodes: list[OutlineNode]) -> int:
+    return len(nodes) + sum(_count_outline(node.children) for node in nodes)
 
 
 async def draft_tree_json(db: AsyncSession, draft: DirectoryDraft) -> list[dict]:
@@ -531,29 +558,9 @@ async def generate_draft_step(
         return
 
     if draft.next_action == DraftNextAction.REFINE:
-        tree = await draft_tree_json(db, draft)
-        instruction = draft.refine_instruction or ""
-        actions = await provider.refine_outline(
-            tree,
-            draft.intent_note or "",
-            instruction,
+        raise AIProviderError(
+            "指令式微调已升级为会话式微调，请重新起草后直接在会话中沟通"
         )
-        await apply_actions(db, draft, actions)
-        draft.status = DraftStatus.PENDING_CONFIRM
-        draft.finished_at = utc_now()
-        try:
-            draft.intent_note = await provider.summarize_intent(
-                draft.intent_note or "",
-                instruction,
-            )
-        except AIProviderError:
-            combined = "；".join(
-                part
-                for part in (draft.intent_note or "", instruction)
-                if part and part.strip()
-            )
-            draft.intent_note = combined[:500]
-        return
 
 
 async def submit_clarify_answers(
@@ -575,25 +582,6 @@ async def submit_clarify_answers(
     return draft
 
 
-async def submit_refine(
-    db: AsyncSession,
-    workspace_id: str,
-    project_id: str,
-    draft_id: str,
-    instruction: str,
-) -> DirectoryDraft:
-    draft = await get_draft(db, workspace_id, project_id, draft_id)
-    if draft.status != DraftStatus.PENDING_CONFIRM:
-        raise ConflictError("draft_not_confirmable", "草稿当前不能微调")
-    draft.refine_instruction = instruction
-    draft.next_action = DraftNextAction.REFINE
-    draft.status = DraftStatus.DRAFTING
-    draft.last_error = None
-    draft.finished_at = None
-    draft.claimed_at = None
-    return draft
-
-
 async def redraft(
     db: AsyncSession,
     workspace_id: str,
@@ -604,21 +592,21 @@ async def redraft(
     draft = await get_draft(db, workspace_id, project_id, draft_id)
     if draft.status not in (DraftStatus.PENDING_CONFIRM, DraftStatus.FAILED):
         raise ConflictError("draft_not_redraftable", "草稿当前不能重新起草")
-    existing = (
-        await db.scalars(
-            select(DirectoryDraftNode).where(
-                DirectoryDraftNode.draft_id == draft.id
-            )
+    await db.execute(
+        delete(DirectoryDraftNode).where(
+            DirectoryDraftNode.draft_id == draft.id
         )
-    ).all()
-    for node in existing:
-        await db.delete(node)
+    )
+    messages = await list_draft_messages(db, draft.id)
+    for message in messages:
+        await db.delete(message)
     await db.flush()
     draft.background_snapshot = background
     draft.clarify_json = None
     draft.clarify_answers_json = None
     draft.refine_instruction = None
     draft.intent_note = None
+    draft.conversation_rounds = 0
     draft.last_error = None
     draft.next_action = DraftNextAction.CLARIFY
     draft.status = DraftStatus.DRAFTING

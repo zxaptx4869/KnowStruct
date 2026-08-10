@@ -14,6 +14,13 @@ export interface DraftQuestion {
   multiple: boolean
 }
 
+export interface DraftMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  created_at: string
+}
+
 export type DraftStatus =
   | 'drafting'
   | 'awaiting_input'
@@ -30,6 +37,7 @@ export interface DirectoryDraft {
   intent_note: string | null
   clarify: DraftQuestion[]
   nodes: DraftNode[]
+  messages: DraftMessage[]
   last_error: string | null
   created_at: string
   updated_at: string
@@ -42,4 +50,9 @@ export interface DraftEnvelope {
 export interface DraftConfirmResult {
   created_count: number
   status: DraftStatus
+}
+
+export interface DraftChatResponse {
+  draft: DirectoryDraft
+  messages: DraftMessage[]
 }

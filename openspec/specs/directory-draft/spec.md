@@ -3,7 +3,8 @@
 ## Purpose
 
 定义空项目内 AI 起草初始知识目录的候选能力：单轮澄清、候选树生成与校验、预览编辑、
-指令式增量微调、意图说明、重新起草、确认创建，以及单草稿与手动创建互斥的并发规则。
+会话式微调（讨论与应用）、会话历史与生命周期、重新起草、确认创建，
+以及单草稿与手动创建互斥的并发规则。
 
 ## Requirements
 
@@ -99,32 +100,68 @@ MUST NOT 自动执行或自动创建节点。同一项目同时 MUST 至多存�
 - **WHEN** 用户删除某候选节点
 - **THEN** 该节点及其后代从确认范围移除，不影响其他节点
 
-### Requirement: Instruction-based refinement and intent note
+### Requirement: Conversational refinement
 
-微调调用 SHALL 只组装「当前草稿 + 当前意图说明 + 本次意见」，MUST NOT 重复发送
-原始背景与 Source 摘要。AI 输出 MUST 为增量改动清单（新增/改名/删除/移动），
-提示词 MUST 声明未提及节点原样保留。系统 SHALL 维护「当前意图说明」：微调确认后
-将本次意见并入说明，用户可编辑；AI 浓缩说明失败时 MUST 回退为追加原文。
+系统 SHALL 为待确认草稿提供会话式微调：用户每条消息 SHALL 追加到会话历史，
+系统以「约束提示 + 当前候选树快照 + 全量会话历史」调用带工具 `apply_directory_tree`
+的模型。模型只讨论时 SHALL 返回文字且不改变候选树；模型决定应用目录时 SHALL 通过
+工具调用提交完整目标树（嵌套 JSON）。系统 SHALL 严格校验目标树（≤6 层、同级标准化
+名称唯一、名称 1-100、说明 ≤1000），校验通过 SHALL 应用为候选树并回写「已应用」
+反馈，校验失败 SHALL 回写具体原因并允许模型修正（有界重试，最多 2 次），仍失败
+MUST 保持草稿可编辑并提示人工处理。每次调用 MUST 注入当前最新候选树（含用户手动
+预览改动）。
 
-#### Scenario: Refine with a single instruction
-- **WHEN** 用户在调整意见框输入一句修改要求并提交
-- **THEN** 系统以草稿、意图说明与新意见调用 AI，应用增量改动并更新草稿
+#### Scenario: Discuss without changing the tree
+- **WHEN** 用户在会话中提出与目录相关的讨论问题且模型未调用工具
+- **THEN** 模型以文字回复，候选树保持不变，消息追加到会话
 
-#### Scenario: Keep untouched nodes unchanged
-- **WHEN** 用户意见只涉及部分节点
-- **THEN** 草稿中未提及的节点结构与名称保持不变
+#### Scenario: Apply the full target tree via tool call
+- **WHEN** 用户要求按讨论结果修改目录且模型调用 `apply_directory_tree`
+- **THEN** 系统校验并应用完整目标树，预览更新，会话显示「已更新目录」标记
 
-#### Scenario: Let the latest instruction win
-- **WHEN** 用户新意见与意图说明或原始背景冲突
-- **THEN** 系统以最新用户意见为最高优先级执行增量修改
+#### Scenario: Inject the current tree into every turn
+- **WHEN** 用户在预览中手动修改过节点后再发消息
+- **THEN** 调用上下文包含含手动改动的最新候选树，模型基于最新状态输出
 
-#### Scenario: Update the intent note after confirmation
-- **WHEN** 用户确认一次微调结果
-- **THEN** 本次意见并入意图说明（AI 浓缩成功用浓缩段，否则追加原文），用户可再编辑
+#### Scenario: Self-heal an invalid tree with feedback
+- **WHEN** 模型提交的树存在同级重名或超过 6 层等违规
+- **THEN** 系统不应用并回写具体违规原因，模型修正后重新调用且成功应用
 
-#### Scenario: Keep the draft on refinement failure
-- **WHEN** 微调调用失败或输出校验失败
-- **THEN** 草稿保持原样并提示失败原因，用户可重试或继续手动编辑
+#### Scenario: Give up after bounded retries
+- **WHEN** 模型连续 2 次提交仍不合法的树
+- **THEN** 系统停止自动重试，会话显示违规原因，草稿保持可编辑，不应用任何变更
+
+#### Scenario: Keep the confirm boundary
+- **WHEN** 会话应用了候选树但用户未确认采用
+- **THEN** 不创建任何正式节点，确认采用时仍执行既有约束二次校验
+
+### Requirement: Conversation history and lifecycle
+
+系统 SHALL 将每个草稿的会话消息持久化（user/assistant/system 角色），草稿重新起草时
+MUST 清空该草稿的会话历史，草稿放弃或确认后会话入口 SHALL 关闭且消息保留可追溯。
+历史 SHALL 有界：最近 10 轮完整保留，更早轮次压缩为早期意图摘要（压缩失败时丢弃
+最早轮次）；单个会话轮次 MUST 不超过 30。消息读写 MUST 经项目归属限定到当前认证
+Workspace。会话 UI SHALL 在桌面与 390px 移动视口可用，树与消息区不横向溢出。
+
+#### Scenario: Persist and restore a conversation
+- **WHEN** 用户发送消息后刷新页面或重新进入草稿
+- **THEN** 会话历史完整恢复，候选树保持上次应用状态
+
+#### Scenario: Clear conversation on redraft
+- **WHEN** 用户发起重新起草
+- **THEN** 草稿会话历史被清空，候选树按新背景重新生成
+
+#### Scenario: Bound history by summary and cap
+- **WHEN** 会话超过 10 轮或接近 30 轮上限
+- **THEN** 更早轮次被压缩为摘要（或丢弃），超限时提示开启新会话/重新起草，不无限增长
+
+#### Scenario: Hide another workspace's conversation
+- **WHEN** 已认证用户使用其他 Workspace 的项目标识读取或发送会话消息
+- **THEN** 系统按项目不存在处理，不暴露任何消息或草稿
+
+#### Scenario: Use the chat on mobile
+- **WHEN** 用户在 390px 移动视口查看候选树并发起会话
+- **THEN** 树预览、消息区与输入框均可用且不横向溢出，发送后等待态明确
 
 ### Requirement: Redraft from updated background
 
@@ -183,7 +220,7 @@ SHALL 保留草稿并允许重试或放弃；放弃后起草入口恢复。所�
 
 ### Requirement: Mobile draft flow
 
-起草、澄清、预览编辑、微调与确认 SHALL 在 390px 移动视口可用，与桌面同一响应式
+起草、澄清、预览编辑、会话式调整与确认 SHALL 在 390px 移动视口可用，与桌面同一响应式
 面板；控件纵向排布且不横向溢出。
 
 #### Scenario: Complete the draft flow on mobile

@@ -1,15 +1,16 @@
-"""OpenAI 兼容 Provider 共用的 JSON 候选请求与结构化解析。"""
+"""OpenAI 兼容 Provider 共用的 JSON 候选请求、结构化解析与会话工具调用。"""
 
 import json
+import re
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.ai.base import (
     AIProviderError,
+    ChatRoundResult,
     ClarifyQuestion,
     ClarifyResult,
     ExtractionResult,
-    OutlineAction,
     OutlineNode,
     ReviewResult,
 )
@@ -60,28 +61,58 @@ CLARIFY_SYSTEM_PROMPT = (
     "不要输出 JSON 之外的任何内容。"
 )
 
-REFINE_SYSTEM_PROMPT = (
-    "你是 KnowStruct 的知识目录调整助手。用户会提供当前目录草稿、用户意图说明"
-    "和本次调整意见。请只按意见做增量修改，未提及的节点一律原样保留。"
-    '必须只输出一个 JSON 对象，格式为 {"actions": [{"type": "add", "path": '
-    '["父节点路径"], "name": "新节点名", "description": "说明"}, {"type": '
-    '"rename", "path": ["节点路径"], "name": "新名称"}, {"type": "remove", '
-    '"path": ["节点路径"]}, {"type": "move", "path": ["节点路径"], '
-    '"to_parent_path": ["目标父路径"]}]}。'
-    "path 是从根到目标节点的名称数组；add 的 path 是父节点路径（根为 []）。"
-    "path 中的节点名必须与草稿完全一致，不得改写、缩写、翻译或增删字符；"
-    "add 的父路径必须是草稿中已存在的节点；若目标父节点不存在，"
-    "请选择最近的已存在父节点或根 []，不要臆造层级。"
-    "如果草稿中不存在可执行路径，请直接输出空 actions 并说明无法执行。"
-    "不要输出 JSON 之外的任何内容。"
-)
-
 INTENT_SYSTEM_PROMPT = (
     "把用户的历史意图说明与本次调整意见浓缩成一段不超过 100 字的"
     "「当前有效意图说明」，保留用户的最新要求。"
     '必须只输出一个 JSON 对象，格式为 {"intent": "..."}。'
     "不要输出 JSON 之外的任何内容。"
 )
+
+CHAT_SYSTEM_PROMPT = (
+    "你是 KnowStruct 的知识目录共创助手。当前项目正在起草一份知识目录候选树，"
+    "你可以与用户讨论目录结构，或按讨论结果应用目录。"
+    "只有当用户明确要求应用/确定目录时，才调用 apply_directory_tree 工具提交"
+    "完整目标树；纯讨论（提问、解释、权衡、提建议）绝不调用工具，只返回文字。"
+    "目录约束：节点名称 1-100 字符且不能为空；同一父节点下名称不能重复；"
+    "层级不超过 6 层；节点说明最多 1000 字符。"
+    "应用时输出完整目标树（嵌套 JSON，包含全部仍应保留的节点，不包含任何 id），"
+    "不得把完整树当成增量修改。"
+)
+
+APPLY_DIRECTORY_TREE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "apply_directory_tree",
+        "description": (
+            "把完整目标目录树应用到候选草稿。仅当用户明确要求应用/确定目录时调用；"
+            "纯讨论绝不调用。参数为嵌套 JSON，包含全部节点（不是增量修改），"
+            "不包含任何 id。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "description": "根节点数组；每项含 name（1-100 字符）、"
+                    "description（可选，≤1000 字符）与 children（子节点数组，结构与父节点相同）。",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "description": {"type": "string"},
+                            "children": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                            },
+                        },
+                        "required": ["name"],
+                    },
+                }
+            },
+            "required": ["nodes"],
+        },
+    },
+}
 
 
 def _parse_json_content(content: str) -> dict:
@@ -361,55 +392,6 @@ async def request_json_clarify(
     return ClarifyResult(needs_more=needs_more, questions=questions)
 
 
-async def request_json_refine(
-    client,
-    model: str,
-    draft: list[dict],
-    intent_note: str,
-    instruction: str,
-) -> list[OutlineAction]:
-    """请求增量修改动作清单。"""
-    payload = await _request_json(
-        client,
-        model,
-        REFINE_SYSTEM_PROMPT,
-        (
-            f"当前目录草稿（JSON）：\n{json.dumps(draft, ensure_ascii=False)}\n\n"
-            f"用户意图说明：\n{intent_note or '（无）'}\n\n"
-            f"本次调整意见：\n{instruction}"
-        ),
-    )
-    raw_actions = payload.get("actions")
-    if not isinstance(raw_actions, list):
-        raise AIProviderError("AI 输出缺少 actions 数组，请重试")
-    actions: list[OutlineAction] = []
-    for item in raw_actions:
-        if not isinstance(item, dict):
-            continue
-        action_type = str(item.get("type", ""))
-        if action_type not in ("add", "rename", "remove", "move"):
-            raise AIProviderError("AI 增量修改包含未知动作类型，请重试")
-        path = [str(part) for part in item.get("path") or [] if str(part)]
-        actions.append(
-            OutlineAction(
-                type=action_type,
-                path=path,
-                name=str(item["name"]).strip() if item.get("name") else None,
-                description=(
-                    str(item["description"]).strip()
-                    if item.get("description")
-                    else None
-                ),
-                to_parent_path=(
-                    [str(part) for part in item.get("to_parent_path") or [] if str(part)]
-                    if item.get("to_parent_path")
-                    else None
-                ),
-            )
-        )
-    return actions
-
-
 async def request_json_intent(
     client,
     model: str,
@@ -427,6 +409,78 @@ async def request_json_intent(
     if not intent:
         raise AIProviderError("AI 意图浓缩输出为空，请重试")
     return intent[:500]
+
+
+def _parse_marker_tree(text: str) -> list[dict] | None:
+    """工具调用不可用时，从模型文本中解析约定标记块（```directory-tree JSON```）。"""
+    fence = re.search(
+        r"```(?:directory-tree|json)\s*\n(.*?)\n```",
+        text or "",
+        re.DOTALL,
+    )
+    if fence:
+        try:
+            payload = json.loads(fence.group(1))
+        except json.JSONDecodeError:
+            payload = None
+        nodes = payload.get("nodes") if isinstance(payload, dict) else None
+        if isinstance(nodes, list):
+            return nodes
+    try:
+        payload = _parse_json_content(text or "")
+    except AIProviderError:
+        return None
+    nodes = payload.get("nodes")
+    return nodes if isinstance(nodes, list) else None
+
+
+async def request_chat_round(
+    client,
+    model: str,
+    tree: list[dict],
+    messages: list[dict],
+    summary: str | None = None,
+) -> ChatRoundResult:
+    """带 apply_directory_tree 工具的一次会话轮调用：解析工具调用或回退文本标记。"""
+    system_content = (
+        CHAT_SYSTEM_PROMPT
+        + f"\n\n当前候选目录树（JSON）：\n{json.dumps(tree, ensure_ascii=False)}"
+    )
+    if summary:
+        system_content += f"\n\n早期对话摘要（已压缩）：\n{summary}"
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system_content}, *messages],
+            tools=[APPLY_DIRECTORY_TREE_TOOL],
+            tool_choice="auto",
+            temperature=0.3,
+        )
+    except Exception as exc:
+        raise AIProviderError(f"AI 服务调用失败：{exc}") from exc
+
+    message = response.choices[0].message if response.choices else None
+    if message is None:
+        raise AIProviderError("AI 服务未返回结果，请重试")
+    text = (message.content or "").strip()
+
+    if message.tool_calls:
+        for call in message.tool_calls:
+            if call.function.name != "apply_directory_tree":
+                continue
+            try:
+                args = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError as exc:
+                raise AIProviderError("AI 工具调用参数不是有效 JSON，请重试") from exc
+            nodes = args.get("nodes") if isinstance(args, dict) else None
+            if not isinstance(nodes, list):
+                raise AIProviderError("AI 工具调用缺少 nodes 数组，请重试")
+            return ChatRoundResult(
+                reply_text=text or "（已提交目录树）",
+                tree=nodes,
+            )
+
+    return ChatRoundResult(reply_text=text, tree=_parse_marker_tree(text))
 
 
 async def request_json_review(

@@ -38,6 +38,13 @@ class OutlineAction:
 
 
 @dataclass
+class ChatRoundResult:
+    """会话式微调的一轮结果：纯讨论只返回文字；应用目录时附带完整目标树。"""
+    reply_text: str
+    tree: list[dict] | None = None
+
+
+@dataclass
 class ExtractionResult:
     """AI 信息提取结果"""
     title: str
@@ -84,14 +91,14 @@ class AIProvider(ABC):
         """判断信息是否充足；不足时生成单轮澄清问题。"""
         raise AIProviderError("AI 澄清能力尚未实现")
 
-    async def refine_outline(
+    async def draft_chat(
         self,
-        draft: list[dict],
-        intent_note: str,
-        instruction: str,
-    ) -> list[OutlineAction]:
-        """按用户意见对当前草稿做增量修改，未提及节点原样保留。"""
-        raise AIProviderError("AI 增量调整能力尚未实现")
+        tree: list[dict],
+        messages: list[dict],
+        summary: str | None = None,
+    ) -> ChatRoundResult:
+        """会话式微调：模型可只讨论（返回文字），或通过 apply_directory_tree 提交完整目标树。"""
+        raise AIProviderError("AI 会话式微调能力尚未实现")
 
     async def summarize_intent(
         self, intent_note: str, instruction: str

@@ -7,18 +7,18 @@ from openai import AsyncOpenAI
 from app.ai.base import (
     AIProvider,
     AIProviderError,
+    ChatRoundResult,
     ClarifyResult,
     ExtractionResult,
-    OutlineAction,
     OutlineNode,
     ReviewResult,
 )
 from app.ai.openai_compat import (
+    request_chat_round,
     request_json_candidates,
     request_json_clarify,
     request_json_intent,
     request_json_outline,
-    request_json_refine,
     request_json_review,
 )
 
@@ -112,18 +112,18 @@ class DoubaoProvider(AIProvider):
     ) -> ClarifyResult:
         return await request_json_clarify(self._client, self.model, goal, context)
 
-    async def refine_outline(
+    async def draft_chat(
         self,
-        draft: list[dict],
-        intent_note: str,
-        instruction: str,
-    ) -> list[OutlineAction]:
-        return await request_json_refine(
+        tree: list[dict],
+        messages: list[dict],
+        summary: str | None = None,
+    ) -> ChatRoundResult:
+        return await request_chat_round(
             self._client,
             self.model,
-            draft,
-            intent_note,
-            instruction,
+            tree,
+            messages,
+            summary,
         )
 
     async def summarize_intent(

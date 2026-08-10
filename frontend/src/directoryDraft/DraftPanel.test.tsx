@@ -17,6 +17,7 @@ function draft(overrides: Partial<DirectoryDraft> = {}): DirectoryDraft {
     next_action: 'generate',
     intent_note: null,
     clarify: [],
+    messages: [],
     nodes: [
       { id: 'n1', parent_id: null, name: '硬装施工模块', description: null, selected: true, sort_order: 0 },
       { id: 'n2', parent_id: 'n1', name: '水电改造', description: null, selected: true, sort_order: 0 },
@@ -48,8 +49,8 @@ function fetchMock() {
     if (String(url).includes('/clarify')) {
       return Promise.resolve(jsonResponse(draft({ status: 'drafting' })))
     }
-    if (String(url).includes('/refine')) {
-      return Promise.resolve(jsonResponse(draft({ status: 'drafting' })))
+    if (String(url).includes('/messages')) {
+      return Promise.resolve(jsonResponse({ draft: draft({ status: 'pending_confirm' }), messages: [] }))
     }
     if (String(url).includes('/confirm')) {
       return Promise.resolve(jsonResponse({ created_count: 3, status: 'confirmed' }))
@@ -189,19 +190,19 @@ describe('DraftPanel', () => {
     })
   })
 
-  it('submits a refinement instruction and confirms the draft', async () => {
+  it('sends a chat message via the messages endpoint and confirms the draft', async () => {
     const mock = fetchMock()
     renderPanel(draft())
 
     await userEvent.type(
-      screen.getByPlaceholderText(/更侧重施工流程/),
-      '去掉预算类节点',
+      screen.getByPlaceholderText(/和 AI 讨论目录/),
+      '把名称缩短',
     )
-    await userEvent.click(screen.getByRole('button', { name: /重新生成/ }))
+    await userEvent.click(screen.getByRole('button', { name: /发送/ }))
     await waitFor(() => {
-      const call = mock.mock.calls.find(([url]) => String(url).includes('/refine'))
+      const call = mock.mock.calls.find(([url]) => String(url).includes('/messages'))
       expect(call).toBeDefined()
-      expect(JSON.parse(String(call![1]?.body))).toEqual({ instruction: '去掉预算类节点' })
+      expect(JSON.parse(String(call![1]?.body))).toEqual({ content: '把名称缩短' })
     })
 
     await userEvent.click(screen.getByRole('button', { name: /确认采用/ }))
@@ -209,6 +210,33 @@ describe('DraftPanel', () => {
       expect(mock.mock.calls.some(([url]) => String(url).includes('/confirm'))).toBe(true)
     })
     expect(await screen.findByText(/已创建 3 个节点/)).toBeInTheDocument()
+  })
+
+  it('renders conversation bubbles with an applied-tree marker', () => {
+    renderPanel(draft({
+      messages: [
+        { id: 'm1', role: 'user', content: '把名称缩短', created_at: '2026-08-10T10:00:01' },
+        { id: 'm2', role: 'assistant', content: '已按你的要求更新目录。', created_at: '2026-08-10T10:00:02' },
+        { id: 'm3', role: 'system', content: '已应用目录，共 8 个节点', created_at: '2026-08-10T10:00:03' },
+      ],
+    }))
+
+    expect(screen.getByText('把名称缩短')).toBeInTheDocument()
+    expect(screen.getByText('已按你的要求更新目录。')).toBeInTheDocument()
+    expect(screen.getByText('已更新目录（8 个节点）')).toBeInTheDocument()
+  })
+
+  it('shows a readable error and keeps input on send failure for retry', async () => {
+    const mock = fetchMock()
+    mock.mockImplementationOnce(() => Promise.reject(new Error('network down')))
+    renderPanel(draft())
+
+    const input = screen.getByPlaceholderText(/和 AI 讨论目录/)
+    await userEvent.type(input, '增加一个收纳节点')
+    await userEvent.click(screen.getByRole('button', { name: /发送/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/无法连接服务器|发送失败/)
+    expect(input).toHaveValue('增加一个收纳节点')
   })
 
   it('shows failure state with retry and redraft actions', async () => {

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type {
   DirectoryDraft,
+  DraftChatResponse,
   DraftConfirmResult,
   DraftEnvelope,
   DraftNode,
@@ -57,13 +58,13 @@ export function useSubmitClarify(projectId: string, draftId: string) {
   })
 }
 
-export function useSubmitRefine(projectId: string, draftId: string) {
+export function useSendDraftMessage(projectId: string, draftId: string) {
   const invalidate = useInvalidateDraft(projectId)
   return useMutation({
-    mutationFn: (instruction: string) =>
-      api.post<DirectoryDraft>(
-        `/projects/${projectId}/drafts/${draftId}/refine`,
-        { instruction },
+    mutationFn: (content: string) =>
+      api.post<DraftChatResponse>(
+        `/projects/${projectId}/drafts/${draftId}/messages`,
+        { content },
       ),
     onSuccess: invalidate,
   })

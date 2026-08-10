@@ -628,6 +628,7 @@ describe('project organize mode', () => {
               next_action: 'clarify',
               intent_note: null,
               clarify: [],
+              messages: [],
               nodes: [],
               last_error: null,
               created_at: timestamp,

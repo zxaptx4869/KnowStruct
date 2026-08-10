@@ -18,6 +18,15 @@ class DraftNodeResponse(BaseModel):
     sort_order: int
 
 
+class DraftMessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    role: str
+    content: str
+    created_at: datetime
+
+
 class ClarifyQuestionResponse(BaseModel):
     id: str
     text: str
@@ -33,6 +42,7 @@ class DraftResponse(BaseModel):
     intent_note: str | None = None
     clarify: list[ClarifyQuestionResponse] = Field(default_factory=list)
     nodes: list[DraftNodeResponse] = Field(default_factory=list)
+    messages: list[DraftMessageResponse] = Field(default_factory=list)
     last_error: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -40,6 +50,11 @@ class DraftResponse(BaseModel):
 
 class DraftEnvelope(BaseModel):
     draft: DraftResponse | None = None
+
+
+class DraftChatResponse(BaseModel):
+    draft: DraftResponse
+    messages: list[DraftMessageResponse] = Field(default_factory=list)
 
 
 class DraftCreate(BaseModel):
@@ -52,10 +67,10 @@ class ClarifySubmit(BaseModel):
     answers: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
-class RefineSubmit(BaseModel):
-    instruction: str = Field(min_length=1, max_length=1000)
+class MessageSubmit(BaseModel):
+    content: str = Field(min_length=1, max_length=2000)
 
-    _strip_instruction = field_validator("instruction", mode="before")(strip_required)
+    _strip_content = field_validator("content", mode="before")(strip_required)
 
 
 class RedraftSubmit(BaseModel):

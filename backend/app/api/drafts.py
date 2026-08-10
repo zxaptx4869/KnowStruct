@@ -1,18 +1,21 @@
-"""AI 目录起草 API：草稿生命周期、澄清、微调与确认。"""
+"""AI 目录起草 API：草稿生命周期、澄清、会话式微调与确认。"""
 
 from fastapi import APIRouter, status
 
+from app.ai import get_ai_provider
 from app.api.deps import Auth, DbSession
 from app.schemas.directory_draft import (
     ClarifySubmit,
+    DraftChatResponse,
     DraftConfirmResponse,
     DraftCreate,
     DraftEnvelope,
+    DraftMessageResponse,
     DraftNodeEdit,
     DraftNodeResponse,
     DraftResponse,
+    MessageSubmit,
     RedraftSubmit,
-    RefineSubmit,
 )
 from app.services.directory_draft import (
     confirm_draft,
@@ -26,7 +29,7 @@ from app.services.directory_draft import (
     redraft,
     retry_draft,
     submit_clarify_answers,
-    submit_refine,
+    submit_draft_message,
 )
 
 router = APIRouter(
@@ -99,23 +102,31 @@ async def draft_clarify(
     return DraftResponse.model_validate(await draft_payload(db, draft))
 
 
-@router.post("/{draft_id}/refine", response_model=DraftResponse)
-async def draft_refine(
+@router.post("/{draft_id}/messages", response_model=DraftChatResponse)
+async def draft_message(
     project_id: str,
     draft_id: str,
-    payload: RefineSubmit,
+    payload: MessageSubmit,
     auth: Auth,
     db: DbSession,
-) -> DraftResponse:
-    draft = await submit_refine(
+) -> DraftChatResponse:
+    provider = await get_ai_provider(db, auth.workspace.id)
+    draft, messages = await submit_draft_message(
         db,
         auth.workspace.id,
         project_id,
         draft_id,
-        payload.instruction,
+        payload.content,
+        provider,
     )
     await db.commit()
-    return DraftResponse.model_validate(await draft_payload(db, draft))
+    return DraftChatResponse(
+        draft=DraftResponse.model_validate(await draft_payload(db, draft)),
+        messages=[
+            DraftMessageResponse.model_validate(message)
+            for message in messages
+        ],
+    )
 
 
 @router.post("/{draft_id}/redraft", response_model=DraftResponse)
