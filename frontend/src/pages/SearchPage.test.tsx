@@ -464,6 +464,44 @@ describe('SearchPage', () => {
     expect(searchCallParams(fetchMock, 1).get('q')).toBe('冰箱')
   })
 
+  it('keeps both scope and type filters when changed together', async () => {
+    const fetchMock = searchFetchMock((url) => {
+      if (url === '/api/projects') {
+        return Promise.resolve(jsonResponse([
+          { id: 'project-1', name: '新房装修' },
+        ]))
+      }
+      if (String(url).startsWith('/api/projects/') && String(url).endsWith('/nodes')) {
+        return Promise.resolve(jsonResponse([
+          { id: 'node-fridge', project_id: 'project-1', parent_id: null, name: '冰箱' },
+        ]))
+      }
+      if (String(url).includes('/api/search')) {
+        return Promise.resolve(jsonResponse(searchResponse()))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    renderSearchPage()
+    await submitByButton('冰箱')
+    await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
+
+    await userEvent.click(screen.getByRole('button', { name: '全部项目' }))
+    await userEvent.click(screen.getByRole('option', { name: /^新房装修/ }))
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(2)
+    })
+
+    await userEvent.selectOptions(screen.getByLabelText('筛选类型'), 'pitfall')
+    await waitFor(() => {
+      expect(searchCallCount(fetchMock)).toBe(3)
+    })
+
+    const params = searchCallParams(fetchMock, 2)
+    expect(params.get('project')).toBe('project-1')
+    expect(params.get('type')).toBe('pitfall')
+    expect(params.get('node')).toBeNull()
+  })
+
   it('resets the node when the project changes in the scope picker', async () => {
     const fetchMock = searchFetchMock((url) => {
       if (url === '/api/projects') {

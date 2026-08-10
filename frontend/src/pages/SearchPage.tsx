@@ -187,7 +187,7 @@ export default function SearchPage() {
   }, [urlKeyword])
 
   const searchQuery = useSearch(keyword, filters)
-  const searchError = searchQuery.error as ApiError | null | undefined
+  const searchError = searchQuery.error instanceof ApiError ? searchQuery.error : null
   const isFilterError = Boolean(searchError && INVALID_FILTER_CODES.has(searchError.code))
   const hasKeyword = keyword.length > 0
   const entries = searchQuery.data?.entries ?? []

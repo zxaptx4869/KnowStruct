@@ -87,7 +87,7 @@ export default function ScopePicker({
             onClick={() => selectNode(expandedProject!, node.id)}
           >
             <span>{node.name}</span>
-            <span className="review-scope-scope">节点</span>
+            <span className="review-scope-scope" aria-hidden="true">节点</span>
           </button>
           {renderNodes(node.id, depth + 1)}
         </div>
@@ -123,13 +123,13 @@ export default function ScopePicker({
               onClick={selectClear}
             >
               <span>{placeholder}</span>
-              <span className="review-scope-scope">全部</span>
+              <span className="review-scope-scope" aria-hidden="true">全部</span>
             </button>
           )}
           {projects.map((project) => {
             const expanded = expandedProject === project.id
             return (
-              <div key={project.id} className="review-scope-group">
+              <div key={project.id} className="review-scope-group" role="group">
                 <div className="review-scope-row">
                   <button
                     type="button"
@@ -139,7 +139,7 @@ export default function ScopePicker({
                     onClick={() => selectProject(project.id)}
                   >
                     <span>{project.name}</span>
-                    <span className="review-scope-scope">项目</span>
+                    <span className="review-scope-scope" aria-hidden="true">项目</span>
                   </button>
                   <button
                     type="button"
