@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../components/Toast'
@@ -98,7 +98,7 @@ describe('DraftPanel', () => {
     renderPanel(draft({
       status: 'awaiting_input',
       clarify: [
-        { id: 'q1', text: '目前处于装修哪个阶段？', options: ['设计', '施工', '采购'] },
+        { id: 'q1', text: '目前处于装修哪个阶段？', options: ['设计', '施工', '采购'], multiple: false },
       ],
     }))
 
@@ -118,6 +118,39 @@ describe('DraftPanel', () => {
       const calls = mock.mock.calls.filter(([url]) => String(url).includes('/clarify'))
       expect(calls.length).toBe(2)
       expect(JSON.parse(String(calls[1][1]?.body)).answers).toEqual({})
+    })
+  })
+
+  it('renders multi-choice questions with an other input and submits arrays', async () => {
+    const mock = fetchMock()
+    renderPanel(draft({
+      status: 'awaiting_input',
+      clarify: [
+        { id: 'q1', text: '旅游时长？', options: ['7 天', '10 天'], multiple: false },
+        { id: 'q2', text: '希望涵盖哪些方面？', options: ['自然风光', '人文', '美食'], multiple: true },
+      ],
+    }))
+
+    const q1 = screen.getAllByRole('group')[0]
+    const q2 = screen.getAllByRole('group')[1]
+
+    await userEvent.click(within(q1).getByLabelText('其他'))
+    await userEvent.type(within(q1).getByPlaceholderText('请输入自定义内容'), '15 天')
+
+    await userEvent.click(within(q2).getByLabelText('自然风光'))
+    await userEvent.click(within(q2).getByLabelText('美食'))
+    await userEvent.click(within(q2).getByLabelText('其他'))
+    await userEvent.type(within(q2).getByPlaceholderText('请输入自定义内容'), '自驾路线')
+
+    await userEvent.click(screen.getByRole('button', { name: '生成目录' }))
+    await waitFor(() => {
+      const call = mock.mock.calls.find(([url]) => String(url).includes('/clarify'))
+      expect(call).toBeDefined()
+      const body = JSON.parse(String(call![1]?.body))
+      expect(body.answers).toEqual({
+        q1: '15 天',
+        q2: ['自然风光', '美食', '自驾路线'],
+      })
     })
   })
 

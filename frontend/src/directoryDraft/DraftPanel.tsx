@@ -45,7 +45,9 @@ function nodeDepth(nodes: DraftNode[], node: DraftNode): number {
 
 export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
   const draftId = draft.id
-  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
+  const [otherOpen, setOtherOpen] = useState<Record<string, boolean>>({})
+  const [otherText, setOtherText] = useState<Record<string, string>>({})
   const [instruction, setInstruction] = useState('')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
@@ -71,6 +73,49 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [draft.status])
+
+  function setSingleAnswer(questionId: string, value: string) {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }))
+    setOtherOpen((prev) => ({ ...prev, [questionId]: false }))
+  }
+
+  function toggleMultiAnswer(
+    questionId: string,
+    option: string,
+    checked: boolean,
+  ) {
+    setAnswers((prev) => {
+      const current = Array.isArray(prev[questionId]) ? prev[questionId] as string[] : []
+      const next = checked
+        ? [...current, option]
+        : current.filter((item) => item !== option)
+      return { ...prev, [questionId]: next }
+    })
+  }
+
+  function toggleOther(questionId: string, checked: boolean) {
+    setOtherOpen((prev) => ({ ...prev, [questionId]: checked }))
+  }
+
+  function buildClarifyPayload(): Record<string, string | string[]> {
+    const payload: Record<string, string | string[]> = {}
+    for (const question of draft.clarify) {
+      const answer = answers[question.id]
+      const custom = (otherText[question.id] ?? '').trim()
+      if (question.multiple) {
+        const selected = Array.isArray(answer) ? [...answer] : []
+        if (otherOpen[question.id]) selected.push(custom || '其他')
+        payload[question.id] = selected
+      } else if (answer === '__other__' || otherOpen[question.id]) {
+        payload[question.id] = custom || '其他'
+      } else if (typeof answer === 'string' && answer) {
+        payload[question.id] = answer
+      } else {
+        payload[question.id] = ''
+      }
+    }
+    return payload
+  }
 
   const childrenMap = new Map<string | null, DraftNode[]>()
   for (const node of draft.nodes) {
@@ -160,36 +205,81 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
           <strong>为生成更贴合的目录，先确认几点</strong>
         </header>
         <div className="draft-questions">
-          {draft.clarify.map((question) => (
-            <fieldset key={question.id} className="draft-question">
-              <legend>{question.text}</legend>
-              {question.options.length > 0 ? (
-                <div className="draft-options">
-                  {question.options.map((option) => (
-                    <label key={option} className="draft-option">
+        {draft.clarify.map((question) => (
+          <fieldset key={question.id} className="draft-question">
+            <legend>{question.text}</legend>
+            {question.options.length > 0 ? (
+              <div className="draft-options">
+                {question.options.map((option) => (
+                  <label key={option} className="draft-option">
+                    {question.multiple ? (
+                      <input
+                        type="checkbox"
+                        checked={
+                          Array.isArray(answers[question.id])
+                          && (answers[question.id] as string[]).includes(option)
+                        }
+                        onChange={(event) =>
+                          toggleMultiAnswer(question.id, option, event.target.checked)
+                        }
+                      />
+                    ) : (
                       <input
                         type="radio"
                         name={`q-${question.id}`}
                         checked={answers[question.id] === option}
-                        onChange={() =>
-                          setAnswers((prev) => ({ ...prev, [question.id]: option }))
-                        }
+                        onChange={() => setSingleAnswer(question.id, option)}
                       />
-                      <span>{option}</span>
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <input
-                  className="draft-question-text"
-                  value={answers[question.id] ?? ''}
-                  onChange={(event) =>
-                    setAnswers((prev) => ({ ...prev, [question.id]: event.target.value }))
-                  }
-                />
-              )}
-            </fieldset>
-          ))}
+                    )}
+                    <span>{option}</span>
+                  </label>
+                ))}
+                <label className="draft-option">
+                  {question.multiple ? (
+                    <input
+                      type="checkbox"
+                      checked={Boolean(otherOpen[question.id])}
+                      onChange={(event) => toggleOther(question.id, event.target.checked)}
+                    />
+                  ) : (
+                    <input
+                      type="radio"
+                      name={`q-${question.id}`}
+                      checked={Boolean(otherOpen[question.id])}
+                      onChange={() => {
+                        setOtherOpen((prev) => ({ ...prev, [question.id]: true }))
+                        setAnswers((prev) => ({ ...prev, [question.id]: '__other__' }))
+                      }}
+                    />
+                  )}
+                  <span>其他</span>
+                </label>
+                {otherOpen[question.id] && (
+                  <input
+                    className="draft-question-text"
+                    placeholder="请输入自定义内容"
+                    aria-label={`补充 ${question.text}`}
+                    value={otherText[question.id] ?? ''}
+                    onChange={(event) =>
+                      setOtherText((prev) => ({
+                        ...prev,
+                        [question.id]: event.target.value,
+                      }))
+                    }
+                  />
+                )}
+              </div>
+            ) : (
+              <input
+                className="draft-question-text"
+                value={typeof answers[question.id] === 'string' ? answers[question.id] as string : ''}
+                onChange={(event) =>
+                  setAnswers((prev) => ({ ...prev, [question.id]: event.target.value }))
+                }
+              />
+            )}
+          </fieldset>
+        ))}
         </div>
         <div className="draft-actions">
           <button
@@ -204,7 +294,7 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
             type="button"
             className="btn primary"
             disabled={clarifyMutation.isPending}
-            onClick={() => void clarifyMutation.mutateAsync(answers)}
+            onClick={() => void clarifyMutation.mutateAsync(buildClarifyPayload())}
           >
             生成目录
           </button>

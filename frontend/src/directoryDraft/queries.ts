@@ -48,7 +48,7 @@ export function useCreateDraft(projectId: string) {
 export function useSubmitClarify(projectId: string, draftId: string) {
   const invalidate = useInvalidateDraft(projectId)
   return useMutation({
-    mutationFn: (answers: Record<string, string>) =>
+    mutationFn: (answers: Record<string, string | string[]>) =>
       api.post<DirectoryDraft>(
         `/projects/${projectId}/drafts/${draftId}/clarify`,
         { answers },

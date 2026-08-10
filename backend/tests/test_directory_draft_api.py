@@ -31,7 +31,13 @@ class ClarifyProvider(DemoProvider):
                     id="q1",
                     text="目前处于装修哪个阶段？",
                     options=["设计", "施工", "采购"],
-                )
+                ),
+                ClarifyQuestion(
+                    id="q2",
+                    text="需要重点覆盖哪些方向？",
+                    options=["硬装施工", "主材选购", "家电家具", "灯光氛围"],
+                    multiple=True,
+                ),
             ],
         )
 
@@ -155,12 +161,14 @@ async def test_clarify_round_then_generate(
     assert await process_next_draft(db, ClarifyProvider()) is True
     body = (await client.get(f"/api/projects/{project['id']}/drafts")).json()["draft"]
     assert body["status"] == "awaiting_input"
-    assert len(body["clarify"]) == 1
+    assert len(body["clarify"]) == 2
     assert body["clarify"][0]["options"] == ["设计", "施工", "采购"]
+    assert body["clarify"][0]["multiple"] is False
+    assert body["clarify"][1]["multiple"] is True
 
     response = await client.post(
         f"/api/projects/{project['id']}/drafts/{draft_id}/clarify",
-        json={"answers": {"q1": "施工"}},
+        json={"answers": {"q1": "施工", "q2": ["硬装施工", "灯光氛围"]}},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "drafting"

@@ -30,7 +30,9 @@ MUST NOT 自动执行或自动创建节点。同一项目同时 MUST 至多存�
 系统 SHALL 在起草前评估项目信息充分性：背景过短或项目内 Source 不足时，SHALL 提供
 单轮澄清问题，问题 MUST 不超过 5 个、以选项为主，并 MUST 提供「跳过，直接生成」。
 信息充足时 MUST 不出现澄清步骤。澄清问题与充分性判断由 AI 生成并做结构化校验，
-校验失败时按可重试失败处理。
+校验失败时按可重试失败处理。每个问题 MUST 由 AI 标注单选或多选：时长、数量、是否等
+互斥维度为单选；「涵盖方面」「目的」「偏好」等可并存维度为多选。每个问题 MUST 提供
+「其他」选项，选中后 SHALL 出现自由输入框，自定义内容并入答案；多选答案以数组提交。
 
 #### Scenario: Ask once when information is insufficient
 - **WHEN** 项目背景很短且没有已采集 Source
@@ -43,6 +45,14 @@ MUST NOT 自动执行或自动创建节点。同一项目同时 MUST 至多存�
 #### Scenario: Generate directly when information is sufficient
 - **WHEN** 项目背景完整或存在足够 Source，AI 判定信息充足
 - **THEN** 界面不展示澄清问题，直接进入起草进度
+
+#### Scenario: Auto-detect single vs multi choice
+- **WHEN** AI 生成澄清问题时标注类型
+- **THEN** 互斥维度（如时长、数量）以单选呈现，可并存维度（如涵盖方面、目的）以多选呈现
+
+#### Scenario: Fill a custom answer via the other option
+- **WHEN** 用户选择某问题的「其他」并输入自定义内容
+- **THEN** 该问题以自定义内容作为答案提交；多选问题的自定义内容并入选项数组
 
 ### Requirement: Candidate tree generation and validation
 

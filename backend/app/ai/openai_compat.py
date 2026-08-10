@@ -50,9 +50,13 @@ CLARIFY_SYSTEM_PROMPT = (
     "你是 KnowStruct 的知识目录引导助手。判断给定的项目目标/背景与资料摘要"
     "是否足以生成初始知识目录。信息不足时生成引导问题以缩小范围。"
     '必须只输出一个 JSON 对象，格式为 {"needs_more": true, "questions": '
-    '[{"id": "q1", "text": "问题", "options": ["选项1", "选项2"]}]}。'
+    '[{"id": "q1", "text": "问题", "type": "single" 或 "multi", '
+    '"options": ["选项1", "选项2"]}]}。'
     "信息充足时输出 {\"needs_more\": false, \"questions\": []}。"
     "问题不超过 5 个，以选项为主，可带一个自由文本补充。"
+    "type 判断规则：时长、数量、是否、单选偏好等互斥维度用 single；"
+    "「目录希望涵盖的方面」「旅游目的」「装修重点」等可并存维度用 multi。"
+    "每个问题最多 5 个选项；前端会自动附加「其他」选项并允许自由输入。"
     "不要输出 JSON 之外的任何内容。"
 )
 
@@ -317,6 +321,8 @@ async def request_json_clarify(
                     id=str(item.get("id") or f"q{index + 1}"),
                     text=text,
                     options=options,
+                    multiple=str(item.get("type", "")).lower() == "multi"
+                    or bool(item.get("multiple", False)),
                 )
             )
     return ClarifyResult(needs_more=needs_more, questions=questions)

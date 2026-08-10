@@ -22,6 +22,7 @@ class ClarifyQuestionResponse(BaseModel):
     id: str
     text: str
     options: list[str] = Field(default_factory=list)
+    multiple: bool = False
 
 
 class DraftResponse(BaseModel):
@@ -48,7 +49,7 @@ class DraftCreate(BaseModel):
 
 
 class ClarifySubmit(BaseModel):
-    answers: dict[str, str] = Field(default_factory=dict)
+    answers: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
 class RefineSubmit(BaseModel):

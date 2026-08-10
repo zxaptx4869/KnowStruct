@@ -161,6 +161,7 @@ class DemoProvider(AIProvider):
                         id="q2",
                         text="需要重点覆盖哪些方向？",
                         options=["硬装施工", "主材选购", "家电家具", "灯光氛围"],
+                        multiple=True,
                     ),
                 ],
             )

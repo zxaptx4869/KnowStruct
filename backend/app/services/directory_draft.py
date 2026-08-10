@@ -466,7 +466,12 @@ async def generate_draft_step(
         if clarify.needs_more and clarify.questions:
             draft.clarify_json = json.dumps(
                 [
-                    {"id": q.id, "text": q.text, "options": q.options}
+                    {
+                        "id": q.id,
+                        "text": q.text,
+                        "options": q.options,
+                        "multiple": q.multiple,
+                    }
                     for q in clarify.questions
                 ],
                 ensure_ascii=False,
@@ -480,7 +485,9 @@ async def generate_draft_step(
     if draft.next_action == DraftNextAction.GENERATE:
         answers = json.loads(draft.clarify_answers_json or "{}")
         answer_text = "\n".join(
-            f"{key}: {value}" for key, value in answers.items() if value
+            f"{key}: {', '.join(value) if isinstance(value, list) else value}"
+            for key, value in answers.items()
+            if value
         )
         outline = await provider.generate_outline(
             goal,

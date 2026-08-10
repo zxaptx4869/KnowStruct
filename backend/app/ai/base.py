@@ -17,6 +17,7 @@ class ClarifyQuestion:
     id: str
     text: str
     options: list[str] = field(default_factory=list)
+    multiple: bool = False
 
 
 @dataclass
