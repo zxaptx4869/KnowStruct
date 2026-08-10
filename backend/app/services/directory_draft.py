@@ -369,7 +369,7 @@ async def _compress_history(
     provider: AIProvider,
     messages: list[DirectoryDraftMessage],
 ) -> None:
-    """保留最近 KEEP_FULL_ROUNDS 轮，更早轮次压缩为早期意图摘要（失败则丢弃）。"""
+    """保留最近 KEEP_FULL_ROUNDS 轮，更早轮次持续折叠进早期意图摘要（失败则丢弃）。"""
     user_indexes = [
         index
         for index, message in enumerate(messages)
@@ -381,14 +381,13 @@ async def _compress_history(
     early = messages[:cutoff]
     if not early:
         return
-    if not draft.intent_note:
-        try:
-            draft.intent_note = await provider.summarize_intent(
-                "",
-                _compose_early_summary_text(early),
-            )
-        except AIProviderError:
-            draft.intent_note = None
+    try:
+        draft.intent_note = await provider.summarize_intent(
+            draft.intent_note or "",
+            _compose_early_summary_text(early),
+        )
+    except AIProviderError:
+        draft.intent_note = None
     for message in early:
         await db.delete(message)
     await db.flush()

@@ -575,6 +575,37 @@ async def test_chat_history_compression_to_intent_note(
 
 
 @pytest.mark.asyncio
+async def test_chat_history_compression_folds_later_early_rounds(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    """多次压缩时，新过期的早期消息必须继续折叠进已有 intent_note。"""
+    ctx = await _create_generated_draft(client, db)
+    project_id = ctx["project"]["id"]
+    draft_id = ctx["draft_id"]
+
+    for index in range(15):
+        response = await client.post(
+            f"/api/projects/{project_id}/drafts/{draft_id}/messages",
+            json={"content": f"第 {index + 1} 条消息"},
+        )
+        assert response.status_code == 200, response.text
+
+    body = (await client.get(f"/api/projects/{project_id}/drafts")).json()["draft"]
+    assert body["intent_note"]
+    # 第二次压缩的早期消息（第 2、3 条）也必须进入意图说明。
+    assert "第 2 条消息" in body["intent_note"]
+    assert "第 3 条消息" in body["intent_note"]
+    first_remaining = await db.scalar(
+        select(func.count(DirectoryDraftMessage.id)).where(
+            DirectoryDraftMessage.draft_id == draft_id,
+            DirectoryDraftMessage.content == "第 3 条消息",
+        )
+    )
+    assert first_remaining == 0
+
+
+@pytest.mark.asyncio
 async def test_chat_conversation_round_cap(
     client: AsyncClient,
     db: AsyncSession,

@@ -1180,14 +1180,9 @@ export default function ProjectDetailPage() {
               <Folder size={24} />
               <strong>知识目录为空</strong>
               <span>{draft ? '有 AI 草稿待处理，也可手动创建节点。' : '可手动创建节点，或让 AI 起草目录。'}</span>
-              {draft ? (
-                <button type="button" className="primary-button" onClick={scrollToDraftPanel}>继续处理草稿</button>
-              ) : (
-                <>
-                  <button type="button" className="primary-button" onClick={() => void createDraftMutation.mutateAsync(undefined)} disabled={createDraftMutation.isPending}>AI 起草目录</button>
-                  <button type="button" className="secondary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}>创建第一个节点</button>
-                </>
-              )}
+              {draft && <button type="button" className="primary-button" onClick={scrollToDraftPanel}>继续处理草稿</button>}
+              {!draft && <button type="button" className="primary-button" onClick={() => void createDraftMutation.mutateAsync(undefined)} disabled={createDraftMutation.isPending}>AI 起草目录</button>}
+              <button type="button" className="secondary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: null })}>创建第一个节点</button>
             </div>
           ) : (
             <DndContext
@@ -1309,7 +1304,7 @@ export default function ProjectDetailPage() {
               </section>
             )}
             <section className="mobile-level"><header><div><h3>{selectedNode ? '子节点' : '根目录'}</h3><span>{currentChildren.length} {selectedNode ? '个子节点' : '个一级目录'}</span></div><button type="button" className="icon-action" aria-label={selectedNode ? '创建子节点' : '创建根节点'} onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}><Plus size={18} /></button></header>
-              {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>{draft ? '有 AI 草稿待处理，也可手动创建节点。' : '可手动创建节点，或让 AI 起草目录。'}</span>{draft ? <button type="button" className="primary-button" onClick={scrollToDraftPanel}>继续处理草稿</button> : <><button type="button" className="primary-button" onClick={() => void createDraftMutation.mutateAsync(undefined)} disabled={createDraftMutation.isPending}>AI 起草目录</button><button type="button" className="secondary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></>}</div>}
+              {currentChildren.length ? <div className="mobile-level-list">{currentChildren.map((child) => <button type="button" key={child.id} onClick={() => openNode(child.id)}><Folder size={19} /><span><strong>{child.name}</strong><small>{child.description || '暂无说明'}</small></span>{child.entry_count > 0 && <span className="mobile-entry-count">{child.entry_count}</span>}<ChevronRight size={18} /></button>)}</div> : <div className="mobile-empty"><Folder size={24} /><strong>{selectedNode ? '还没有子节点' : '知识目录为空'}</strong><span>{draft ? '有 AI 草稿待处理，也可手动创建节点。' : '可手动创建节点，或让 AI 起草目录。'}</span>{draft && <button type="button" className="primary-button" onClick={scrollToDraftPanel}>继续处理草稿</button>}{!draft && <button type="button" className="primary-button" onClick={() => void createDraftMutation.mutateAsync(undefined)} disabled={createDraftMutation.isPending}>AI 起草目录</button>}<button type="button" className="secondary-button" onClick={() => setNodeEditor({ mode: 'create', parentId: selectedNode?.id ?? null })}>创建{selectedNode ? '子节点' : '第一个节点'}</button></div>}
             </section>
             {selectedNode && <NodeRecordsSection projectId={id} nodeId={selectedNode.id} />}
           </>
