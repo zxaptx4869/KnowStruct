@@ -309,6 +309,37 @@ def _find_by_path(
     return None
 
 
+def _find_add_parent(
+    nodes: list[DirectoryDraftNode],
+    paths: dict[str, list[str]],
+    path: list[str],
+) -> DirectoryDraftNode | None:
+    """add 动作的父路径解析：精确 → 忽略空白/大小写 → 后缀 → 末段唯一。"""
+    if not path:
+        return None
+    node = _find_by_path(nodes, paths, path)
+    if node is not None:
+        return node
+    normalized = [part.strip().casefold() for part in path]
+    for candidate in nodes:
+        candidate_path = [
+            part.strip().casefold() for part in paths.get(candidate.id, [])
+        ]
+        if candidate_path[-len(normalized):] == normalized:
+            return candidate
+    last = normalized[-1] if normalized else None
+    if last:
+        matches = [
+            candidate
+            for candidate in nodes
+            if paths.get(candidate.id)
+            and paths[candidate.id][-1].strip().casefold() == last
+        ]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
 def _ensure_sibling_unique(
     nodes: list[DirectoryDraftNode],
     parent_id: str | None,
@@ -338,7 +369,7 @@ async def apply_actions(
     for action in actions:
         path = action.path
         if action.type == "add":
-            parent = _find_by_path(nodes, snapshot_paths, path)
+            parent = _find_add_parent(nodes, snapshot_paths, path)
             if path and parent is None:
                 raise AIProviderError(
                     f"AI 增量修改引用了不存在的父路径 {path}，请重试"

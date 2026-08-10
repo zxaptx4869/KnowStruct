@@ -101,6 +101,29 @@ class UnknownPathRefineProvider(DemoProvider):
         return [OutlineAction(type="remove", path=["不存在的节点"])]
 
 
+class AddTolerantRefineProvider(DemoProvider):
+    """add 使用省略祖先的父路径，验证宽容解析。"""
+
+    async def refine_outline(
+        self,
+        draft: list[dict],
+        intent_note: str,
+        instruction: str,
+    ) -> list[OutlineAction]:
+        return [
+            OutlineAction(
+                type="add",
+                path=["水电改造"],
+                name="排水细节",
+            )
+        ]
+
+    async def summarize_intent(
+        self, intent_note: str, instruction: str
+    ) -> str:
+        return f"{intent_note or ''}；{instruction}".strip("；")[:500]
+
+
 async def _create_generated_draft(
     client: AsyncClient,
     db: AsyncSession,
@@ -377,6 +400,26 @@ async def test_refine_shorten_names_with_demo_provider(
     names = [node["name"] for node in body["nodes"]]
     assert "硬装施工" in names
     assert "硬装施工模块" not in names
+
+
+@pytest.mark.asyncio
+async def test_refine_add_with_abbreviated_parent_path(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    ctx = await _create_generated_draft(client, db)
+    project_id = ctx["project"]["id"]
+    draft_id = ctx["draft_id"]
+
+    await client.post(
+        f"/api/projects/{project_id}/drafts/{draft_id}/refine",
+        json={"instruction": "在水电改造下补充排水细节"},
+    )
+    assert await process_next_draft(db, AddTolerantRefineProvider()) is True
+    body = (await client.get(f"/api/projects/{project_id}/drafts")).json()["draft"]
+    assert body["status"] == "pending_confirm"
+    by_name = {node["name"]: node for node in body["nodes"]}
+    assert by_name["排水细节"]["parent_id"] == by_name["水电改造"]["id"]
 
 
 @pytest.mark.asyncio
