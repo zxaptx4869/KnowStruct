@@ -5,11 +5,19 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import ScopePicker, { type ScopeSelection } from '../components/ScopePicker'
 import { entryTypeLabel, entryTypeOptions, sourceTypeLabels } from '../inbox/labels'
+import { ApiError } from '../lib/api'
 import { addSearch, clearHistory, readHistory, removeSearch } from '../search/history'
 import type { SearchHistoryItem } from '../search/history'
 import { highlightText } from '../search/highlight'
 import { useSearch, type SearchFilters } from '../search/queries'
 import type { SearchEntryHit, SearchResponse, SearchSourceHit } from '../search/types'
+
+const INVALID_FILTER_CODES = new Set([
+  'invalid_project',
+  'invalid_type',
+  'node_requires_project',
+  'node_project_mismatch',
+])
 
 function SearchHistory({
   items,
@@ -179,6 +187,8 @@ export default function SearchPage() {
   }, [urlKeyword])
 
   const searchQuery = useSearch(keyword, filters)
+  const searchError = searchQuery.error as ApiError | null | undefined
+  const isFilterError = Boolean(searchError && INVALID_FILTER_CODES.has(searchError.code))
   const hasKeyword = keyword.length > 0
   const entries = searchQuery.data?.entries ?? []
   const sources = searchQuery.data?.sources ?? []
@@ -204,9 +214,11 @@ export default function SearchPage() {
       setEmptyHint(true)
       return
     }
-    const params = new URLSearchParams(searchParams)
-    params.set('q', trimmed)
-    setSearchParams(params, { replace: true })
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev)
+      params.set('q', trimmed)
+      return params
+    }, { replace: true })
     lastWrittenRef.current = trimmed
     setInput(trimmed)
     setKeyword(trimmed)
@@ -218,46 +230,52 @@ export default function SearchPage() {
     if (value.trim().length === 0) {
       lastWrittenRef.current = ''
       setKeyword('')
-      const params = new URLSearchParams(searchParams)
-      params.delete('q')
-      setSearchParams(params, { replace: true })
+      setSearchParams((prev) => {
+        const params = new URLSearchParams(prev)
+        params.delete('q')
+        return params
+      }, { replace: true })
     }
   }
 
   function updateFilters(next: SearchFilters) {
-    const params = new URLSearchParams(searchParams)
-    if (next.project !== undefined) {
-      if (next.project) {
-        params.set('project', next.project)
-        params.delete('node')
-      } else {
-        params.delete('project')
-        params.delete('node')
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev)
+      if (next.project !== undefined) {
+        if (next.project) {
+          params.set('project', next.project)
+          params.delete('node')
+        } else {
+          params.delete('project')
+          params.delete('node')
+        }
       }
-    }
-    if (next.type !== undefined) {
-      if (next.type) {
-        params.set('type', next.type)
-      } else {
-        params.delete('type')
+      if (next.type !== undefined) {
+        if (next.type) {
+          params.set('type', next.type)
+        } else {
+          params.delete('type')
+        }
       }
-    }
-    if (next.node !== undefined) {
-      if (next.node) {
-        params.set('node', next.node)
-      } else {
-        params.delete('node')
+      if (next.node !== undefined) {
+        if (next.node) {
+          params.set('node', next.node)
+        } else {
+          params.delete('node')
+        }
       }
-    }
-    setSearchParams(params, { replace: true })
+      return params
+    }, { replace: true })
   }
 
   function clearFilters() {
-    const params = new URLSearchParams(searchParams)
-    params.delete('project')
-    params.delete('type')
-    params.delete('node')
-    setSearchParams(params, { replace: true })
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev)
+      params.delete('project')
+      params.delete('type')
+      params.delete('node')
+      return params
+    }, { replace: true })
   }
 
   function handleScopeChange(scope: ScopeSelection) {
@@ -366,7 +384,7 @@ export default function SearchPage() {
         <div className="state-panel search-guidance" role="status">
           <Search size={22} />
           <strong>输入关键词开始搜索</strong>
-          <span>输入关键词后点击“搜索”或按回车开始搜索。可先用项目、类型和节点筛选缩小范围；搜索范围包含全部项目中的正式记录，以及原始文字、链接和图片识别内容。</span>
+          <span>输入关键词后点击“搜索”或按回车开始搜索。可先用范围（全部项目 / 某项目 / 某节点）和类型筛选缩小范围；搜索范围包含全部项目中的正式记录，以及原始文字、链接和图片识别内容。</span>
         </div>
       )}
 
@@ -387,8 +405,9 @@ export default function SearchPage() {
         <div className="state-panel state-error" role="alert">
           <strong>搜索失败</strong>
           <span>
-            {searchQuery.error.message}
-            {hasActiveFilters ? ' 可尝试清除筛选后重试。' : ' 请检查连接后重试。'}
+            {isFilterError
+              ? `${searchError?.message ?? '筛选参数无效'} 可尝试清除筛选后重试。`
+              : `已保留关键词“${keyword}”，请检查连接后重试。`}
           </span>
           <button
             type="button"

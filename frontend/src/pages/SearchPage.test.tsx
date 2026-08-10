@@ -414,10 +414,10 @@ describe('SearchPage', () => {
     expect(screen.getByRole('button', { name: '全部项目' })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '全部项目' }))
-    expect(screen.getByRole('button', { name: /^新房装修/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /^新房装修/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '展开 新房装修' }))
-    expect(await screen.findByRole('button', { name: /^冰箱/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^台面/ })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: /^冰箱/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /^台面/ })).toBeInTheDocument()
     expect(searchCallCount(fetchMock)).toBe(0)
   })
 
@@ -487,7 +487,7 @@ describe('SearchPage', () => {
     expect(searchCallParams(fetchMock).get('node')).toBe('node-fridge')
 
     await userEvent.click(screen.getByRole('button', { name: /新房装修 \/ 冰箱/ }))
-    await userEvent.click(screen.getByRole('button', { name: /^日本旅行/ }))
+    await userEvent.click(screen.getByRole('option', { name: /^日本旅行/ }))
 
     await waitFor(() => {
       expect(searchCallCount(fetchMock)).toBe(2)
@@ -519,13 +519,13 @@ describe('SearchPage', () => {
     await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
 
     await userEvent.click(screen.getByRole('button', { name: '全部项目' }))
-    await userEvent.click(screen.getByRole('button', { name: /^新房装修/ }))
+    await userEvent.click(screen.getByRole('option', { name: /^新房装修/ }))
     await waitFor(() => {
       expect(searchCallCount(fetchMock)).toBe(2)
     })
     await userEvent.click(screen.getByRole('button', { name: /新房装修/ }))
     await userEvent.click(screen.getByRole('button', { name: '展开 新房装修' }))
-    await userEvent.click(await screen.findByRole('button', { name: /^冰箱/ }))
+    await userEvent.click(await screen.findByRole('option', { name: /^冰箱/ }))
 
     await waitFor(() => {
       expect(searchCallCount(fetchMock)).toBe(3)
@@ -557,7 +557,7 @@ describe('SearchPage', () => {
     await screen.findByRole('heading', { name: '零嵌冰箱需要先确认散热方式' })
 
     await userEvent.click(screen.getByRole('button', { name: /新房装修 \/ 冰箱/ }))
-    await userEvent.click(screen.getByRole('button', { name: /^全部项目全部/ }))
+    await userEvent.click(screen.getByRole('option', { name: /^全部项目/ }))
 
     await waitFor(() => {
       expect(searchCallCount(fetchMock)).toBe(2)

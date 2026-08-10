@@ -257,7 +257,7 @@ function renderReviewPage() {
 
 async function selectProjectScope() {
   await userEvent.click(screen.getByRole('button', { name: /请选择审查范围/ }))
-  await userEvent.click(screen.getByRole('button', { name: /^新房装修/ }))
+  await userEvent.click(screen.getByRole('option', { name: /^新房装修/ }))
 }
 
 describe('ReviewPage', () => {
@@ -351,10 +351,10 @@ describe('ReviewPage', () => {
     const first = renderReviewPage()
 
     await userEvent.click(screen.getByRole('button', { name: /请选择审查范围/ }))
-    await userEvent.click(screen.getByRole('button', { name: /^新房装修/ }))
+    await userEvent.click(screen.getByRole('option', { name: /^新房装修/ }))
     await userEvent.click(screen.getByRole('button', { name: /新房装修/ }))
     await userEvent.click(screen.getByRole('button', { name: '展开 新房装修' }))
-    await userEvent.click(screen.getByRole('button', { name: /^冰箱/ }))
+    await userEvent.click(screen.getByRole('option', { name: /^冰箱/ }))
 
     expect(window.localStorage.getItem(scopeKey('user-1'))).toContain('node-fridge')
     first.unmount()

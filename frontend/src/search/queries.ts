@@ -21,10 +21,10 @@ export function useSearch(keyword: string, filters: SearchFilters = {}) {
     queryFn: () =>
       api.get<SearchResponse>('/search', {
         params: {
-          q: trimmed,
-          project: filters.project,
-          type: filters.type,
-          node: filters.node,
+          ...(trimmed ? { q: trimmed } : {}),
+          ...(filters.project ? { project: filters.project } : {}),
+          ...(filters.type ? { type: filters.type } : {}),
+          ...(filters.node ? { node: filters.node } : {}),
         },
       }),
     enabled: trimmed.length > 0,

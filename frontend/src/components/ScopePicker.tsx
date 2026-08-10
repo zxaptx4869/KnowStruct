@@ -82,6 +82,8 @@ export default function ScopePicker({
             type="button"
             className="review-scope-item child"
             style={{ paddingLeft: `${14 + depth * 18}px` }}
+            role="option"
+            aria-selected={value.node_id === node.id}
             onClick={() => selectNode(expandedProject!, node.id)}
           >
             <span>{node.name}</span>
@@ -98,6 +100,7 @@ export default function ScopePicker({
         type="button"
         className="review-scope-trigger"
         aria-expanded={open}
+        aria-haspopup="listbox"
         onClick={() => setOpen((prev) => !prev)}
       >
         {value.node_id ? (
@@ -115,6 +118,8 @@ export default function ScopePicker({
             <button
               type="button"
               className="review-scope-item"
+              role="option"
+              aria-selected={!value.project_id && !value.node_id}
               onClick={selectClear}
             >
               <span>{placeholder}</span>
@@ -129,6 +134,8 @@ export default function ScopePicker({
                   <button
                     type="button"
                     className="review-scope-item"
+                    role="option"
+                    aria-selected={value.project_id === project.id && !value.node_id}
                     onClick={() => selectProject(project.id)}
                   >
                     <span>{project.name}</span>
