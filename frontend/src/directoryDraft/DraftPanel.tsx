@@ -92,48 +92,50 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
   function renderNode(node: DraftNode) {
     const depth = nodeDepth(draft.nodes, node)
     return (
-      <div key={node.id} className="draft-node-row" style={{ paddingLeft: `${8 + (depth - 1) * 18}px` }}>
-        <input
-          type="checkbox"
-          className="draft-node-check"
-          aria-label={`选择 ${node.name}`}
-          checked={node.selected}
-          onChange={(event) => toggleSelected(node, event.target.checked)}
-        />
-        {editingNodeId === node.id ? (
+      <div key={node.id} className="draft-node">
+        <div className="draft-node-row" style={{ paddingLeft: `${8 + (depth - 1) * 18}px` }}>
           <input
-            className="draft-node-name-input"
-            value={editName}
-            autoFocus
-            aria-label={`修改 ${node.name} 名称`}
-            onChange={(event) => setEditName(event.target.value)}
-            onBlur={() => saveRename(node.id)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') saveRename(node.id)
-              if (event.key === 'Escape') setEditingNodeId(null)
-            }}
+            type="checkbox"
+            className="draft-node-check"
+            aria-label={`选择 ${node.name}`}
+            checked={node.selected}
+            onChange={(event) => toggleSelected(node, event.target.checked)}
           />
-        ) : (
-          <span className="draft-node-name" title={node.description ?? undefined}>
-            {node.name}
+          {editingNodeId === node.id ? (
+            <input
+              className="draft-node-name-input"
+              value={editName}
+              autoFocus
+              aria-label={`修改 ${node.name} 名称`}
+              onChange={(event) => setEditName(event.target.value)}
+              onBlur={() => saveRename(node.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') saveRename(node.id)
+                if (event.key === 'Escape') setEditingNodeId(null)
+              }}
+            />
+          ) : (
+            <span className="draft-node-name" title={node.description ?? undefined}>
+              {node.name}
+            </span>
+          )}
+          {node.description && (
+            <span className="draft-node-desc">{node.description}</span>
+          )}
+          <span className="draft-node-actions">
+            <button type="button" className="icon-action" aria-label={`改名 ${node.name}`} onClick={() => startRename(node)}>
+              <Pencil size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-action danger-text"
+              aria-label={`删除 ${node.name}`}
+              onClick={() => void deleteNodeMutation.mutateAsync(node.id)}
+            >
+              <Trash2 size={14} />
+            </button>
           </span>
-        )}
-        {node.description && (
-          <span className="draft-node-desc">{node.description}</span>
-        )}
-        <span className="draft-node-actions">
-          <button type="button" className="icon-action" aria-label={`改名 ${node.name}`} onClick={() => startRename(node)}>
-            <Pencil size={14} />
-          </button>
-          <button
-            type="button"
-            className="icon-action danger-text"
-            aria-label={`删除 ${node.name}`}
-            onClick={() => void deleteNodeMutation.mutateAsync(node.id)}
-          >
-            <Trash2 size={14} />
-          </button>
-        </span>
+        </div>
         {childrenMap.get(node.id)?.map((child) => renderNode(child))}
       </div>
     )
