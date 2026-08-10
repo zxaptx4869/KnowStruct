@@ -225,7 +225,10 @@ async def claim_next_draft(db: AsyncSession) -> DirectoryDraft | None:
     """乐观领取最旧的起草中草稿。"""
     draft = await db.scalar(
         select(DirectoryDraft)
-        .where(DirectoryDraft.status == DraftStatus.DRAFTING)
+        .where(
+            DirectoryDraft.status == DraftStatus.DRAFTING,
+            DirectoryDraft.claimed_at.is_(None),
+        )
         .order_by(DirectoryDraft.created_at, DirectoryDraft.id)
         .limit(1)
     )
@@ -236,8 +239,9 @@ async def claim_next_draft(db: AsyncSession) -> DirectoryDraft | None:
         .where(
             DirectoryDraft.id == draft.id,
             DirectoryDraft.status == DraftStatus.DRAFTING,
+            DirectoryDraft.claimed_at.is_(None),
         )
-        .values(claimed_at=utc_now())
+        .values(claimed_at=utc_now(), started_at=utc_now())
     )
     if result.rowcount != 1:
         await db.rollback()

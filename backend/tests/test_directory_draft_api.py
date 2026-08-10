@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.base import (
@@ -10,7 +11,9 @@ from app.ai.base import (
     OutlineNode,
 )
 from app.ai.demo import DemoProvider
+from app.models import DirectoryDraft, DraftStatus
 from app.services.accounts import create_account
+from app.services.directory_draft import utc_now
 from app.services.task_worker import process_next_draft
 from tests.test_inbox_api import create_project, login_owner
 
@@ -191,6 +194,28 @@ async def test_single_active_draft_and_empty_project_guard(
     response = await client.post(f"/api/projects/{other['id']}/drafts", json={})
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "draft_requires_empty_project"
+
+
+@pytest.mark.asyncio
+async def test_claimed_draft_is_not_reclaimed(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client, "新房装修")
+    await client.post(
+        f"/api/projects/{project['id']}/drafts",
+        json={"background": "背景"},
+    )
+    draft = await db.scalar(
+        select(DirectoryDraft).where(DirectoryDraft.project_id == project["id"])
+    )
+    assert draft is not None
+    draft.status = DraftStatus.DRAFTING
+    draft.claimed_at = utc_now()
+    await db.commit()
+
+    assert await process_next_draft(db, DemoProvider()) is False
 
 
 @pytest.mark.asyncio

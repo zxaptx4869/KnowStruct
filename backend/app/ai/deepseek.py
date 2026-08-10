@@ -32,7 +32,12 @@ class DeepSeekProvider(AIProvider):
         model: str,
     ) -> None:
         self.model = model
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=60.0,
+            max_retries=0,
+        )
 
     async def extract_candidates(
         self,

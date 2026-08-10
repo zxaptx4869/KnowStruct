@@ -531,6 +531,8 @@ async def submit_clarify_answers(
     draft.next_action = DraftNextAction.GENERATE
     draft.status = DraftStatus.DRAFTING
     draft.last_error = None
+    draft.finished_at = None
+    draft.claimed_at = None
     return draft
 
 
@@ -548,6 +550,8 @@ async def submit_refine(
     draft.next_action = DraftNextAction.REFINE
     draft.status = DraftStatus.DRAFTING
     draft.last_error = None
+    draft.finished_at = None
+    draft.claimed_at = None
     return draft
 
 
@@ -579,6 +583,8 @@ async def redraft(
     draft.last_error = None
     draft.next_action = DraftNextAction.CLARIFY
     draft.status = DraftStatus.DRAFTING
+    draft.finished_at = None
+    draft.claimed_at = None
     return draft
 
 
@@ -593,6 +599,8 @@ async def retry_draft(
         raise ConflictError("draft_not_failed", "草稿当前无需重试")
     draft.status = DraftStatus.DRAFTING
     draft.last_error = None
+    draft.finished_at = None
+    draft.claimed_at = None
     return draft
 
 
