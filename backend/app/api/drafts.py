@@ -7,6 +7,7 @@ from app.api.deps import Auth, DbSession
 from app.schemas.directory_draft import (
     ClarifySubmit,
     DraftChatResponse,
+    DraftConfirmRequest,
     DraftConfirmResponse,
     DraftCreate,
     DraftEnvelope,
@@ -78,6 +79,7 @@ async def draft_create(
         auth.workspace.id,
         project_id,
         background=payload.background,
+        target_node_id=payload.target_node_id,
     )
     await db.commit()
     return DraftResponse.model_validate(await draft_payload(db, draft))
@@ -178,12 +180,16 @@ async def draft_confirm(
     draft_id: str,
     auth: Auth,
     db: DbSession,
+    payload: DraftConfirmRequest | None = None,
 ) -> DraftConfirmResponse:
     draft, created_count = await confirm_draft(
         db,
         auth.workspace.id,
         project_id,
         draft_id,
+        removed_node_ids=(
+            payload.removed_node_ids if payload is not None else []
+        ),
     )
     await db.commit()
     return DraftConfirmResponse(

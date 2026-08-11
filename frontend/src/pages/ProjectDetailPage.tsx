@@ -28,6 +28,7 @@ import {
   Plus,
   RefreshCw,
   Settings2,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -1007,6 +1008,47 @@ export default function ProjectDetailPage() {
     panel?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  async function startExpansion() {
+    if (!selectedNode) return
+    try {
+      await createDraftMutation.mutateAsync({ targetNodeId: selectedNode.id })
+      scrollToDraftPanel()
+    } catch {
+      // Mutation error remains visible in the draft panel.
+    }
+  }
+
+  function expansionEntry() {
+    if (draft && draft.target_node_id === selectedNode?.id) return null
+    if (draft) {
+      const blockedTitle = draft.target_node_id
+        ? `已有拓展草稿（${nodes.find((node) => node.id === draft.target_node_id)?.name ?? '目标节点'}），请先处理或放弃`
+        : '已有 AI 起草草稿待处理，请先处理或放弃'
+      return (
+        <button
+          type="button"
+          className="icon-action node-edit-inline"
+          aria-label="AI 拓展建议"
+          title={blockedTitle}
+          disabled
+        >
+          <Sparkles size={16} />
+        </button>
+      )
+    }
+    return (
+      <button
+        type="button"
+        className="icon-action node-edit-inline"
+        aria-label="AI 拓展建议"
+        title="AI 拓展建议"
+        onClick={() => void startExpansion()}
+      >
+        <Sparkles size={16} />
+      </button>
+    )
+  }
+
   async function saveNode(input: NodeInput) {
     try {
       if (nodeEditor?.mode === 'edit') await updateNodeMutation.mutateAsync(input)
@@ -1243,6 +1285,7 @@ export default function ProjectDetailPage() {
                     >
                       <Settings2 size={16} />
                     </button>
+                    {expansionEntry()}
                   </h2>
                   {selectedNode.description && <p>{selectedNode.description}</p>}
                 </div>
@@ -1260,14 +1303,42 @@ export default function ProjectDetailPage() {
           )}
           {draft && !organizeMode && (
             <div id="draft-panel">
-              <DraftPanel projectId={id} draft={draft} />
+              <DraftPanel
+                projectId={id}
+                draft={draft}
+                currentNodeId={nid ?? null}
+                targetNodeName={
+                  draft.target_node_id
+                    ? nodes.find((node) => node.id === draft.target_node_id)?.name ?? null
+                    : null
+                }
+                onGoToTargetNode={() => {
+                  if (draft.target_node_id) openNode(draft.target_node_id)
+                }}
+              />
             </div>
           )}
         </main>
       </div>
 
       <main className="mobile-directory">
-        {draft && <div id="draft-panel-mobile"><DraftPanel projectId={id} draft={draft} /></div>}
+        {draft && (
+          <div id="draft-panel-mobile">
+            <DraftPanel
+              projectId={id}
+              draft={draft}
+              currentNodeId={nid ?? null}
+              targetNodeName={
+                draft.target_node_id
+                  ? nodes.find((node) => node.id === draft.target_node_id)?.name ?? null
+                  : null
+              }
+              onGoToTargetNode={() => {
+                if (draft.target_node_id) openNode(draft.target_node_id)
+              }}
+            />
+          </div>
+        )}
         {organizeMode ? (
           <ProjectRecordsSection
             projectId={id}
@@ -1296,6 +1367,7 @@ export default function ProjectDetailPage() {
                   >
                     <Settings2 size={16} />
                   </button>
+                  {expansionEntry()}
                 </h2>
                 {selectedNode.description && <p>{selectedNode.description}</p>}
                 <div className="mobile-node-actions">

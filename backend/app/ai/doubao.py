@@ -17,6 +17,7 @@ from app.ai.openai_compat import (
     request_chat_round,
     request_json_candidates,
     request_json_clarify,
+    request_json_expansion,
     request_json_intent,
     request_json_outline,
     request_json_review,
@@ -145,6 +146,11 @@ class DoubaoProvider(AIProvider):
         return await request_json_review(self._client, self.model, entries)
 
     async def expand_node(
-        self, node_title: str, context: str
-    ) -> list[dict]:
-        raise AIProviderError("AI 节点拓展能力尚未实现")
+        self, node_title: str, context: str = ""
+    ) -> list[OutlineNode]:
+        return await request_json_expansion(
+            self._client,
+            self.model,
+            node_title,
+            context,
+        )

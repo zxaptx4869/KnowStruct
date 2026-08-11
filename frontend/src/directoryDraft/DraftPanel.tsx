@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
+  ChevronRight,
   Info,
   Loader2,
   MessageSquare,
@@ -24,11 +26,19 @@ import {
   useSendDraftMessage,
   useSubmitClarify,
 } from './queries'
-import type { DirectoryDraft, DraftMessage, DraftNode } from './types'
+import type {
+  DirectoryDraft,
+  DraftMessage,
+  DraftNode,
+  ExpansionDiffEntry,
+} from './types'
 
 interface DraftPanelProps {
   projectId: string
   draft: DirectoryDraft
+  currentNodeId?: string | null
+  targetNodeName?: string | null
+  onGoToTargetNode?: () => void
 }
 
 function nodeDepth(nodes: DraftNode[], node: DraftNode): number {
@@ -70,7 +80,13 @@ function ChatBubble({ message }: { message: DraftMessage }) {
   )
 }
 
-export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
+export default function DraftPanel({
+  projectId,
+  draft,
+  currentNodeId,
+  targetNodeName,
+  onGoToTargetNode,
+}: DraftPanelProps) {
   const draftId = draft.id
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
   const [otherOpen, setOtherOpen] = useState<Record<string, boolean>>({})
@@ -80,8 +96,10 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
   const [editName, setEditName] = useState('')
   const [redraftOpen, setRedraftOpen] = useState(false)
   const [redraftBackground, setRedraftBackground] = useState('')
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
   const [elapsed, setElapsed] = useState(0)
   const chatListRef = useRef<HTMLDivElement>(null)
+  const lastDiffKeyRef = useRef<string | null>(null)
   const messageCount = draft.messages?.length ?? 0
 
   const clarifyMutation = useSubmitClarify(projectId, draftId)
@@ -92,6 +110,10 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
   const redraftMutation = useRedraftDraft(projectId, draftId)
   const editNodeMutation = useEditDraftNode(projectId, draftId)
   const deleteNodeMutation = useDeleteDraftNode(projectId, draftId)
+  const isCollapsedExpansion =
+    Boolean(draft.target_node_id)
+    && Boolean(currentNodeId)
+    && draft.target_node_id !== currentNodeId
 
   useEffect(() => {
     if (draft.status !== 'drafting') return
@@ -107,6 +129,64 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
     const el = chatListRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messageCount, chatMutation.isPending])
+
+  // 建议移除项默认勾选（受保护项除外，含嵌套项）；
+  // 仅在差异内容变化时重置，用户手动取消勾选不会被常规 refetch 覆盖。
+  useEffect(() => {
+    const key = JSON.stringify(draft.diff ?? [])
+    if (lastDiffKeyRef.current === key) return
+    lastDiffKeyRef.current = key
+    const defaultRemoved = new Set<string>()
+    const collect = (entries: ExpansionDiffEntry[]) => {
+      for (const entry of entries) {
+        if (
+          entry.kind === 'removed'
+          && !entry.blocked
+          && entry.real_node_id
+        ) {
+          defaultRemoved.add(entry.real_node_id)
+        }
+        collect(entry.children ?? [])
+      }
+    }
+    collect(draft.diff ?? [])
+    setRemovedIds(defaultRemoved)
+  }, [draft.diff])
+
+  if (isCollapsedExpansion) {
+    return (
+      <div className="draft-panel draft-panel-collapsed">
+        <div className="draft-panel-collapsed-row">
+          <Sparkles size={15} />
+          <span>
+            AI 拓展草稿：正在拓展「{targetNodeName ?? '目标节点'}」
+          </span>
+        </div>
+        <div className="draft-actions">
+          <button
+            type="button"
+            className="btn primary"
+            onClick={onGoToTargetNode}
+          >
+            回到节点继续处理
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={discardMutation.isPending}
+            onClick={() => void discardMutation.mutateAsync()}
+          >
+            <X size={14} /> 放弃草稿
+          </button>
+        </div>
+        {discardMutation.isError && (
+          <p className="draft-error" role="alert">
+            {mutationMessage(discardMutation.error, '操作失败，请重试')}
+          </p>
+        )}
+      </div>
+    )
+  }
 
   function sendChatMessage() {
     const content = chatInput.trim()
@@ -169,7 +249,7 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
     nodes.sort((a, b) => a.sort_order - b.sort_order)
   }
 
-  function startRename(node: DraftNode) {
+  function startRename(node: { id: string, name: string }) {
     setEditingNodeId(node.id)
     setEditName(node.name)
   }
@@ -184,7 +264,7 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
     setEditingNodeId(null)
   }
 
-  function toggleSelected(node: DraftNode, selected: boolean) {
+  function toggleSelected(node: { id: string }, selected: boolean) {
     void editNodeMutation.mutateAsync({ nodeId: node.id, selected })
   }
 
@@ -236,6 +316,213 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
           </span>
         </div>
         {childrenMap.get(node.id)?.map((child) => renderNode(child))}
+      </div>
+    )
+  }
+
+  function toggleRemoved(realNodeId: string, checked: boolean) {
+    setRemovedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(realNodeId)
+      else next.delete(realNodeId)
+      return next
+    })
+  }
+
+  function renderDiffEntry(entry: ExpansionDiffEntry, depth: number) {
+    const label = entry.node?.name ?? entry.name ?? ''
+    const padding = `${8 + depth * 18}px`
+    if (entry.kind === 'removed') {
+      return (
+        <div key={entry.real_node_id ?? label} className="diff-node diff-removed">
+          <div className="diff-node-row" style={{ paddingLeft: padding }}>
+            <input
+              type="checkbox"
+              aria-label={`移除 ${label}`}
+              checked={removedIds.has(entry.real_node_id ?? '')}
+              disabled={entry.blocked}
+              onChange={(event) =>
+                toggleRemoved(entry.real_node_id ?? '', event.target.checked)
+              }
+            />
+            <span className="diff-removed-name">{label}</span>
+            {entry.blocked && (
+              <span className="diff-blocked" title={`${entry.blocker_count} 条正式记录引用`}>
+                受保护内容 {entry.blocker_count} 条，不可移除
+              </span>
+            )}
+          </div>
+          {entry.children.length > 0 && (
+            <div className="diff-children diff-children-removed">
+              {entry.children.map((child) => renderDiffEntry(child, depth + 1))}
+            </div>
+          )}
+        </div>
+      )
+    }
+    const isAdded = entry.kind === 'added'
+    const hasChildren = entry.children.length > 0
+    if (isAdded && entry.node) {
+      const node = entry.node
+      return (
+        <div key={entry.real_node_id ?? node.id} className="diff-node diff-added">
+          <div className="diff-node-row" style={{ paddingLeft: padding }}>
+            <input
+              type="checkbox"
+              className="draft-node-check"
+              aria-label={`采用 ${label}`}
+              checked={node.selected}
+              onChange={(event) => toggleSelected(node, event.target.checked)}
+            />
+            {editingNodeId === node.id ? (
+              <input
+                className="draft-node-name-input"
+                value={editName}
+                autoFocus
+                aria-label={`修改 ${label} 名称`}
+                onChange={(event) => setEditName(event.target.value)}
+                onBlur={() => saveRename(node.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') saveRename(node.id)
+                  if (event.key === 'Escape') setEditingNodeId(null)
+                }}
+              />
+            ) : (
+              <span className="diff-node-name">{label}</span>
+            )}
+            <span className="diff-badge diff-badge-added">新增</span>
+            {node.description && (
+              <span className="diff-node-desc">{node.description}</span>
+            )}
+            <span className="diff-node-actions">
+              <button
+                type="button"
+                className="icon-action"
+                aria-label={`改名 ${label}`}
+                onClick={() => startRename(node)}
+              >
+                <Pencil size={14} />
+              </button>
+            </span>
+          </div>
+          {hasChildren && (
+            <div className="diff-children">
+              {entry.children.map((child) => renderDiffEntry(child, depth + 1))}
+            </div>
+          )}
+        </div>
+      )
+    }
+    const row = (
+      <div className="diff-node-row" style={{ paddingLeft: padding }}>
+        <span className={`diff-badge diff-badge-${entry.kind}`}>
+          {isAdded ? '新增' : '保留'}
+        </span>
+        <span className="diff-node-name">{label}</span>
+        {entry.node?.description && (
+          <span className="diff-node-desc">{entry.node.description}</span>
+        )}
+      </div>
+    )
+    return (
+      <div key={entry.real_node_id ?? entry.node?.id ?? label} className={`diff-node diff-${entry.kind}`}>
+        {hasChildren ? (
+          <details className="diff-details">
+            <summary>
+              {row}
+              <ChevronDown size={13} className="diff-chevron-open" />
+              <ChevronRight size={13} className="diff-chevron-closed" />
+            </summary>
+            <div className="diff-children">
+              {entry.children.map((child) => renderDiffEntry(child, depth + 1))}
+            </div>
+          </details>
+        ) : (
+          row
+        )}
+      </div>
+    )
+  }
+
+  function renderExpansionPreview() {
+    const addedCount = draft.diff.filter((entry) => entry.kind === 'added').length
+    const removedCount = draft.diff.filter((entry) => entry.kind === 'removed').length
+    return (
+      <div className="draft-step">
+        <div className="draft-chat-layout">
+          <div className="draft-tree-pane">
+            <header className="draft-step-head">
+              <Sparkles size={16} />
+              <strong>AI 拓展建议</strong>
+              <span>{addedCount} 新增 · {removedCount} 建议移除</span>
+            </header>
+            {draft.diff.length === 0 ? (
+              <div className="inline-empty">
+                <strong>暂无差异</strong>
+                <span>AI 未改变当前节点结构，可直接确认或继续对话。</span>
+              </div>
+            ) : (
+              <div className="diff-tree">
+                {draft.diff.map((entry) => renderDiffEntry(entry, 0))}
+              </div>
+            )}
+            {removedIds.size > 0 && (
+              <p className="diff-removal-note">
+                将删除 {removedIds.size} 个建议移除节点（含其子节点），取消勾选可保留。
+              </p>
+            )}
+          </div>
+          <div className="draft-chat">
+            <header className="draft-chat-head">
+              <MessageSquare size={14} />
+              <strong>与 AI 调整目录</strong>
+              <span>{(draft.messages ?? []).filter((m) => m.role === 'user').length}/30 轮</span>
+            </header>
+            <div className="draft-chat-list" ref={chatListRef}>
+              {(draft.messages ?? []).map((message) => (
+                <ChatBubble key={message.id} message={message} />
+              ))}
+              {chatMutation.isPending && (
+                <div className="draft-msg draft-msg-user draft-msg-pending">
+                  <span className="draft-msg-bubble">{chatInput.trim()}</span>
+                  <Loader2 size={13} className="spin" />
+                </div>
+              )}
+            </div>
+            {chatMutation.isError && (
+              <p className="draft-error" role="alert">
+                {mutationMessage(chatMutation.error, '发送失败，请重试')}
+              </p>
+            )}
+            <div className="draft-chat-input-row">
+              <textarea
+                className="draft-chat-input"
+                value={chatInput}
+                placeholder="和 AI 讨论拓展方向，确定后发送，例如：再加一个收纳节点；移除某块"
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                    sendChatMessage()
+                  }
+                }}
+                disabled={chatMutation.isPending}
+              />
+              <button
+                type="button"
+                className="btn primary draft-chat-send"
+                disabled={!chatInput.trim() || chatMutation.isPending}
+                onClick={sendChatMessage}
+              >
+                {chatMutation.isPending ? (
+                  <Loader2 size={14} className="spin" />
+                ) : (
+                  <Send size={14} />
+                )}
+                发送
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -419,7 +706,7 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
     <div className="draft-panel">
       <header className="draft-panel-head">
         <Sparkles size={18} />
-        <strong>AI 起草目录</strong>
+        <strong>{draft.target_node_id ? 'AI 节点拓展' : 'AI 起草目录'}</strong>
       </header>
 
       {draft.status === 'drafting' && (
@@ -436,7 +723,9 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
 
       {draft.status === 'awaiting_input' && renderClarify()}
 
-      {draft.status === 'pending_confirm' && renderPreview()}
+      {draft.status === 'pending_confirm' && (
+        draft.target_node_id ? renderExpansionPreview() : renderPreview()
+      )}
 
       {draft.status === 'failed' && (
         <div className="draft-step state-panel state-error" role="alert">
@@ -465,7 +754,11 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
       {confirmMutation.isSuccess && (
         <div className="draft-step state-panel" role="status">
           <Check size={18} />
-          <span>已创建 {confirmMutation.data.created_count} 个节点，目录已就绪。</span>
+          <span>
+            {draft.target_node_id
+              ? `已创建 ${confirmMutation.data.created_count} 个节点${removedIds.size ? `，移除 ${removedIds.size} 个节点` : ''}，目录已更新。`
+              : `已创建 ${confirmMutation.data.created_count} 个节点，目录已就绪。`}
+          </span>
         </div>
       )}
 
@@ -529,7 +822,7 @@ export default function DraftPanel({ projectId, draft }: DraftPanelProps) {
               type="button"
               className="btn primary"
               disabled={confirmMutation.isPending}
-              onClick={() => void confirmMutation.mutateAsync()}
+              onClick={() => void confirmMutation.mutateAsync([...removedIds])}
             >
               <Check size={14} /> 确认采用
             </button>

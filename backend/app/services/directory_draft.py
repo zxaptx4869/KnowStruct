@@ -21,11 +21,16 @@ from app.models import (
     Project,
     Source,
 )
-from app.services.nodes import list_nodes, touch_project
+from app.services.nodes import (
+    count_protected_node_references,
+    list_nodes,
+    touch_project,
+)
 from app.services.projects import get_project
 from app.utils.tree import (
     MAX_TREE_DEPTH,
     ancestor_ids,
+    descendant_ids,
     index_nodes,
     node_depth,
     normalize_node_name,
@@ -110,28 +115,89 @@ async def _source_summary(db: AsyncSession, project_id: str) -> str:
     return "\n".join(parts)[:MAX_SOURCE_SUMMARY_CHARS]
 
 
+async def _target_node_subtree_text(
+    db: AsyncSession,
+    project_id: str,
+    target_node_id: str,
+) -> tuple[Node, list[Node], str]:
+    """读取目标节点及其现有子树，并组装为提示词文本（现有子节点清单）。"""
+    all_nodes = list(
+        (
+            await db.scalars(
+                select(Node).where(Node.project_id == project_id)
+            )
+        ).all()
+    )
+    index = {node.id: node for node in all_nodes}
+    target = index.get(target_node_id)
+    if target is None:
+        raise ResourceNotFoundError("node")
+    children = sorted(
+        (
+            node
+            for node in all_nodes
+            if node.parent_id == target.id
+        ),
+        key=lambda node: (node.sort_order, node.id),
+    )
+
+    def build(node: Node) -> str:
+        lines = [f"- {node.name}：{node.description or ''}".rstrip("：")]
+        grandchildren = sorted(
+            (
+                child
+                for child in all_nodes
+                if child.parent_id == node.id
+            ),
+            key=lambda child: (child.sort_order, child.id),
+        )
+        for child in grandchildren:
+            lines.extend(f"  {line}" for line in build(child).splitlines())
+        return "\n".join(lines)
+
+    subtree_lines = [build(child) for child in children]
+    text = "\n现有子节点：\n" + "\n".join(subtree_lines)
+    return target, children, text[:MAX_SOURCE_SUMMARY_CHARS]
+
+
 async def create_draft(
     db: AsyncSession,
     workspace_id: str,
     project_id: str,
     background: str | None = None,
+    target_node_id: str | None = None,
 ) -> DirectoryDraft:
     project = await get_project(db, workspace_id, project_id)
-    node_count = await db.scalar(
-        select(func.count(Node.id)).where(Node.project_id == project.id)
-    )
-    if node_count:
-        raise ConflictError(
-            "draft_requires_empty_project",
-            "仅空项目支持 AI 起草目录",
+    if target_node_id is None:
+        node_count = await db.scalar(
+            select(func.count(Node.id)).where(Node.project_id == project.id)
         )
+        if node_count:
+            raise ConflictError(
+                "draft_requires_empty_project",
+                "仅空项目支持 AI 起草目录",
+            )
+    else:
+        target = await db.scalar(
+            select(Node).where(
+                Node.id == target_node_id,
+                Node.project_id == project.id,
+            )
+        )
+        if target is None:
+            raise ResourceNotFoundError("node")
     active = await get_active_draft(db, workspace_id, project_id)
     if active is not None:
         raise ConflictError("draft_already_active", "该项目已有待处理的 AI 草稿")
     draft = DirectoryDraft(
         project_id=project.id,
+        target_node_id=target_node_id,
         status=DraftStatus.DRAFTING,
-        next_action=DraftNextAction.CLARIFY,
+        next_action=(
+            DraftNextAction.GENERATE
+            if target_node_id is not None
+            else DraftNextAction.CLARIFY
+        ),
         background_snapshot=background,
     )
     db.add(draft)
@@ -236,6 +302,121 @@ async def _draft_tree_nodes(
     return nodes
 
 
+def _draft_subtree(
+    nodes: list[DirectoryDraftNode],
+    parent_id: str | None,
+) -> list[DirectoryDraftNode]:
+    return [
+        node
+        for node in nodes
+        if node.parent_id == parent_id
+    ]
+
+
+async def _expansion_diff(
+    db: AsyncSession,
+    draft: DirectoryDraft,
+) -> list[dict]:
+    """递归计算目标节点现有子树与草稿目标树的差异（新增/保留/建议移除）。"""
+    if draft.target_node_id is None:
+        return []
+    real_nodes = list(
+        (
+            await db.scalars(
+                select(Node).where(Node.project_id == draft.project_id)
+            )
+        ).all()
+    )
+    real_index = {node.id: node for node in real_nodes}
+    real_children: dict[str | None, list[Node]] = {}
+    for node in real_nodes:
+        real_children.setdefault(node.parent_id, []).append(node)
+    for siblings in real_children.values():
+        siblings.sort(key=lambda item: (item.sort_order, item.id))
+
+    draft_nodes = await _draft_tree_nodes(db, draft)
+
+    async def diff_level(
+        draft_children: list[DirectoryDraftNode],
+        real_children_nodes: list[Node],
+    ) -> list[dict]:
+        real_by_name = {
+            node.normalized_name: node for node in real_children_nodes
+        }
+        entries: list[dict] = []
+        matched: set[str] = set()
+        for draft_node in draft_children:
+            real = real_by_name.get(draft_node.normalized_name)
+            if real is not None:
+                matched.add(real.id)
+                entries.append(
+                    {
+                        "kind": "kept",
+                        "node": {
+                            "id": draft_node.id,
+                            "name": draft_node.name,
+                            "description": draft_node.description,
+                            "selected": draft_node.selected,
+                        },
+                        "real_node_id": real.id,
+                        "children": await diff_level(
+                            _draft_subtree(draft_nodes, draft_node.id),
+                            real_children.get(real.id, []),
+                        ),
+                    }
+                )
+            else:
+                entries.append(
+                    {
+                        "kind": "added",
+                        "node": {
+                            "id": draft_node.id,
+                            "name": draft_node.name,
+                            "description": draft_node.description,
+                            "selected": draft_node.selected,
+                        },
+                        "real_node_id": None,
+                        "children": await diff_level(
+                            _draft_subtree(draft_nodes, draft_node.id),
+                            [],
+                        ),
+                    }
+                )
+        for real in real_children_nodes:
+            if real.id in matched:
+                continue
+            subtree_ids = [real.id, *descendant_ids(real.id, real_nodes)]
+            blockers = await count_protected_node_references(
+                db,
+                draft.project_id,
+                subtree_ids,
+            )
+            entries.append(
+                {
+                    "kind": "removed",
+                    "node": None,
+                    "real_node_id": real.id,
+                    "name": real.name,
+                    "description": real.description,
+                    "blocked": blockers > 0,
+                    "blocker_count": blockers,
+                    "children": await diff_level(
+                        [],
+                        real_children.get(real.id, []),
+                    ),
+                }
+            )
+        return entries
+
+    target = real_index.get(draft.target_node_id)
+    if target is None:
+        return []
+    return await diff_level(
+        _draft_subtree(draft_nodes, None),
+        real_children.get(target.id, []),
+    )
+
+
 async def draft_payload(
     db: AsyncSession,
     draft: DirectoryDraft,
@@ -247,10 +428,17 @@ async def draft_payload(
     return {
         "id": draft.id,
         "project_id": draft.project_id,
+        "target_node_id": draft.target_node_id,
         "status": draft.status,
         "next_action": draft.next_action,
         "intent_note": draft.intent_note,
         "clarify": clarify,
+        "diff": (
+            await _expansion_diff(db, draft)
+            if draft.target_node_id is not None
+            and draft.status == DraftStatus.PENDING_CONFIRM
+            else []
+        ),
         "nodes": [
             {
                 "id": node.id,
@@ -526,7 +714,17 @@ async def generate_draft_step(
     if project is None:
         raise _draft_not_found()
     goal = _project_goal_text(project, draft.background_snapshot)
+    expansion_context = ""
+    target_node: Node | None = None
+    if draft.target_node_id is not None:
+        target_node, _, expansion_context = await _target_node_subtree_text(
+            db,
+            project.id,
+            draft.target_node_id,
+        )
     context = await _source_summary(db, project.id)
+    if expansion_context:
+        context = f"{expansion_context}\n\n{context}"
 
     if draft.next_action == DraftNextAction.CLARIFY:
         clarify = await provider.draft_clarify(goal, context)
@@ -556,10 +754,14 @@ async def generate_draft_step(
             for key, value in answers.items()
             if value
         )
-        outline = await provider.generate_outline(
-            goal,
-            f"{context}\n\n用户澄清答案：\n{answer_text or '（未回答）'}",
-        )
+        prompt_context = f"{context}\n\n用户澄清答案：\n{answer_text or '（未回答）'}"
+        if target_node is not None:
+            outline = await provider.expand_node(
+                target_node.name,
+                prompt_context,
+            )
+        else:
+            outline = await provider.generate_outline(goal, prompt_context)
         await replace_draft_nodes(db, draft, outline)
         draft.status = DraftStatus.PENDING_CONFIRM
         draft.finished_at = utc_now()
@@ -616,7 +818,11 @@ async def redraft(
     draft.intent_note = None
     draft.conversation_rounds = 0
     draft.last_error = None
-    draft.next_action = DraftNextAction.CLARIFY
+    draft.next_action = (
+        DraftNextAction.GENERATE
+        if draft.target_node_id is not None
+        else DraftNextAction.CLARIFY
+    )
     draft.status = DraftStatus.DRAFTING
     draft.finished_at = None
     draft.claimed_at = None
@@ -712,12 +918,21 @@ async def confirm_draft(
     workspace_id: str,
     project_id: str,
     draft_id: str,
+    removed_node_ids: list[str] | None = None,
 ) -> tuple[DirectoryDraft, int]:
     draft = await get_draft(db, workspace_id, project_id, draft_id)
     if draft.status == DraftStatus.CONFIRMED:
         return draft, 0
     if draft.status != DraftStatus.PENDING_CONFIRM:
         raise ConflictError("draft_not_confirmable", "草稿当前不能确认")
+    if draft.target_node_id is not None:
+        return await _confirm_expansion(
+            db,
+            workspace_id,
+            project_id,
+            draft,
+            removed_node_ids or [],
+        )
 
     nodes = await _draft_tree_nodes(db, draft)
     index = {node.id: node for node in nodes}
@@ -787,6 +1002,194 @@ async def confirm_draft(
     draft.finished_at = utc_now()
     touch_project(project)
     return draft, len(ordered)
+
+
+async def _confirm_expansion(
+    db: AsyncSession,
+    workspace_id: str,
+    project_id: str,
+    draft: DirectoryDraft,
+    removed_node_ids: list[str],
+) -> tuple[DirectoryDraft, int]:
+    """节点拓展确认：创建新增节点、删除用户勾选的建议移除子树，单事务合并。"""
+    project, real_nodes = await list_nodes(
+        db,
+        workspace_id,
+        project_id,
+        for_update=True,
+    )
+    real_index = {node.id: node for node in real_nodes}
+    target = real_index.get(draft.target_node_id or "")
+    if target is None:
+        raise ConflictError(
+            "draft_target_node_gone",
+            "目标节点已删除，请重新发起拓展",
+        )
+
+    draft_nodes = await _draft_tree_nodes(db, draft)
+    index = {node.id: node for node in draft_nodes}
+    selected_ids = {node.id for node in draft_nodes if node.selected}
+    for node_id in list(selected_ids):
+        for ancestor_id in ancestor_ids(node_id, index):
+            selected_ids.add(ancestor_id)
+    selected = [node for node in draft_nodes if node.id in selected_ids]
+    if not selected:
+        raise ConflictError("draft_empty_selection", "请至少勾选一个节点")
+    _validate_draft_tree(selected)
+
+    # 校验移除项：必须属于差异建议移除集合
+    diff = await _expansion_diff(db, draft)
+    removable: set[str] = set()
+
+    def collect_removed(entries: list[dict]) -> None:
+        for entry in entries:
+            if entry["kind"] == "removed" and entry["real_node_id"]:
+                removable.add(entry["real_node_id"])
+            collect_removed(entry["children"])
+
+    collect_removed(diff)
+    for real_id in removed_node_ids:
+        if real_id not in removable or real_id not in real_index:
+            raise ConflictError(
+                "invalid_removal_target",
+                "所选移除节点不在 AI 建议移除范围内",
+            )
+
+    # 移除受保护校验
+    removal_all_ids: set[str] = set()
+    for real_id in removed_node_ids:
+        node = real_index[real_id]
+        if any(ancestor in removed_node_ids for ancestor in ancestor_ids(real_id, real_index)):
+            continue
+        subtree_ids = [real_id, *descendant_ids(real_id, real_nodes)]
+        removal_all_ids.update(subtree_ids)
+        blockers = await count_protected_node_references(
+            db,
+            project.id,
+            subtree_ids,
+        )
+        if blockers:
+            raise ConflictError(
+                "node_has_protected_content",
+                f"「{node.name}」包含受保护的正式内容，无法移除",
+                blocker_count=blockers,
+            )
+
+    # 拓扑排序选中草稿节点
+    ordered: list[DirectoryDraftNode] = []
+    ordered_ids: set[str] = set()
+    remaining = list(selected)
+    while remaining:
+        progressed = False
+        for node in list(remaining):
+            if node.parent_id is None or node.parent_id in ordered_ids:
+                ordered.append(node)
+                remaining.remove(node)
+                ordered_ids.add(node.id)
+                progressed = True
+        if not progressed:
+            raise ConflictError("draft_tree_invalid", "草稿目录结构无效")
+
+    # 删除勾选的移除子树
+    await db.execute(
+        delete(Node).where(Node.id.in_(removal_all_ids))
+    )
+    await db.flush()
+    real_nodes = [
+        node for node in real_nodes if node.id not in removal_all_ids
+    ]
+    real_index = {node.id: node for node in real_nodes}
+
+    # 创建新增节点：kept 节点映射到现有真实节点，added 节点创建
+    real_by_draft: dict[str, str] = {}
+    created: list[Node] = []
+    kept_ids: set[str] = set()
+    for draft_node in ordered:
+        parent_real_id = (
+            real_by_draft.get(draft_node.parent_id)
+            if draft_node.parent_id is not None
+            else target.id
+        )
+        if parent_real_id is None:
+            raise ConflictError("draft_tree_invalid", "草稿目录结构无效")
+        existing_match = next(
+            (
+                node
+                for node in real_nodes
+                if node.parent_id == parent_real_id
+                and node.normalized_name == draft_node.normalized_name
+            ),
+            None,
+        )
+        if existing_match is not None:
+            real_by_draft[draft_node.id] = existing_match.id
+            kept_ids.add(existing_match.id)
+            continue
+        all_nodes = [*real_nodes, *created]
+        _ensure_real_sibling_unique(
+            all_nodes,
+            parent_real_id,
+            draft_node.normalized_name,
+        )
+        if node_depth(
+            parent_real_id,
+            index_nodes(all_nodes),
+        ) >= MAX_TREE_DEPTH:
+            raise ConflictError("node_depth_exceeded", "知识目录最多支持 6 层")
+        siblings = [
+            item for item in all_nodes if item.parent_id == parent_real_id
+        ]
+        node = Node(
+            id=str(uuid.uuid4()),
+            project_id=project.id,
+            parent_id=parent_real_id,
+            sibling_scope=sibling_scope(project.id, parent_real_id),
+            name=draft_node.name,
+            normalized_name=draft_node.normalized_name,
+            description=draft_node.description,
+            sort_order=len(siblings),
+        )
+        db.add(node)
+        created.append(node)
+        real_by_draft[draft_node.id] = node.id
+
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError(
+            "duplicate_node_name",
+            "同级目录中已存在同名节点",
+        ) from exc
+
+    # 目标节点下第一层按草稿顺序重排
+    final_nodes = [*real_nodes, *created]
+    final_index = {node.id: node for node in final_nodes}
+    order: list[str] = []
+    for draft_root in _draft_subtree(draft_nodes, None):
+        real_id = real_by_draft.get(draft_root.id)
+        if real_id:
+            order.append(real_id)
+    for child in sorted(
+        (
+            node
+            for node in final_nodes
+            if node.parent_id == target.id
+        ),
+        key=lambda node: (node.sort_order, node.id),
+    ):
+        if child.id not in order:
+            order.append(child.id)
+    for position, real_id in enumerate(order):
+        node = final_index.get(real_id)
+        if node is not None:
+            node.sort_order = position
+
+    draft.status = DraftStatus.CONFIRMED
+    draft.finished_at = utc_now()
+    touch_project(project)
+    await db.flush()
+    return draft, len(created)
 
 
 def _validate_draft_tree(nodes: list[DirectoryDraftNode]) -> None:

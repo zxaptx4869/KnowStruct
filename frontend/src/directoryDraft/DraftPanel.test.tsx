@@ -13,10 +13,12 @@ function draft(overrides: Partial<DirectoryDraft> = {}): DirectoryDraft {
   return {
     id: 'draft-1',
     project_id: PROJECT_ID,
+    target_node_id: null,
     status: 'pending_confirm',
     next_action: 'generate',
     intent_note: null,
     clarify: [],
+    diff: [],
     messages: [],
     nodes: [
       { id: 'n1', parent_id: null, name: '硬装施工模块', description: null, selected: true, sort_order: 0 },
@@ -248,6 +250,262 @@ describe('DraftPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /重试/ }))
     await waitFor(() => {
       expect(mock.mock.calls.some(([url]) => String(url).includes('/retry'))).toBe(true)
+    })
+  })
+
+  it('renders expansion diff and confirms with selected removal ids', async () => {
+    const mock = fetchMock()
+    renderPanel(draft({
+      target_node_id: 'node-1',
+      diff: [
+        {
+          kind: 'kept',
+          node: { id: 'd1', name: '风格确定', description: null, selected: true },
+          real_node_id: 'r1',
+          name: null,
+          description: null,
+          blocked: false,
+          blocker_count: 0,
+          children: [],
+        },
+        {
+          kind: 'added',
+          node: { id: 'd2', name: '新增细分节点', description: 'AI 建议补充', selected: true },
+          real_node_id: null,
+          name: null,
+          description: null,
+          blocked: false,
+          blocker_count: 0,
+          children: [],
+        },
+        {
+          kind: 'removed',
+          node: null,
+          real_node_id: 'r2',
+          name: '待删除节点',
+          description: null,
+          blocked: false,
+          blocker_count: 0,
+          children: [],
+        },
+      ],
+    }))
+
+    expect(screen.getByText('AI 节点拓展')).toBeInTheDocument()
+    expect(screen.getByText('风格确定')).toBeInTheDocument()
+    expect(screen.getByText('新增细分节点')).toBeInTheDocument()
+    expect(screen.getByText('待删除节点')).toBeInTheDocument()
+
+    // 建议移除项默认勾选
+    expect(screen.getByLabelText('移除 待删除节点')).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: /确认采用/ }))
+    await waitFor(() => {
+      const call = mock.mock.calls.find(([url]) => String(url).includes('/confirm'))
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call![1]?.body))).toEqual({ removed_node_ids: ['r2'] })
+    })
+  })
+
+  it('lets users uncheck a removal to keep the node', async () => {
+    const mock = fetchMock()
+    renderPanel(draft({
+      target_node_id: 'node-1',
+      diff: [
+        {
+          kind: 'removed',
+          node: null,
+          real_node_id: 'r2',
+          name: '待删除节点',
+          description: null,
+          blocked: false,
+          blocker_count: 0,
+          children: [],
+        },
+      ],
+    }))
+
+    const removal = screen.getByLabelText('移除 待删除节点')
+    expect(removal).toBeChecked()
+    await userEvent.click(removal)
+    expect(removal).not.toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: /确认采用/ }))
+    await waitFor(() => {
+      const call = mock.mock.calls.find(([url]) => String(url).includes('/confirm'))
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call![1]?.body))).toEqual({ removed_node_ids: [] })
+    })
+  })
+
+  it('keeps user-unchecked removals after a refetch with the same diff', async () => {
+    const base = draft({
+      target_node_id: 'node-1',
+      diff: [
+        {
+          kind: 'removed',
+          node: null,
+          real_node_id: 'r2',
+          name: '待删除节点',
+          description: null,
+          blocked: false,
+          blocker_count: 0,
+          children: [],
+        },
+      ],
+    })
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <DraftPanel projectId={PROJECT_ID} draft={base} />
+        </ToastProvider>
+      </QueryClientProvider>,
+    )
+
+    const removal = screen.getByLabelText('移除 待删除节点')
+    expect(removal).toBeChecked()
+    await userEvent.click(removal)
+    expect(removal).not.toBeChecked()
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <DraftPanel
+            projectId={PROJECT_ID}
+            draft={{ ...base, diff: JSON.parse(JSON.stringify(base.diff)) }}
+          />
+        </ToastProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByLabelText('移除 待删除节点')).not.toBeChecked()
+  })
+
+  it('default-checks nested removals under kept nodes', async () => {
+    renderPanel(draft({
+      target_node_id: 'node-1',
+      diff: [
+        {
+          kind: 'kept',
+          node: { id: 'd1', name: '保留节点', description: null, selected: true },
+          real_node_id: 'r1',
+          name: null,
+          description: null,
+          blocked: false,
+          blocker_count: 0,
+          children: [
+            {
+              kind: 'removed',
+              node: null,
+              real_node_id: 'r3',
+              name: '嵌套移除',
+              description: null,
+              blocked: false,
+              blocker_count: 0,
+              children: [],
+            },
+          ],
+        },
+      ],
+    }))
+
+    // kept 节点带子差异时默认折叠，先展开
+    await userEvent.click(screen.getByText('保留节点'))
+    expect(screen.getByLabelText('移除 嵌套移除')).toBeChecked()
+  })
+
+  it('disables removal of blocked nodes and shows blocker count', () => {
+    renderPanel(draft({
+      target_node_id: 'node-1',
+      diff: [
+        {
+          kind: 'removed',
+          node: null,
+          real_node_id: 'r2',
+          name: '有记录节点',
+          description: null,
+          blocked: true,
+          blocker_count: 2,
+          children: [],
+        },
+      ],
+    }))
+    expect(screen.getByText('受保护内容 2 条，不可移除')).toBeInTheDocument()
+    expect(screen.getByLabelText('移除 有记录节点')).toBeDisabled()
+    expect(screen.getByLabelText('移除 有记录节点')).not.toBeChecked()
+  })
+
+  it('lets users toggle and rename added expansion nodes', async () => {
+    const mock = fetchMock()
+    renderPanel(draft({
+      target_node_id: 'node-1',
+      diff: [
+        {
+          kind: 'added',
+          node: { id: 'd2', name: '新增细分节点', description: 'AI 建议补充', selected: true },
+          real_node_id: null,
+          name: null,
+          description: null,
+          blocked: false,
+          blocker_count: 0,
+          children: [],
+        },
+      ],
+    }))
+
+    await userEvent.click(screen.getByLabelText('采用 新增细分节点'))
+    await waitFor(() => {
+      const call = mock.mock.calls.find(
+        ([url, init]) => String(url).includes('/nodes/d2') && (init?.method ?? '') === 'PATCH',
+      )
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call![1]?.body))).toEqual({ selected: false })
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: '改名 新增细分节点' }))
+    const input = screen.getByLabelText('修改 新增细分节点 名称')
+    await userEvent.clear(input)
+    await userEvent.type(input, '细分维度')
+    fireEvent.blur(input)
+    await waitFor(() => {
+      const call = mock.mock.calls.find(
+        ([url, init]) => String(url).includes('/nodes/d2')
+          && (init?.method ?? '') === 'PATCH'
+          && JSON.parse(String(init?.body)).name,
+      )
+      expect(call).toBeDefined()
+      expect(JSON.parse(String(call![1]?.body))).toEqual({ name: '细分维度' })
+    })
+  })
+
+  it('collapses into a target-node banner when viewing another node', async () => {
+    const mock = fetchMock()
+    const onGo = vi.fn()
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <DraftPanel
+            projectId={PROJECT_ID}
+            draft={draft({ target_node_id: 'node-1' })}
+            currentNodeId="node-2"
+            targetNodeName="装修准备"
+            onGoToTargetNode={onGo}
+          />
+        </ToastProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByText(/AI 拓展草稿：正在拓展「装修准备」/)).toBeInTheDocument()
+    expect(screen.queryByText('AI 节点拓展')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /回到节点继续处理/ }))
+    expect(onGo).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(screen.getByRole('button', { name: /放弃草稿/ }))
+    await waitFor(() => {
+      expect(mock.mock.calls.some(([url]) => String(url).includes('/discard'))).toBe(true)
     })
   })
 })

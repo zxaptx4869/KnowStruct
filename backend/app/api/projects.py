@@ -1,8 +1,11 @@
 """Authenticated project and knowledge-directory APIs."""
 
 from fastapi import APIRouter, Query, Response, status
+from sqlalchemy import select
 
 from app.api.deps import Auth, DbSession
+from app.models import Node
+from app.models.directory_draft import DraftStatus
 from app.schemas.projects import (
     BatchEntryDeleteRequest,
     BatchEntryDeleteResponse,
@@ -20,7 +23,11 @@ from app.schemas.projects import (
     ProjectResponse,
     ProjectUpdate,
 )
-from app.services.directory_draft import discard_active_draft
+from app.services.directory_draft import (
+    discard_active_draft,
+    get_active_draft,
+    utc_now,
+)
 from app.services.entries import (
     batch_delete_entries,
     batch_move_entries,
@@ -284,11 +291,19 @@ async def node_delete(
     auth: Auth,
     db: DbSession,
 ) -> NodeDeleteResponse:
+    draft = await get_active_draft(db, auth.workspace.id, project_id)
     deleted_count, parent_id = await delete_node_subtree(
         db,
         auth.workspace.id,
         project_id,
         node_id,
     )
+    if draft is not None and draft.target_node_id is not None:
+        target_exists = await db.scalar(
+            select(Node.id).where(Node.id == draft.target_node_id)
+        )
+        if not target_exists:
+            draft.status = DraftStatus.DISCARDED
+            draft.finished_at = utc_now()
     await db.commit()
     return NodeDeleteResponse(deleted_count=deleted_count, parent_id=parent_id)

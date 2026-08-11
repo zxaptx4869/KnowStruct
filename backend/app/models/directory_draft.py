@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
-from app.models.projects import Project
+from app.models.projects import Node, Project
 
 
 class DraftStatus:
@@ -62,6 +62,12 @@ class DirectoryDraft(UUIDMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    target_node_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("nodes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
@@ -91,6 +97,7 @@ class DirectoryDraft(UUIDMixin, TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped[Project] = relationship()
+    target_node: Mapped[Node | None] = relationship()
     nodes: Mapped[list["DirectoryDraftNode"]] = relationship(
         back_populates="draft",
         cascade="all, delete-orphan",
