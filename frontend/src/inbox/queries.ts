@@ -116,6 +116,21 @@ export function useBatchAssignSources() {
   })
 }
 
+export function useAssignSource(sourceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (projectId: string) =>
+      api.post<SourceDetail>(
+        `/inbox/sources/${sourceId}/assign`,
+        { project_id: projectId },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: inboxKeys.detail(sourceId) })
+      void queryClient.invalidateQueries({ queryKey: inboxKeys.all })
+    },
+  })
+}
+
 export function useBatchDeleteSources() {
   const invalidate = useInvalidateInbox()
   return useMutation({

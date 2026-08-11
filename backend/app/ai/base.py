@@ -51,6 +51,7 @@ class ExtractionResult:
     content: str
     entry_type: str  # 经验 / 参数 / 避坑 / 商品 / 价格 / 决策 / 待办 / 疑问
     suggested_node_path: str | None = None
+    suggested_node_confidence: float | None = None
     key_params: dict | None = None
     risk_points: list[str] = field(default_factory=list)
     applicable_conditions: list[str] = field(default_factory=list)
@@ -65,6 +66,15 @@ class ReviewResult:
     related_entry_ids: list[str] = field(default_factory=list)
     suggestion: str = ""
     severity: str = "info"  # info / warning / error
+
+
+@dataclass
+class ProjectRecommendation:
+    """AI 推荐的归档项目；project_id 为空表示不推荐。"""
+
+    project_id: str | None = None
+    confidence: float | None = None
+    reason: str | None = None
 
 
 class AIProviderError(Exception):
@@ -115,7 +125,10 @@ class AIProvider(ABC):
 
     @abstractmethod
     async def extract_candidates(
-        self, content: str, content_type: str = "text"
+        self,
+        content: str,
+        content_type: str = "text",
+        directory_paths: str | None = None,
     ) -> list[ExtractionResult]:
         """生成多条待确认的提取候选。"""
         ...
@@ -143,3 +156,19 @@ class AIProvider(ABC):
     ) -> list[OutlineNode]:
         """为目标目录节点生成目标子节点（必须包含应保留的现有子节点）。"""
         ...
+
+    async def recommend_project(
+        self,
+        projects: list[dict],
+        content: str,
+    ) -> ProjectRecommendation:
+        """基于内容与项目列表推荐最可能的归档项目。"""
+        raise AIProviderError("AI 项目推荐能力尚未实现")
+
+    async def summarize_project(
+        self,
+        project_name: str,
+        nodes_text: str,
+    ) -> str:
+        """基于项目节点路径+说明生成一段精炼项目概要（约 100-150 字）。"""
+        raise AIProviderError("AI 项目概要生成能力尚未实现")

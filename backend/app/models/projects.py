@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -41,6 +50,15 @@ class Project(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     goal: Mapped[str | None] = mapped_column(String(500), nullable=True)
     background: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    summary: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    summary_signature: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    summary_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -54,7 +72,10 @@ class Project(UUIDMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    sources: Mapped[list[Source]] = relationship(back_populates="project")
+    sources: Mapped[list[Source]] = relationship(
+        back_populates="project",
+        foreign_keys="Source.project_id",
+    )
 
 
 class Node(UUIDMixin, TimestampMixin, Base):

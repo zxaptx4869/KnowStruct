@@ -8,6 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.ai.base import AIProvider, AIProviderError
 from app.api.errors import ConflictError, ResourceNotFoundError
@@ -15,6 +16,7 @@ from app.models import (
     Entry,
     EntrySource,
     Extraction,
+    Node,
     ProcessingTask,
     Project,
     Source,
@@ -28,6 +30,110 @@ from app.schemas.inbox import CandidateCounts, SourceCreate
 from app.services.ocr import prepare_ocr_image, run_ocr_with_fallback
 from app.services.projects import get_project
 from app.services.storage import get_attachment_storage
+
+aliased_project = aliased(Project)
+
+RECOMMEND_CONFIDENCE_THRESHOLD = 0.6
+
+
+async def project_directory_paths(
+    db: AsyncSession,
+    project_id: str,
+    *,
+    max_chars: int = 4000,
+) -> str | None:
+    """把项目目录树序列化为路径行清单；空目录返回 None。"""
+    nodes = list(
+        (
+            await db.scalars(
+                select(Node).where(Node.project_id == project_id)
+            )
+        ).all()
+    )
+    if not nodes:
+        return None
+    by_parent: dict[str | None, list[Node]] = {}
+    for node in nodes:
+        by_parent.setdefault(node.parent_id, []).append(node)
+    for children in by_parent.values():
+        children.sort(key=lambda item: (item.sort_order, item.id))
+    def build(parent_id: str | None, prefix: str) -> list[str]:
+        lines: list[str] = []
+        for node in by_parent.get(parent_id, []):
+            path = f"{prefix} / {node.name}" if prefix else node.name
+            description = (node.description or "").strip()
+            lines.append(
+                f"{path}：{description}" if description else path
+            )
+            lines.extend(build(node.id, path))
+        return lines
+
+    paths = build(None, "")
+    if not paths:
+        return None
+    text = "\n".join(paths)
+    if len(text) > max_chars:
+        return text[:max_chars]
+    return text
+
+
+async def recommend_source_project(
+    db: AsyncSession,
+    source: Source,
+    provider: AIProvider,
+) -> bool:
+    """未选项目时为 Source 生成项目推荐并落库；失败静默降级。"""
+    if source.project_id is not None or source.recommended_at is not None:
+        return False
+    projects = list(
+        (
+            await db.scalars(
+                select(Project)
+                .where(Project.workspace_id == source.workspace_id)
+                .order_by(Project.created_at, Project.id)
+            )
+        ).all()
+    )
+    content = (source.content or "").strip()
+    if not content:
+        return False
+    if len(projects) <= 1:
+        if projects:
+            source.project_id = projects[0].id
+            source.recommended_project_id = projects[0].id
+            source.recommended_confidence = 1.0
+            source.recommended_reason = "工作区仅有该项目"
+            source.recommended_at = utc_now()
+            return True
+        return False
+    try:
+        recommendation = await provider.recommend_project(
+            [
+                {
+                    "id": project.id,
+                    "name": project.name,
+                    "goal": project.goal,
+                    "background": project.background,
+                    "summary": project.summary,
+                }
+                for project in projects
+            ],
+            content,
+        )
+    except Exception:  # noqa: BLE001 - 推荐失败静默降级，不阻塞采集/提取
+        return False
+    if recommendation.project_id is None:
+        return False
+    if recommendation.project_id not in {
+        project.id for project in projects
+    }:
+        return False
+    source.project_id = recommendation.project_id
+    source.recommended_project_id = recommendation.project_id
+    source.recommended_confidence = recommendation.confidence
+    source.recommended_reason = recommendation.reason
+    source.recommended_at = utc_now()
+    return True
 
 
 def utc_now() -> datetime:
@@ -217,6 +323,7 @@ class SourceListItemData:
     counts: CandidateCounts
     attachments: list[SourceAttachment] = field(default_factory=list)
     duplicate_of: "DuplicateSourceRef | None" = None
+    recommended_project_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -312,8 +419,12 @@ async def list_sources(
     limit: int = 200,
 ) -> list[SourceListItemData]:
     query = (
-        select(Source, Project.name)
+        select(Source, Project.name, aliased_project.name)
         .outerjoin(Project, Project.id == Source.project_id)
+        .outerjoin(
+            aliased_project,
+            aliased_project.id == Source.recommended_project_id,
+        )
         .where(Source.workspace_id == workspace_id)
     )
     if source_type:
@@ -333,6 +444,7 @@ async def list_sources(
     rows = (await db.execute(query)).all()
     sources = [row[0] for row in rows]
     project_names = {row[0].id: row[1] for row in rows}
+    recommended_names = {row[0].id: row[2] for row in rows}
     tasks = await _load_tasks(db, [source.id for source in sources])
     counts = await _load_counts(db, [source.id for source in sources])
     attachments = await _load_attachments(db, [source.id for source in sources])
@@ -356,6 +468,7 @@ async def list_sources(
             SourceListItemData(
                 source=source,
                 project_name=project_names[source.id],
+                recommended_project_name=recommended_names.get(source.id),
                 task=task,
                 counts=source_counts,
                 attachments=attachments.get(source.id, []),
@@ -471,14 +584,18 @@ async def get_source_detail(
     source_id: str,
 ) -> SourceDetailData:
     row = await db.execute(
-        select(Source, Project.name)
+        select(Source, Project.name, aliased_project.name)
         .outerjoin(Project, Project.id == Source.project_id)
+        .outerjoin(
+            aliased_project,
+            aliased_project.id == Source.recommended_project_id,
+        )
         .where(Source.id == source_id, Source.workspace_id == workspace_id)
     )
     found = row.first()
     if found is None:
         raise ResourceNotFoundError("source")
-    source, project_name = found
+    source, project_name, recommended_project_name = found
     attachments = await _load_attachments(db, [source.id])
     task = await db.scalar(
         select(ProcessingTask).where(ProcessingTask.source_id == source.id)
@@ -526,6 +643,7 @@ async def get_source_detail(
     return SourceDetailData(
         source=source,
         project_name=project_name,
+        recommended_project_name=recommended_project_name,
         task=task,
         counts=counts,
         extractions=extractions,
@@ -613,8 +731,16 @@ async def batch_assign_sources(
     sources = await _load_batch_sources(db, workspace_id, source_ids)
     project = await get_project(db, workspace_id, project_id)
 
+    # 推荐自动填充的 Source 允许被批量重新分配（纠正推荐），
+    # 用户手动分配/确认过的 Source 仍拒绝覆盖。
     already_assigned = [
-        source for source in sources.values() if source.project_id is not None
+        source
+        for source in sources.values()
+        if source.project_id is not None
+        and (
+            source.recommended_at is None
+            or source.recommended_project_id != source.project_id
+        )
     ]
     if already_assigned:
         raise ConflictError(
@@ -642,6 +768,26 @@ async def batch_assign_sources(
         source.project_id = project.id
     await db.flush()
     return len(sources)
+
+
+async def assign_source_project(
+    db: AsyncSession,
+    workspace_id: str,
+    source_id: str,
+    project_id: str,
+) -> Source:
+    """单条设置 Source 的归档项目（用户选择始终优先，允许覆盖推荐）。"""
+    source = await db.scalar(
+        select(Source).where(
+            Source.id == source_id,
+            Source.workspace_id == workspace_id,
+        )
+    )
+    if source is None:
+        raise ResourceNotFoundError("source")
+    project = await get_project(db, workspace_id, project_id)
+    source.project_id = project.id
+    return source
 
 
 async def batch_delete_sources(
@@ -743,13 +889,29 @@ async def process_source_extraction(
     provider: AIProvider,
 ) -> None:
     """执行 AI 提取：成功时在同一事务写入候选并标记任务成功。"""
+    await recommend_source_project(db, source, provider)
+    directory_paths = None
+    context_project_id = source.project_id or source.recommended_project_id
+    if context_project_id is not None:
+        directory_paths = await project_directory_paths(
+            db,
+            context_project_id,
+        )
     results = await provider.extract_candidates(
         source.content,
         source.source_type,
+        directory_paths,
     )
     if not results:
         raise AIProviderError("未生成有效候选，请重试")
     for index, result in enumerate(results):
+        suggested_path = result.suggested_node_path
+        if suggested_path:
+            suggested_path = re.sub(
+                r"^\s*建议新建\s*[：:]\s*",
+                "",
+                suggested_path,
+            ).strip() or None
         db.add(
             Extraction(
                 source_id=source.id,
@@ -757,7 +919,8 @@ async def process_source_extraction(
                 title=result.title,
                 content=result.content,
                 entry_type=result.entry_type,
-                suggested_node_path=result.suggested_node_path,
+                suggested_node_path=suggested_path,
+                suggested_node_confidence=result.suggested_node_confidence,
                 key_params=result.key_params,
                 risk_points=result.risk_points,
                 applicable_conditions=result.applicable_conditions,

@@ -7,6 +7,7 @@ export interface Project {
   name: string
   goal: string | null
   background: string | null
+  summary?: string | null
   status: ProjectStatus
   node_count: number
   entry_count: number

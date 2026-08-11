@@ -14,6 +14,7 @@ from app.ai.base import (
     ClarifyResult,
     ExtractionResult,
     OutlineNode,
+    ProjectRecommendation,
     ReviewResult,
 )
 from app.models.entries import EntryType
@@ -24,9 +25,37 @@ CANDIDATE_SYSTEM_PROMPT = (
     "你是知识整理助手。根据用户提供的原始内容，提取 2-4 条可归档的知识候选。"
     '必须只输出一个 JSON 对象，格式为 {"candidates": [{"title": "...", '
     '"content": "...", "entry_type": "...", "applicable_conditions": ["..."], '
-    '"risk_points": ["..."], "confidence": 0.9, "suggested_node_path": "..."}]}。'
+    '"risk_points": ["..."], "confidence": 0.9, "suggested_node_path": "...", '
+    '"suggested_node_confidence": 0.8}]}。'
     f'entry_type 只能取以下值之一：{_ENTRY_TYPE_KEYS}。'
     "confidence 是 0 到 1 的数字。不要输出 JSON 之外的任何内容。"
+    "当用户提供了「现有目录」时，必须优先复用现有目录中的节点：suggested_node_path 应填写"
+    "现有目录中的完整路径（用 / 分隔的节点名序列，只输出节点名，不要带节点说明）。"
+    "仅当现有目录确实没有能承载该内容的节点时，才填写你认为合适的新路径；"
+    "不要加「建议新建」等前缀，且新路径应尽量挂靠在现有节点下，避免新增顶层节点。"
+    "suggested_node_confidence 是 0 到 1 的数字，表示该归档节点建议的可靠程度。"
+)
+
+PROJECT_RECOMMEND_SYSTEM_PROMPT = (
+    "你是 KnowStruct 的资料归档助手。用户提供一条待归档的内容和可选的归档项目列表。"
+    "请判断这条内容最可能属于哪个项目。项目列表每项含项目名称与概要"
+    "（概要概括了该项目覆盖的主题/城市/内容），请结合内容中的地名、主题与项目概要判断。"
+    '必须只输出一个 JSON 对象，格式为 {"recommended": true, "project_id": "...", '
+    '"confidence": 0.9, "reason": "一句话理由"}。'
+    "若项目列表为空、内容不足以判断或置信度低于 0.6，输出 "
+    '{"recommended": false, "confidence": 0.3, "reason": "说明"}。'
+    "project_id 必须取自用户提供的项目 id；confidence 是 0 到 1 的数字。"
+    "不要输出 JSON 之外的任何内容。"
+)
+
+PROJECT_SUMMARY_SYSTEM_PROMPT = (
+    "你是 KnowStruct 的知识库项目画像助手。用户会提供项目名称与该项目知识目录的"
+    "节点路径清单（每行「路径：节点说明」，路径用 / 分隔）。"
+    "请用不超过 150 字概括这个项目覆盖的主题与内容，帮助判断一条新资料是否属于该项目。"
+    "要求：按主题归纳（如「覆盖昆明/大理/丽江，含住宿推荐、穿衣建议、当地美食等」），"
+    "保留最具区分度的城市、主题和关键节点名，不罗列全部节点。"
+    '必须只输出一个 JSON 对象，格式为 {"summary": "..."}。'
+    "不要输出 JSON 之外的任何内容。"
 )
 
 REVIEW_SYSTEM_PROMPT = (
@@ -165,6 +194,7 @@ class _CandidateModel(BaseModel):
     content: str = Field(min_length=1, max_length=20000)
     entry_type: str
     suggested_node_path: str | None = None
+    suggested_node_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     applicable_conditions: list[str] = Field(default_factory=list)
     risk_points: list[str] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
@@ -230,6 +260,7 @@ def parse_candidate_items(items: list) -> list[ExtractionResult]:
                 content=candidate.content,
                 entry_type=candidate.entry_type,
                 suggested_node_path=candidate.suggested_node_path,
+                suggested_node_confidence=candidate.suggested_node_confidence,
                 key_params=None,
                 risk_points=candidate.risk_points,
                 applicable_conditions=candidate.applicable_conditions,
@@ -246,8 +277,14 @@ async def request_json_candidates(
     model: str,
     content: str,
     content_type: str = "text",
+    directory_paths: str | None = None,
 ) -> list[ExtractionResult]:
     """以 JSON 模式请求候选并结构化解析。"""
+    directory_block = (
+        f"\n\n现有目录：\n{directory_paths}"
+        if directory_paths
+        else ""
+    )
     try:
         response = await client.chat.completions.create(
             model=model,
@@ -255,7 +292,10 @@ async def request_json_candidates(
                 {"role": "system", "content": CANDIDATE_SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": f"来源类型：{content_type}\n原始内容：\n{content}",
+                    "content": (
+                        f"来源类型：{content_type}\n原始内容：\n{content}"
+                        f"{directory_block}"
+                    ),
                 },
             ],
             temperature=0.2,
@@ -273,6 +313,63 @@ async def request_json_candidates(
     if not isinstance(payload, dict) or not isinstance(payload.get("candidates"), list):
         raise AIProviderError("AI 输出缺少 candidates 数组，请重试")
     return parse_candidate_items(payload["candidates"])
+
+
+async def request_json_project_recommendation(
+    client,
+    model: str,
+    projects: list[dict],
+    content: str,
+) -> ProjectRecommendation:
+    """请求项目推荐并结构化解析。"""
+    project_lines = "\n".join(
+        f"- id: {item.get('id')} | 名称: {item.get('name') or ''}"
+        f"{(' | 概要: ' + str(item.get('summary') or '')[:300]) if item.get('summary') else ''}"
+        f"{(' | 背景: ' + str(item.get('goal') or item.get('background') or '')[:80]) if item.get('goal') or item.get('background') else ''}"
+        for item in projects
+    )
+    payload = await _request_json(
+        client,
+        model,
+        PROJECT_RECOMMEND_SYSTEM_PROMPT,
+        f"可归档项目：\n{project_lines or '（无）'}\n\n待归档内容：\n{content[:4000]}",
+    )
+    recommended = bool(payload.get("recommended"))
+    project_id = str(payload.get("project_id") or "").strip() or None
+    confidence_raw = payload.get("confidence")
+    try:
+        confidence = float(confidence_raw) if confidence_raw is not None else None
+    except (TypeError, ValueError):
+        confidence = None
+    reason = str(payload.get("reason") or "").strip()[:300] or None
+    if not recommended or project_id is None or confidence is None:
+        return ProjectRecommendation(project_id=None, confidence=confidence, reason=reason)
+    if confidence < 0.6:
+        return ProjectRecommendation(project_id=None, confidence=confidence, reason=reason)
+    return ProjectRecommendation(
+        project_id=project_id,
+        confidence=confidence,
+        reason=reason,
+    )
+
+
+async def request_json_project_summary(
+    client,
+    model: str,
+    project_name: str,
+    nodes_text: str,
+) -> str:
+    """请求项目概要并解析。"""
+    payload = await _request_json(
+        client,
+        model,
+        PROJECT_SUMMARY_SYSTEM_PROMPT,
+        f"项目名称：{project_name}\n\n目录节点：\n{nodes_text[:4000] or '（空）'}",
+    )
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        raise AIProviderError("AI 项目概要输出为空，请重试")
+    return summary[:500]
 
 
 def parse_review_results(items: list) -> list[ReviewResult]:

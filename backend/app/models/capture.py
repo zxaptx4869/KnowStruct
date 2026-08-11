@@ -75,6 +75,7 @@ class Source(UUIDMixin, TimestampMixin, Base):
         ),
         Index("ix_sources_workspace_created", "workspace_id", "created_at"),
         Index("ix_sources_project", "project_id"),
+        Index("ix_sources_recommended_project", "recommended_project_id"),
         Index("ix_sources_workspace_content_hash", "workspace_id", "content_hash"),
         Index("ix_sources_workspace_link_hash", "workspace_id", "link_hash"),
     )
@@ -87,6 +88,23 @@ class Source(UUIDMixin, TimestampMixin, Base):
     project_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    recommended_project_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    recommended_confidence: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+    recommended_reason: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+    recommended_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
         nullable=True,
     )
     source_type: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -113,7 +131,13 @@ class Source(UUIDMixin, TimestampMixin, Base):
         nullable=True,
     )
 
-    project: Mapped[Project | None] = relationship(back_populates="sources")
+    project: Mapped[Project | None] = relationship(
+        back_populates="sources",
+        foreign_keys=[project_id],
+    )
+    recommended_project: Mapped[Project | None] = relationship(
+        foreign_keys=[recommended_project_id],
+    )
     task: Mapped[ProcessingTask | None] = relationship(
         back_populates="source",
         uselist=False,
@@ -245,6 +269,10 @@ class Extraction(UUIDMixin, TimestampMixin, Base):
             "confidence >= 0 AND confidence <= 1",
             name="ck_extractions_confidence",
         ),
+        CheckConstraint(
+            "suggested_node_confidence >= 0 AND suggested_node_confidence <= 1",
+            name="ck_extractions_suggested_node_confidence",
+        ),
         Index("ix_extractions_source", "source_id"),
         Index("ix_extractions_workspace_status", "workspace_id", "status"),
     )
@@ -270,6 +298,10 @@ class Extraction(UUIDMixin, TimestampMixin, Base):
     entry_type: Mapped[str] = mapped_column(String(30), nullable=False)
     suggested_node_path: Mapped[str | None] = mapped_column(
         String(500),
+        nullable=True,
+    )
+    suggested_node_confidence: Mapped[float | None] = mapped_column(
+        Float,
         nullable=True,
     )
     applicable_conditions: Mapped[list[str] | None] = mapped_column(

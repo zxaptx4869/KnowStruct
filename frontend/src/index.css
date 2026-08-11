@@ -596,6 +596,13 @@ a {
   font-size: 10px;
 }
 
+.project-card .project-summary {
+  margin-top: 6px;
+  color: var(--color-text-tertiary, #9ca3af);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .status-pill {
   display: inline-flex;
   min-height: 24px;
@@ -1379,6 +1386,22 @@ a {
     color: var(--color-text-ink2);
     font-size: 12px;
     vertical-align: middle;
+  }
+
+  .project-table .project-goal,
+  .project-table .project-summary {
+    display: block;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  .project-table .project-goal {
+    color: var(--color-text-secondary);
+  }
+
+  .project-table .project-summary {
+    color: var(--color-text-tertiary, #9ca3af);
+    font-size: 11px;
   }
 
   .project-table tr:last-child td {
@@ -2168,6 +2191,59 @@ a {
 
 .compact-project-field {
   min-width: 210px;
+}
+
+.recommend-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-soft, #e5e7eb);
+  border-radius: 8px;
+  background: #eff6ff;
+  color: var(--text-strong, #111827);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.recommend-banner em {
+  color: var(--muted, #6b7280);
+  font-style: normal;
+}
+
+.recommend-banner .recommend-use {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.recommend-banner .secondary-button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.field-error-text {
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.suggest-match {
+  color: var(--color-primary, #2563eb);
+  font-weight: 500;
+}
+
+.suggest-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.suggest-create .secondary-button {
+  padding: 3px 8px;
+  font-size: 12px;
 }
 
 .confirm-layout {

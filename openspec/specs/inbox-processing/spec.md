@@ -145,15 +145,19 @@ TBD - created by archiving change capture-text-to-entry. Update Purpose after ar
 
 ### Requirement: Batch organize sources
 
-系统 SHALL 允许已认证用户对其 Workspace 内的多条 Source 执行批量分配到项目、批量删除与批量重试。批量请求 MUST 为原子操作：任一 Source 标识不存在、属于其他 Workspace、或状态不满足操作前置条件时，MUST 整批拒绝，不产生部分成功；空请求或超过 100 条的请求 MUST 被拒绝。批量分配 MUST 仅允许 `project_id` 为空且未被任何正式 Entry 引用的 Source，目标项目 MUST 属于当前 Workspace，分配后 Source 归属该项目。批量删除 MUST 拒绝被任何正式 Entry 引用、或 Processing Task 处于执行中的 Source，删除 MUST 同时移除数据库记录，并尝试清理已上传附件文件（清理失败仅记录日志，不阻断删除）。批量重试 MUST 仅对 Processing Task 处于失败状态的 Source 生效，并沿用"从失败步骤重试、不复制 Source/附件/候选/Entry"的既有语义。
+系统 SHALL 允许已认证用户对其 Workspace 内的多条 Source 执行批量分配到项目、批量删除与批量重试。批量请求 MUST 为原子操作：任一 Source 标识不存在、属于其他 Workspace、或状态不满足操作前置条件时，MUST 整批拒绝，不产生部分成功；空请求或超过 100 条的请求 MUST 被拒绝。批量分配 MUST 仅允许 `project_id` 为空、或由 AI 推荐自动填充（`recommended_project_id` 与 `project_id` 一致且存在推荐记录）且未被任何正式 Entry 引用的 Source，目标项目 MUST 属于当前 Workspace，分配后 Source 归属该项目。批量删除 MUST 拒绝被任何正式 Entry 引用、或 Processing Task 处于执行中的 Source，删除 MUST 同时移除数据库记录，并尝试清理已上传附件文件（清理失败仅记录日志，不阻断删除）。批量重试 MUST 仅对 Processing Task 处于失败状态的 Source 生效，并沿用"从失败步骤重试、不复制 Source/附件/候选/Entry"的既有语义。
 
 #### Scenario: Assign unassigned sources to a project
 - **WHEN** 用户批量分配 2 条未分配且无正式记录引用的 Source 到当前 Workspace 的某项目
 - **THEN** 两条 Source 一次性归属该项目，列表与详情中的项目归属随之更新
 
-#### Scenario: Reject assigning an already-assigned source
-- **WHEN** 批量分配请求中某条 Source 已归属于其他项目
+#### Scenario: Reject assigning a manually assigned source
+- **WHEN** 批量分配请求中某条 Source 已被用户手动分配（非 AI 推荐自动填充）
 - **THEN** 系统整批拒绝分配，返回可读冲突，所有 Source 归属保持不变
+
+#### Scenario: Override a recommendation via batch assignment
+- **WHEN** 批量分配请求中的 Source 由 AI 推荐自动填充归属，且未被正式记录引用
+- **THEN** 系统允许重新分配，Source 归属更新为目标项目
 
 #### Scenario: Reject assigning a source referenced by an entry
 - **WHEN** 批量分配请求中某条 Source 已被正式 Entry 引用
@@ -222,3 +226,20 @@ TBD - created by archiving change capture-text-to-entry. Update Purpose after ar
 #### Scenario: Isolate duplicates per workspace
 - **WHEN** 其他 Workspace 存在相同指纹的 Source
 - **THEN** 当前用户的采集与列表不把其判定为疑似重复
+
+### Requirement: Recommended archive project on capture
+
+采集界面 SHALL 保持归档项目为非必填，并在项目选择旁提示「不选择时 AI 将推荐归档项目」。
+提交文本/链接采集且未选项目时，系统 SHALL 返回项目推荐（推荐项目、置信度与理由，规则见
+`ai-archive-suggestion` 主规格）；图片采集在 OCR 完成后返回推荐。推荐展示 MUST 提供
+「使用」与「忽略」操作，且不改变采集本身的成功/失败语义——推荐失败或低置信度时采集
+MUST 仍成功，仅不展示推荐。
+
+#### Scenario: Show the hint next to the project selector
+- **WHEN** 用户进入采集界面且项目选择为空
+- **THEN** 项目下拉旁显示「不选择时 AI 将推荐归档项目」提示
+
+#### Scenario: Show and accept a recommendation
+- **WHEN** 未选项目提交文本采集且推荐置信度达标
+- **THEN** 系统自动将推荐项目设为该 Source 的项目归属并用于提取上下文，采集结果展示
+  「AI 已建议归档：X（置信度）」，用户可在项目下拉改选

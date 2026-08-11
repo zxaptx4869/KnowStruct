@@ -12,6 +12,7 @@ from app.ai.base import (
     ClarifyResult,
     ExtractionResult,
     OutlineNode,
+    ProjectRecommendation,
     ReviewResult,
 )
 
@@ -56,6 +57,7 @@ class DemoProvider(AIProvider):
         self,
         content: str,
         content_type: str = "text",
+        directory_paths: str | None = None,
     ) -> list[ExtractionResult]:
         if "FAILONCE" in content:
             key = content.strip()
@@ -88,6 +90,9 @@ class DemoProvider(AIProvider):
                     content=snippet,
                     entry_type="experience",
                     suggested_node_path=device_path,
+                    suggested_node_confidence=(
+                        0.9 if device_path else 0.4
+                    ),
                     risk_points=[],
                     applicable_conditions=["以实际机型与设置面板为准。"],
                     confidence=0.9,
@@ -100,18 +105,24 @@ class DemoProvider(AIProvider):
                     content=snippet,
                     entry_type="pitfall",
                     suggested_node_path=device_path,
+                    suggested_node_confidence=(
+                        0.9 if device_path else 0.4
+                    ),
                     risk_points=["示例内容需人工核对"],
                     applicable_conditions=[],
                     confidence=0.82,
                 )
             )
         candidates.append(
-            ExtractionResult(
-                title=f"{title} 关键参数待确认",
-                content="请补充具体型号、容量、尺寸与能效等参数数值，便于后续对比。",
-                entry_type="parameter",
-                suggested_node_path=device_path,
-                risk_points=[],
+                ExtractionResult(
+                    title=f"{title} 关键参数待确认",
+                    content="请补充具体型号、容量、尺寸与能效等参数数值，便于后续对比。",
+                    entry_type="parameter",
+                    suggested_node_path=device_path,
+                    suggested_node_confidence=(
+                        0.9 if device_path else 0.4
+                    ),
+                    risk_points=[],
                 applicable_conditions=["以产品说明书为准。"],
                 confidence=0.55,
             )
@@ -288,6 +299,50 @@ class DemoProvider(AIProvider):
 
     async def review(self, entries: list[dict]) -> list[ReviewResult]:
         return []
+
+    async def recommend_project(
+        self,
+        projects: list[dict],
+        content: str,
+    ) -> ProjectRecommendation:
+        """确定性项目推荐：内容包含项目名时推荐该唯一项目，否则不推荐。"""
+        matched = [
+            item
+            for item in projects
+            if str(item.get("name") or "") and str(item.get("name")) in content
+        ]
+        if len(matched) == 1:
+            return ProjectRecommendation(
+                project_id=str(matched[0].get("id")),
+                confidence=0.9,
+                reason=f"内容与「{matched[0].get('name')}」直接相关",
+            )
+        if len(matched) > 1:
+            return ProjectRecommendation(
+                project_id=None,
+                confidence=0.5,
+                reason="内容同时涉及多个项目，无法可靠判断",
+            )
+        return ProjectRecommendation(
+            project_id=None,
+            confidence=0.3,
+            reason="内容未命中任何项目主题",
+        )
+
+    async def summarize_project(
+        self,
+        project_name: str,
+        nodes_text: str,
+    ) -> str:
+        """确定性项目概要：取目录节点路径前几行拼接，截断到约 150 字。"""
+        lines = [
+            line.strip()
+            for line in nodes_text.splitlines()
+            if line.strip()
+        ]
+        top = lines[:12]
+        summary = f"{project_name}：涵盖{'；'.join(top)}"
+        return summary[:500]
 
     async def expand_node(
         self, node_title: str, context: str = ""

@@ -1,5 +1,5 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../components/useToast'
 import {
@@ -15,7 +15,8 @@ import {
 } from '../inbox/queries'
 import type { DecideInput, Extraction, SourceDetail } from '../inbox/types'
 import { mutationMessage } from '../projects/errors'
-import { useNodes, useProjects } from '../projects/queries'
+import { useCreateNode, useNodes, useProjects } from '../projects/queries'
+import { resolveSuggestedPath } from '../inbox/suggestedPath'
 
 function confidenceBadge(confidence: number | null) {
   if (confidence === null) return null
@@ -48,8 +49,61 @@ function CandidateCard({
   const [actionError, setActionError] = useState<string | null>(null)
   const decideMutation = useDecideExtraction(sourceId)
   const nodesQuery = useNodes(projectId)
+  const createNodeMutation = useCreateNode(projectId)
+  const preselectRef = useRef<string | null>(null)
 
   const decided = extraction.status !== 'pending_confirm'
+  const nodes = nodesQuery.data ?? []
+  const suggestion = useMemo<
+    { kind: 'low' } | ({ kind: 'suggest' } & ReturnType<typeof resolveSuggestedPath>) | null
+  >(() => {
+    if (!projectId || !extraction.suggested_node_path) return null
+    const confidence = extraction.suggested_node_confidence
+    if (confidence != null && confidence < 0.6) {
+      return { kind: 'low' as const }
+    }
+    return {
+      kind: 'suggest' as const,
+      ...resolveSuggestedPath(extraction.suggested_node_path, nodesQuery.data ?? []),
+    }
+  }, [
+    projectId,
+    extraction.suggested_node_path,
+    extraction.suggested_node_confidence,
+    nodesQuery.data,
+  ])
+
+  useEffect(() => {
+    if (!suggestion || suggestion.kind === 'low') return
+    if (!suggestion.matched) return
+    const key = `match:${suggestion.matched.id}`
+    if (preselectRef.current === key) return
+    preselectRef.current = key
+    setNodeId(suggestion.matched.id)
+  }, [suggestion])
+
+  async function createSuggestedNode() {
+    if (!suggestion || suggestion.kind === 'low' || suggestion.missing.length === 0) {
+      return
+    }
+    setActionError(null)
+    const prefixNode = suggestion.prefixNodes[suggestion.prefixNodes.length - 1] ?? null
+    let parentId = prefixNode?.id ?? null
+    let createdId = ''
+    try {
+      for (const segment of suggestion.missing) {
+        const created = await createNodeMutation.mutateAsync({
+          name: segment,
+          parent_id: parentId,
+        })
+        createdId = created.id
+        parentId = created.id
+      }
+      setNodeId(createdId)
+    } catch (error) {
+      setActionError(mutationMessage(error, '新建节点失败，请重试'))
+    }
+  }
 
   function buildInput(decision: 'accepted' | 'rejected'): DecideInput {
     return {
@@ -119,14 +173,51 @@ function CandidateCard({
         </div>
         <div className="form-field">
           <span>归档节点（可选）</span>
-          <select value={nodeId} onChange={(event) => setNodeId(event.target.value)} disabled={decided}>
+          <select
+            aria-label="归档节点"
+            value={nodeId}
+            onChange={(event) => setNodeId(event.target.value)}
+            disabled={decided}
+          >
             <option value="">暂不归档</option>
-            {(nodesQuery.data ?? []).map((node) => (
+            {nodes.map((node) => (
               <option key={node.id} value={node.id}>{node.name}</option>
             ))}
           </select>
-          {extraction.suggested_node_path && (
-            <small className="field-hint">AI 建议：{extraction.suggested_node_path}</small>
+          {suggestion?.kind === 'low' && (
+            <small className="field-hint">AI 未能可靠判断归档节点，请手动选择。</small>
+          )}
+          {suggestion && suggestion.kind === 'suggest' && suggestion.matched && (
+            <small className="field-hint suggest-match">
+              AI 建议：{extraction.suggested_node_path}
+            </small>
+          )}
+          {suggestion
+            && suggestion.kind === 'suggest'
+            && suggestion.missing.length > 0
+            && suggestion.prefixNodes.length > 0 && (
+            <div className="suggest-create">
+              <small className="field-hint">
+                建议新建：{suggestion.missing.join(' / ')}
+                （父：{suggestion.prefixNodes.map((item) => item.name).join(' / ')}）
+              </small>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={createNodeMutation.isPending || decided}
+                onClick={() => void createSuggestedNode()}
+              >
+                {createNodeMutation.isPending ? '创建中…' : '新建该节点'}
+              </button>
+            </div>
+          )}
+          {suggestion
+            && suggestion.kind === 'suggest'
+            && suggestion.missing.length > 0
+            && suggestion.prefixNodes.length === 0 && (
+            <small className="field-hint">
+              AI 未能可靠判断归档节点，请手动选择。
+            </small>
           )}
         </div>
         {!projectId && (
@@ -364,6 +455,23 @@ export default function SourceConfirmPage() {
                   <option key={project.id} value={project.id}>{project.name}</option>
                 ))}
               </select>
+              {source?.recommended_project_id
+                && effectiveProjectId === source.recommended_project_id && (
+                  <div className="recommend-banner" role="status">
+                    <Sparkles size={14} />
+                    <span>
+                      AI 已建议归档：
+                      <strong>{source.recommended_project_name}</strong>
+                      {source.recommended_confidence != null && (
+                        <>（{source.recommended_confidence.toFixed(2)}）</>
+                      )}
+                      {source.recommended_reason && (
+                        <em> · {source.recommended_reason}</em>
+                      )}
+                      <em> · 可在上方修改</em>
+                    </span>
+                  </div>
+                )}
             </div>
           </div>
 

@@ -31,6 +31,7 @@ from app.services.inbox import (
     process_source_ocr,
     utc_now,
 )
+from app.services.project_summary import rebuild_one_stale_summary
 from app.services.review_scan import run_scan
 
 logger = logging.getLogger(__name__)
@@ -268,6 +269,8 @@ async def run_task_worker() -> None:
                     processed = await process_next_draft(db)
                 if not processed:
                     processed = await process_next_scan(db)
+                if not processed:
+                    processed = await rebuild_one_stale_summary(db)
             if not processed:
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
