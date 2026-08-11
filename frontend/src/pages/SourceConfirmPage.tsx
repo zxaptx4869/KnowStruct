@@ -357,6 +357,13 @@ export default function SourceConfirmPage() {
   const acceptedCount = extractions.filter((item) => item.status === 'accepted').length
   const rejectedCount = extractions.filter((item) => item.status === 'rejected').length
   const effectiveProjectId = projectId || source?.project_id || ''
+  const showRecommendationMissedHint =
+    source != null
+    && source.processing_state !== 'processing'
+    && source.processing_state !== 'failed'
+    && !source.project_id
+    && !source.recommended_project_id
+    && (projectsQuery.data?.length ?? 0) > 0
 
   const nextUndecidedIndex = useMemo(() => {
     const items = source?.extractions ?? []
@@ -472,6 +479,12 @@ export default function SourceConfirmPage() {
                     </span>
                   </div>
                 )}
+              {showRecommendationMissedHint && (
+                <div className="recommend-banner recommend-missed" role="status">
+                  <Sparkles size={14} />
+                  <span>AI 未能可靠判断归档项目，请手动选择。</span>
+                </div>
+              )}
             </div>
           </div>
 
