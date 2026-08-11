@@ -359,8 +359,10 @@ export default function SourceConfirmPage() {
   const effectiveProjectId = projectId || source?.project_id || ''
   const showRecommendationMissedHint =
     source != null
+    && !allDecided
     && source.processing_state !== 'processing'
     && source.processing_state !== 'failed'
+    && !projectId
     && !source.project_id
     && !source.recommended_project_id
     && (projectsQuery.data?.length ?? 0) > 0

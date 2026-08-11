@@ -38,7 +38,7 @@
 #### Scenario: Show the hint only after processing completes
 - **WHEN** Source 不在处理中（已处理或待确认）、仍未分配项目、无推荐结果且工作区存在项目
 - **THEN** 确认页归档项目选择旁显示「AI 未能可靠判断归档项目，请手动选择」；
-  处理中或已分配项目的 Source 不显示该提示
+  处理中、用户已在页面选择项目、已分配项目或全部候选已决定的 Source 不显示该提示
 
 #### Scenario: Hide the hint when no project can be selected
 - **WHEN** 工作区没有项目

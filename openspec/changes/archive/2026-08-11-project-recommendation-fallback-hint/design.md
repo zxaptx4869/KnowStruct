@@ -31,13 +31,18 @@
 source.processing_state not in ('processing', 'failed')
 && source.project_id == null
 && source.recommended_project_id == null
+&& 用户未在页面下拉中另选项目（本地 projectId 为空）
+&& 尚未全部决定（allDecided 为 false）
 && 当前工作区项目数 > 0
 ```
 
 依据：当前流程保证「不在处理中/失败 ⇒ 推荐已尝试」——文字/链接在采集提交时同步推荐，
 图片在 `process_source_extraction`（OCR 之后）补调推荐，任务成功并产生候选后进入
 `pending_confirm`。因此不再处理中的 Source 仍未分配且无推荐结果，必然对应低置信度、
-模型不推荐或调用失败。工作区只有一个项目时会自动推荐（不调模型），不会进入此分支。
+模型不推荐或调用失败。确认页的项目下拉只在接受时随候选提交、不单独调用分配接口，因此
+本地 `projectId` 状态即用户当前选择；一旦用户已选择或全部候选已决定，提示应消失，
+避免与「请手动选择」的指引自相矛盾。工作区只有一个项目时会自动推荐（不调模型），
+不会进入此分支。
 
 备选：后端新增推荐结果状态列（区分 matched / low_confidence / failed / no_projects）
 并把模型理由落库。优点是可展示「内容同时涉及多个项目，无法可靠判断」等理由，并能精确
