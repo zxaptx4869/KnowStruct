@@ -11,6 +11,7 @@ from app.ai.base import (
     ClarifyResult,
     ExtractionResult,
     OutlineNode,
+    ProjectRecommendation,
     ReviewResult,
 )
 from app.ai.openai_compat import (
@@ -20,6 +21,8 @@ from app.ai.openai_compat import (
     request_json_expansion,
     request_json_intent,
     request_json_outline,
+    request_json_project_recommendation,
+    request_json_project_summary,
     request_json_review,
 )
 
@@ -56,12 +59,14 @@ class DoubaoProvider(AIProvider):
         self,
         content: str,
         content_type: str = "text",
+        directory_paths: str | None = None,
     ) -> list[ExtractionResult]:
         return await request_json_candidates(
             self._client,
             self.model,
             content,
             content_type,
+            directory_paths,
         )
 
     async def ocr(self, image_data: bytes) -> str:
@@ -144,6 +149,30 @@ class DoubaoProvider(AIProvider):
 
     async def review(self, entries: list[dict]) -> list[ReviewResult]:
         return await request_json_review(self._client, self.model, entries)
+
+    async def recommend_project(
+        self,
+        projects: list[dict],
+        content: str,
+    ) -> ProjectRecommendation:
+        return await request_json_project_recommendation(
+            self._client,
+            self.model,
+            projects,
+            content,
+        )
+
+    async def summarize_project(
+        self,
+        project_name: str,
+        nodes_text: str,
+    ) -> str:
+        return await request_json_project_summary(
+            self._client,
+            self.model,
+            project_name,
+            nodes_text,
+        )
 
     async def expand_node(
         self, node_title: str, context: str = ""

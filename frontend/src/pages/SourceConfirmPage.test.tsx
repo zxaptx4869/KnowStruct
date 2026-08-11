@@ -65,22 +65,43 @@ const detail: SourceDetail = {
   ],
 }
 
-function confirmFetch(overrides: { state?: SourceDetail } = {}) {
+function confirmFetch(overrides: { state?: SourceDetail, nodes?: Array<Record<string, unknown>> } = {}) {
   let state = overrides.state ?? JSON.parse(JSON.stringify(detail)) as SourceDetail
+  const mockNodes = overrides.nodes ?? [
+    { id: 'node-1', project_id: 'project-1', parent_id: null, name: '冰箱', description: null, sort_order: 0, created_at: '', updated_at: '' },
+  ]
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
-    if (method === 'GET' && url.startsWith('/api/projects')) {
+    if (method === 'GET' && url === '/api/projects') {
       return Promise.resolve(jsonResponse([
         { id: 'project-1', name: '新房装修', status: 'planning', node_count: 0, created_at: '', updated_at: '' },
       ]))
     }
-    if (method === 'GET' && url.startsWith('/api/projects/project-1/nodes')) {
-      return Promise.resolve(jsonResponse([
-        { id: 'node-1', project_id: 'project-1', parent_id: null, name: '冰箱', description: null, sort_order: 0, created_at: '', updated_at: '' },
-      ]))
+    if (url.startsWith('/api/projects/project-1/nodes')) {
+      if (method === 'GET') {
+        return Promise.resolve(jsonResponse(mockNodes))
+      }
+      const body = JSON.parse(String(init?.body)) as { name: string, parent_id?: string | null }
+      const created = {
+        id: `new-${body.name}`,
+        project_id: 'project-1',
+        parent_id: body.parent_id ?? null,
+        name: body.name,
+        description: null,
+        sort_order: mockNodes.length,
+        created_at: '',
+        updated_at: '',
+      }
+      mockNodes.push(created)
+      return Promise.resolve(jsonResponse(created, 201))
     }
     if (method === 'GET' && url.startsWith('/api/inbox/sources/src-1')) {
+      return Promise.resolve(jsonResponse(state))
+    }
+    if (method === 'POST' && url.includes('/assign')) {
+      const body = JSON.parse(String(init?.body)) as { project_id: string }
+      state = { ...state, project_id: body.project_id, project_name: '新房装修' }
       return Promise.resolve(jsonResponse(state))
     }
     if (method === 'POST' && url.includes('/decide')) {
@@ -190,5 +211,177 @@ describe('SourceConfirmPage confirmation flow', () => {
     expect(relatedRow).toBeInTheDocument()
     await userEvent.click(relatedRow)
     expect(await screen.findByTestId('node-page')).toBeInTheDocument()
+  })
+
+  it('shows the auto-applied recommended project', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      project_id: 'project-1',
+      recommended_project_id: 'project-1',
+      recommended_project_name: '新房装修',
+      recommended_confidence: 0.9,
+      recommended_reason: '内容与装修直接相关',
+    }
+    vi.stubGlobal('fetch', confirmFetch({ state }))
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    expect(await screen.findByText(/AI 已建议归档：/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/归档项目/)).toHaveValue('project-1')
+    expect(screen.queryByRole('button', { name: '使用' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '忽略' })).not.toBeInTheDocument()
+  })
+
+  it('preselects a fully matched suggested node', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      project_id: 'project-1',
+      extractions: [
+        {
+          ...detail.extractions[0],
+          suggested_node_path: '家具家电 / 大家电 / 冰箱',
+          suggested_node_confidence: 0.9,
+        },
+      ],
+    }
+    const nodes = [
+      { id: 'r1', project_id: 'project-1', parent_id: null, name: '家具家电', description: null, sort_order: 0, created_at: '', updated_at: '' },
+      { id: 'c1', project_id: 'project-1', parent_id: 'r1', name: '大家电', description: null, sort_order: 0, created_at: '', updated_at: '' },
+      { id: 'c2', project_id: 'project-1', parent_id: 'c1', name: '冰箱', description: null, sort_order: 0, created_at: '', updated_at: '' },
+    ]
+    vi.stubGlobal('fetch', confirmFetch({ state, nodes }))
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    const nodeSelects = await screen.findAllByLabelText(/归档节点/)
+    await waitFor(() => {
+      for (const select of nodeSelects) {
+        expect(select).toHaveValue('c2')
+      }
+    })
+    expect(
+      screen.getAllByText(/AI 建议：家具家电 \/ 大家电 \/ 冰箱/).length,
+    ).toBeGreaterThan(0)
+  })
+
+  it('keeps 暂不归档 after the user clears a preselected node', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      project_id: 'project-1',
+      extractions: [
+        {
+          ...detail.extractions[0],
+          suggested_node_path: '家具家电 / 大家电 / 冰箱',
+          suggested_node_confidence: 0.9,
+        },
+      ],
+    }
+    const nodes = [
+      { id: 'r1', project_id: 'project-1', parent_id: null, name: '家具家电', description: null, sort_order: 0, created_at: '', updated_at: '' },
+      { id: 'c1', project_id: 'project-1', parent_id: 'r1', name: '大家电', description: null, sort_order: 0, created_at: '', updated_at: '' },
+      { id: 'c2', project_id: 'project-1', parent_id: 'c1', name: '冰箱', description: null, sort_order: 0, created_at: '', updated_at: '' },
+    ]
+    vi.stubGlobal('fetch', confirmFetch({ state, nodes }))
+    const user = userEvent.setup()
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    const nodeSelects = await screen.findAllByLabelText(/归档节点/)
+    await waitFor(() => {
+      expect(nodeSelects[0]).toHaveValue('c2')
+    })
+    await user.selectOptions(nodeSelects[0], '')
+    expect(nodeSelects[0]).toHaveValue('')
+    await waitFor(() => {
+      expect(nodeSelects[0]).toHaveValue('')
+    })
+  })
+
+  it('offers explicit creation for missing path segments', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      project_id: 'project-1',
+      extractions: [
+        {
+          ...detail.extractions[0],
+          suggested_node_path: '家具家电 / 大家电 / 洗衣机',
+          suggested_node_confidence: 0.9,
+        },
+      ],
+    }
+    const nodes = [
+      { id: 'r1', project_id: 'project-1', parent_id: null, name: '家具家电', description: null, sort_order: 0, created_at: '', updated_at: '' },
+      { id: 'c1', project_id: 'project-1', parent_id: 'r1', name: '大家电', description: null, sort_order: 0, created_at: '', updated_at: '' },
+    ]
+    const fetchMock = confirmFetch({ state, nodes })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    expect((await screen.findAllByText(/建议新建：洗衣机/)).length).toBeGreaterThan(0)
+    await user.click(screen.getAllByRole('button', { name: '新建该节点' })[0])
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).startsWith('/api/projects/project-1/nodes') && init?.method === 'POST') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(createCall).toBeDefined()
+      expect(JSON.parse(String(createCall![1].body))).toEqual({
+        name: '洗衣机',
+        parent_id: 'c1',
+      })
+    })
+    const nodeSelects = await screen.findAllByLabelText(/归档节点/)
+    await waitFor(() => {
+      for (const select of nodeSelects) {
+        expect(select).toHaveValue('new-洗衣机')
+      }
+    })
+  })
+
+  it('degrades to manual selection on low suggestion confidence', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      project_id: 'project-1',
+      extractions: [
+        {
+          ...detail.extractions[0],
+          suggested_node_path: '家具家电 / 大家电 / 冰箱',
+          suggested_node_confidence: 0.4,
+        },
+      ],
+    }
+    vi.stubGlobal('fetch', confirmFetch({ state }))
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    expect(
+      (await screen.findAllByText(/AI 未能可靠判断归档节点，请手动选择/)).length,
+    ).toBeGreaterThan(0)
+    const nodeSelects = await screen.findAllByLabelText(/归档节点/)
+    for (const select of nodeSelects) {
+      expect(select).toHaveValue('')
+    }
+  })
+
+  it('does not suggest creating a brand-new root for unmatched paths', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      project_id: 'project-1',
+      extractions: [
+        {
+          ...detail.extractions[0],
+          suggested_node_path: '旅行 / 昆明 / 景点选择',
+          suggested_node_confidence: 0.8,
+        },
+      ],
+    }
+    const nodes = [
+      { id: 'r1', project_id: 'project-1', parent_id: null, name: '云南5天自由行攻略', description: null, sort_order: 0, created_at: '', updated_at: '' },
+    ]
+    vi.stubGlobal('fetch', confirmFetch({ state, nodes }))
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    expect(
+      (await screen.findAllByText(/AI 未能可靠判断归档节点，请手动选择/)).length,
+    ).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: '新建该节点' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/建议新建：/)).not.toBeInTheDocument()
   })
 })

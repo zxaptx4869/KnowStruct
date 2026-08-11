@@ -464,6 +464,7 @@ export default function InboxPage() {
                 <option key={project.id} value={project.id}>{project.name}</option>
               ))}
             </select>
+            <small className="field-hint">不选择时 AI 将推荐归档项目</small>
           </div>
           {submitError && <div className="inline-error" role="alert">{submitError}</div>}
           {duplicateNotice && (

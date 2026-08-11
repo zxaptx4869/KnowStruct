@@ -13,6 +13,7 @@ from app.api.errors import DomainError, ResourceNotFoundError
 from app.config import get_settings
 from app.models import SourceAttachment
 from app.schemas.inbox import (
+    AssignProjectRequest,
     AttachmentInfo,
     BatchAssignRequest,
     BatchAssignResponse,
@@ -42,6 +43,7 @@ from app.services.confirmation import (
 from app.services.inbox import (
     SourceDetailData,
     SourceListItemData,
+    assign_source_project,
     batch_assign_sources,
     batch_delete_sources,
     batch_retry_sources,
@@ -103,6 +105,11 @@ def _list_item(item: SourceListItemData) -> SourceListItem:
         content_status=item.source.content_status,
         project_id=item.source.project_id,
         project_name=item.project_name,
+        recommended_project_id=item.source.recommended_project_id,
+        recommended_project_name=item.recommended_project_name,
+        recommended_confidence=item.source.recommended_confidence,
+        recommended_reason=item.source.recommended_reason,
+        recommended_at=item.source.recommended_at,
         processing_state=derive_processing_state(item.task, item.counts),
         candidates=item.counts,
         task=TaskInfo.model_validate(item.task) if item.task else None,
@@ -141,6 +148,15 @@ async def source_create(
     db: DbSession,
 ) -> SourceDetailResponse:
     source = await create_source(db, auth.workspace.id, payload)
+    if source.project_id is None:
+        try:
+            from app.ai import get_ai_provider
+            from app.services.inbox import recommend_source_project
+
+            provider = await get_ai_provider(db, auth.workspace.id)
+            await recommend_source_project(db, source, provider)
+        except Exception:  # noqa: BLE001 - 推荐失败静默降级
+            logger.warning("project recommendation failed for source %s", source.id)
     duplicate = await find_duplicate_source(db, auth.workspace.id, source)
     if duplicate is not None:
         source.duplicate_of_id = duplicate.id
@@ -236,6 +252,28 @@ async def source_batch_assign(
     )
     await db.commit()
     return BatchAssignResponse(assigned=assigned)
+
+
+@router.post(
+    "/sources/{source_id}/assign",
+    response_model=SourceDetailResponse,
+)
+async def source_assign_project(
+    source_id: str,
+    payload: AssignProjectRequest,
+    auth: Auth,
+    db: DbSession,
+) -> SourceDetailResponse:
+    source = await assign_source_project(
+        db,
+        auth.workspace.id,
+        source_id,
+        payload.project_id,
+    )
+    await db.commit()
+    return _detail_response(
+        await get_source_detail(db, auth.workspace.id, source.id)
+    )
 
 
 @router.post(

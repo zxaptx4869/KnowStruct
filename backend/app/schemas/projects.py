@@ -58,6 +58,7 @@ class ProjectResponse(BaseModel):
     name: str
     goal: str | None
     background: str | None
+    summary: str | None = None
     status: ProjectStatusValue
     node_count: int = 0
     entry_count: int = 0

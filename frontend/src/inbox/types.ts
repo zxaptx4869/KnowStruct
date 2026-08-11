@@ -51,6 +51,11 @@ export interface SourceItem {
   content_status: string
   project_id: string | null
   project_name: string | null
+  recommended_project_id?: string | null
+  recommended_project_name?: string | null
+  recommended_confidence?: number | null
+  recommended_reason?: string | null
+  recommended_at?: string | null
   processing_state: ProcessingState
   candidates: CandidateCounts
   task: TaskInfo | null
@@ -67,6 +72,7 @@ export interface Extraction {
   content: string
   entry_type: string
   suggested_node_path: string | null
+  suggested_node_confidence?: number | null
   applicable_conditions: string[] | null
   risk_points: string[] | null
   confidence: number | null

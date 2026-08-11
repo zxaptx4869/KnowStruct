@@ -98,7 +98,11 @@ export default function HomePage() {
               <thead><tr><th>项目</th><th>状态</th><th>目录节点</th><th>最近更新</th><th><span className="sr-only">操作</span></th></tr></thead>
               <tbody>{projects.map((project) => (
                 <tr key={project.id} onClick={() => navigate(`/projects/${project.id}`)}>
-                  <td><strong>{project.name}</strong><span>{project.goal || '暂未填写项目目标'}</span></td>
+                  <td>
+                    <strong>{project.name}</strong>
+                    <span className="project-goal">{project.goal || '暂未填写项目目标'}</span>
+                    {project.summary && <span className="project-summary">{project.summary}</span>}
+                  </td>
                   <td><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span></td>
                   <td>{project.node_count} 个</td>
                   <td>{new Date(project.updated_at).toLocaleDateString('zh-CN')}</td>
@@ -112,6 +116,7 @@ export default function HomePage() {
               <article key={project.id} className="project-card" onClick={() => navigate(`/projects/${project.id}`)}>
                 <div className="project-card-head"><h2>{project.name}</h2><ProjectActions project={project} onEdit={() => setEditing(project)} onDelete={() => setDeleting(project)} /></div>
                 <p>{project.goal || '暂未填写项目目标'}</p>
+                {project.summary && <p className="project-summary">{project.summary}</p>}
                 <div className="project-card-meta"><span className={`status-pill status-${project.status}`}>{projectStatusLabel(project.status)}</span><span>{project.node_count} 个目录节点</span><span>{new Date(project.updated_at).toLocaleDateString('zh-CN')}</span></div>
               </article>
             ))}

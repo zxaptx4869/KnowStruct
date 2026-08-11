@@ -110,6 +110,7 @@ class ExtractionResponse(BaseModel):
     content: str
     entry_type: str
     suggested_node_path: str | None = None
+    suggested_node_confidence: float | None = None
     applicable_conditions: list[str] | None = None
     risk_points: list[str] | None = None
     confidence: float | None = None
@@ -146,6 +147,11 @@ class SourceListItem(BaseModel):
     content_status: str
     project_id: str | None = None
     project_name: str | None = None
+    recommended_project_id: str | None = None
+    recommended_project_name: str | None = None
+    recommended_confidence: float | None = None
+    recommended_reason: str | None = None
+    recommended_at: datetime | None = None
     processing_state: ProcessingStateValue
     candidates: CandidateCounts
     task: TaskInfo | None = None
@@ -220,6 +226,12 @@ class BatchSourcesRequest(BaseModel):
 
 
 class BatchAssignRequest(BatchSourcesRequest):
+    project_id: str = Field(min_length=1, max_length=36)
+
+    _strip_project = field_validator("project_id", mode="before")(strip_required)
+
+
+class AssignProjectRequest(BaseModel):
     project_id: str = Field(min_length=1, max_length=36)
 
     _strip_project = field_validator("project_id", mode="before")(strip_required)
