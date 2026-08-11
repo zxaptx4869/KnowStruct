@@ -21,6 +21,24 @@ export interface DraftMessage {
   created_at: string
 }
 
+export type DiffKind = 'added' | 'kept' | 'removed'
+
+export interface ExpansionDiffEntry {
+  kind: DiffKind
+  node: {
+    id: string
+    name: string
+    description: string | null
+    selected: boolean
+  } | null
+  real_node_id: string | null
+  name: string | null
+  description: string | null
+  blocked: boolean
+  blocker_count: number
+  children: ExpansionDiffEntry[]
+}
+
 export type DraftStatus =
   | 'drafting'
   | 'awaiting_input'
@@ -32,10 +50,12 @@ export type DraftStatus =
 export interface DirectoryDraft {
   id: string
   project_id: string
+  target_node_id: string | null
   status: DraftStatus
   next_action: 'clarify' | 'generate' | 'refine'
   intent_note: string | null
   clarify: DraftQuestion[]
+  diff: ExpansionDiffEntry[]
   nodes: DraftNode[]
   messages: DraftMessage[]
   last_error: string | null

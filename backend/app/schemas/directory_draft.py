@@ -37,10 +37,12 @@ class ClarifyQuestionResponse(BaseModel):
 class DraftResponse(BaseModel):
     id: str
     project_id: str
+    target_node_id: str | None = None
     status: str
     next_action: str
     intent_note: str | None = None
     clarify: list[ClarifyQuestionResponse] = Field(default_factory=list)
+    diff: list[dict] = Field(default_factory=list)
     nodes: list[DraftNodeResponse] = Field(default_factory=list)
     messages: list[DraftMessageResponse] = Field(default_factory=list)
     last_error: str | None = None
@@ -59,8 +61,10 @@ class DraftChatResponse(BaseModel):
 
 class DraftCreate(BaseModel):
     background: str | None = Field(default=None, max_length=2000)
+    target_node_id: str | None = Field(default=None, max_length=36)
 
     _strip_background = field_validator("background", mode="before")(strip_optional)
+    _strip_target = field_validator("target_node_id", mode="before")(strip_optional)
 
 
 class ClarifySubmit(BaseModel):
@@ -93,3 +97,7 @@ class DraftNodeEdit(BaseModel):
 class DraftConfirmResponse(BaseModel):
     created_count: int
     status: str
+
+
+class DraftConfirmRequest(BaseModel):
+    removed_node_ids: list[str] = Field(default_factory=list)

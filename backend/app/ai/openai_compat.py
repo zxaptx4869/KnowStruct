@@ -49,6 +49,16 @@ OUTLINE_SYSTEM_PROMPT = (
     "层级不超过 6 层。不要输出 JSON 之外的任何内容。"
 )
 
+EXPANSION_SYSTEM_PROMPT = (
+    "你是 KnowStruct 的知识目录拓展助手。用户会提供目标节点名称、该节点现有的子节点"
+    "（含说明）与项目资料摘要。请在保留现有子节点的基础上，为目标节点生成更完整的"
+    "子节点结构：已有子节点 MUST 完整保留（名称与说明一致），可补充新的细分节点。"
+    '必须只输出一个 JSON 对象，格式为 {"children": [{"name": "节点名", '
+    '"description": "节点说明（可空）", "children": [...]}]}，children 是目标节点下的'
+    "子节点数组（不含目标节点自身）。要求：节点名 1-100 字符且不能为空；同一父节点下"
+    "名称不能重复；层级不超过 6 层。不要输出 JSON 之外的任何内容。"
+)
+
 CLARIFY_SYSTEM_PROMPT = (
     "你是 KnowStruct 的知识目录引导助手。判断给定的项目目标/背景与资料摘要"
     "是否足以生成初始知识目录。信息不足时生成引导问题以缩小范围。"
@@ -373,6 +383,29 @@ async def request_json_outline(
     if not isinstance(raw_nodes, list):
         raise AIProviderError("AI 输出缺少 nodes 数组，请重试")
     return [_node_from_dict(item, 1) for item in raw_nodes if isinstance(item, dict)]
+
+
+async def request_json_expansion(
+    client,
+    model: str,
+    node_title: str,
+    context: str = "",
+) -> list[OutlineNode]:
+    """请求目标节点的目标子节点并结构化解析。"""
+    payload = await _request_json(
+        client,
+        model,
+        EXPANSION_SYSTEM_PROMPT,
+        f"目标节点：\n{node_title}\n\n项目背景与资料摘要：\n{context or '（无）'}",
+    )
+    raw_children = payload.get("children")
+    if not isinstance(raw_children, list):
+        raise AIProviderError("AI 输出缺少 children 数组，请重试")
+    return [
+        _node_from_dict(item, 1)
+        for item in raw_children
+        if isinstance(item, dict)
+    ]
 
 
 async def request_json_clarify(

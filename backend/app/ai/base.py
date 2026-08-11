@@ -139,7 +139,7 @@ class AIProvider(ABC):
 
     @abstractmethod
     async def expand_node(
-        self, node_title: str, context: str
-    ) -> list[dict]:
-        """基于节点内容拓展子节点建议"""
+        self, node_title: str, context: str = ""
+    ) -> list[OutlineNode]:
+        """为目标目录节点生成目标子节点（必须包含应保留的现有子节点）。"""
         ...

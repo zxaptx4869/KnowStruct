@@ -290,6 +290,54 @@ class DemoProvider(AIProvider):
         return []
 
     async def expand_node(
-        self, node_title: str, context: str
-    ) -> list[dict]:
-        return []
+        self, node_title: str, context: str = ""
+    ) -> list[OutlineNode]:
+        """确定性节点拓展：保留现有子节点（名称含「删除」者省略），再追加一个细分节点。"""
+        children: list[OutlineNode] = []
+        lines = context.splitlines()
+        start = None
+        for index, line in enumerate(lines):
+            if line.strip() == "现有子节点：":
+                start = index + 1
+                break
+        if start is None:
+            return (
+                [
+                    OutlineNode(
+                        title="新增细分节点",
+                        description="AI 建议补充的细分维度",
+                    )
+                ]
+                if "不新增" not in node_title
+                else []
+            )
+        for line in lines[start:]:
+            if not line.strip():
+                break
+            if line.startswith((" ", "\t")):
+                continue
+            if not line.startswith("- "):
+                break
+            item = line[2:].strip()
+            if not item:
+                continue
+            if "删除" in item:
+                continue
+            name, _, description = item.partition("：")
+            name = name.strip()
+            if not name:
+                continue
+            children.append(
+                OutlineNode(
+                    title=name,
+                    description=description.strip() or None,
+                )
+            )
+        if "不新增" not in node_title:
+            children.append(
+                OutlineNode(
+                    title="新增细分节点",
+                    description="AI 建议补充的细分维度",
+                )
+            )
+        return children

@@ -38,9 +38,10 @@ function useInvalidateDraft(projectId: string) {
 export function useCreateDraft(projectId: string) {
   const invalidate = useInvalidateDraft(projectId)
   return useMutation({
-    mutationFn: (background?: string) =>
+    mutationFn: (input?: { background?: string, targetNodeId?: string }) =>
       api.post<DirectoryDraft>(`/projects/${projectId}/drafts`, {
-        ...(background ? { background } : {}),
+        ...(input?.background ? { background: input.background } : {}),
+        ...(input?.targetNodeId ? { target_node_id: input.targetNodeId } : {}),
       }),
     onSuccess: invalidate,
   })
@@ -74,9 +75,10 @@ export function useConfirmDraft(projectId: string, draftId: string) {
   const invalidate = useInvalidateDraft(projectId)
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () =>
+    mutationFn: (removedNodeIds: string[] = []) =>
       api.post<DraftConfirmResult>(
         `/projects/${projectId}/drafts/${draftId}/confirm`,
+        { removed_node_ids: removedNodeIds },
       ),
     onSuccess: async () => {
       await invalidate()
