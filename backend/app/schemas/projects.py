@@ -6,6 +6,10 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.inbox import EntryTypeValue
+from app.schemas.structured_fields import (
+    normalize_key_params,
+    normalize_risk_points,
+)
 
 ProjectStatusValue = Literal["planning", "active", "paused", "completed"]
 TrimmedProjectName = Annotated[str, Field(min_length=1, max_length=100)]
@@ -130,6 +134,8 @@ class NodeEntryResponse(BaseModel):
     title: str
     content: str
     applicable_conditions: list[str] | None
+    key_params: dict | None = None
+    risk_points: list[str] | None = None
     node_id: str | None = None
     node_path: list[str] = Field(default_factory=list)
     sources: list[NodeEntrySourceRef] = Field(default_factory=list)
@@ -189,6 +195,8 @@ class EntryUpdate(BaseModel):
     content: TrimmedEntryContent | None = None
     entry_type: EntryTypeValue | None = None
     applicable_conditions: list[str] | None = None
+    key_params: dict | None = None
+    risk_points: list[str] | None = None
     node_id: str | None = None
 
     @field_validator("title", "content", mode="before")
@@ -199,6 +207,16 @@ class EntryUpdate(BaseModel):
         if not isinstance(value, str):
             return value
         return value.strip()
+
+    @field_validator("key_params")
+    @classmethod
+    def validate_key_params(cls, value: object) -> dict[str, str] | None:
+        return normalize_key_params(value)
+
+    @field_validator("risk_points")
+    @classmethod
+    def validate_risk_points(cls, value: object) -> list[str] | None:
+        return normalize_risk_points(value)
 
     @model_validator(mode="after")
     def require_change(self) -> "EntryUpdate":

@@ -17,6 +17,8 @@ def make_candidate(
     suggested_node_path: str | None = "家具家电 / 大家电 / 冰箱",
     suggested_node_confidence: float | None = 0.9,
     confidence: float = 0.9,
+    key_params: dict[str, str] | None = None,
+    risk_points: list[str] | None = None,
 ) -> ExtractionResult:
     return ExtractionResult(
         title=title,
@@ -24,7 +26,8 @@ def make_candidate(
         entry_type=entry_type,
         suggested_node_path=suggested_node_path,
         suggested_node_confidence=suggested_node_confidence,
-        risk_points=[],
+        key_params=key_params,
+        risk_points=risk_points or [],
         applicable_conditions=["嵌入橱柜安装；以具体型号安装图为准。"],
         confidence=confidence,
     )

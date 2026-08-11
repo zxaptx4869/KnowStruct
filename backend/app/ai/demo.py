@@ -122,11 +122,12 @@ class DemoProvider(AIProvider):
                     suggested_node_confidence=(
                         0.9 if device_path else 0.4
                     ),
-                    risk_points=[],
-                applicable_conditions=["以产品说明书为准。"],
-                confidence=0.55,
+                    key_params={"型号": "示例型号", "容量": "待确认"},
+                    risk_points=["示例参数需以产品说明书核对"],
+                    applicable_conditions=["以产品说明书为准。"],
+                    confidence=0.55,
+                )
             )
-        )
         return candidates
 
     async def extract_info(

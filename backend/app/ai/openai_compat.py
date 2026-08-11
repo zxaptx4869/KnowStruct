@@ -18,6 +18,10 @@ from app.ai.base import (
     ReviewResult,
 )
 from app.models.entries import EntryType
+from app.schemas.structured_fields import (
+    normalize_key_params,
+    normalize_risk_points,
+)
 
 _ENTRY_TYPE_KEYS = ", ".join(f'"{value}"' for value in EntryType)
 
@@ -25,7 +29,8 @@ CANDIDATE_SYSTEM_PROMPT = (
     "你是知识整理助手。根据用户提供的原始内容，提取 2-4 条可归档的知识候选。"
     '必须只输出一个 JSON 对象，格式为 {"candidates": [{"title": "...", '
     '"content": "...", "entry_type": "...", "applicable_conditions": ["..."], '
-    '"risk_points": ["..."], "confidence": 0.9, "suggested_node_path": "...", '
+    '"risk_points": ["..."], "key_params": {"参数名": "参数值"}, "confidence": 0.9, '
+    '"suggested_node_path": "...", '
     '"suggested_node_confidence": 0.8}]}。'
     f'entry_type 只能取以下值之一：{_ENTRY_TYPE_KEYS}。'
     "confidence 是 0 到 1 的数字。不要输出 JSON 之外的任何内容。"
@@ -34,6 +39,11 @@ CANDIDATE_SYSTEM_PROMPT = (
     "仅当现有目录确实没有能承载该内容的节点时，才填写你认为合适的新路径；"
     "不要加「建议新建」等前缀，且新路径应尽量挂靠在现有节点下，避免新增顶层节点。"
     "suggested_node_confidence 是 0 到 1 的数字，表示该归档节点建议的可靠程度。"
+    "key_params 仅当内容存在可提取的键值参数（如参数/商品/价格类）时输出，"
+    "参数值用字符串并保留单位；没有可提取参数时省略该字段，禁止编造。"
+    "risk_points 是避坑要点，只写具体、非显而易见、针对本条内容的要点；"
+    "「不同品牌要求不同」「需以实际为准」等通用提醒是反面示例，不要写；"
+    "没有具体要点时省略该字段。"
 )
 
 PROJECT_RECOMMEND_SYSTEM_PROMPT = (
@@ -197,6 +207,7 @@ class _CandidateModel(BaseModel):
     suggested_node_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     applicable_conditions: list[str] = Field(default_factory=list)
     risk_points: list[str] = Field(default_factory=list)
+    key_params: dict | None = None
     confidence: float = Field(ge=0.0, le=1.0)
 
     @field_validator("title", "content")
@@ -218,6 +229,16 @@ class _CandidateModel(BaseModel):
         if value not in EntryType.__members__.values():
             raise ValueError(f"不支持的记录类型: {value}")
         return value
+
+    @field_validator("key_params")
+    @classmethod
+    def validate_key_params(cls, value: object) -> dict[str, str] | None:
+        return normalize_key_params(value)
+
+    @field_validator("risk_points")
+    @classmethod
+    def validate_risk_points(cls, value: object) -> list[str] | None:
+        return normalize_risk_points(value)
 
 
 class _ReviewFindingModel(BaseModel):
@@ -261,7 +282,7 @@ def parse_candidate_items(items: list) -> list[ExtractionResult]:
                 entry_type=candidate.entry_type,
                 suggested_node_path=candidate.suggested_node_path,
                 suggested_node_confidence=candidate.suggested_node_confidence,
-                key_params=None,
+                key_params=candidate.key_params,
                 risk_points=candidate.risk_points,
                 applicable_conditions=candidate.applicable_conditions,
                 confidence=candidate.confidence,

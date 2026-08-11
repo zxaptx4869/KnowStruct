@@ -181,6 +181,8 @@ async def list_project_entries(
             title=entry.title,
             content=entry.content,
             applicable_conditions=entry.applicable_conditions,
+            key_params=entry.key_params,
+            risk_points=entry.risk_points,
             node_id=entry.node_id,
             node_path=(
                 paths.get(entry.node_id, [])
@@ -317,6 +319,8 @@ async def list_node_entries(
             title=entry.title,
             content=entry.content,
             applicable_conditions=entry.applicable_conditions,
+            key_params=entry.key_params,
+            risk_points=entry.risk_points,
             node_id=entry.node_id,
             sources=sources.get(entry.id, []),
             created_at=entry.created_at,
@@ -356,6 +360,10 @@ async def update_entry(
         entry.entry_type = payload.entry_type
     if "applicable_conditions" in payload.model_fields_set:
         entry.applicable_conditions = payload.applicable_conditions
+    if "key_params" in payload.model_fields_set:
+        entry.key_params = payload.key_params
+    if "risk_points" in payload.model_fields_set:
+        entry.risk_points = payload.risk_points
     await db.flush()
     sources = (await _load_entry_sources(db, workspace_id, [entry.id])).get(
         entry.id,
@@ -367,6 +375,8 @@ async def update_entry(
         title=entry.title,
         content=entry.content,
         applicable_conditions=entry.applicable_conditions,
+        key_params=entry.key_params,
+        risk_points=entry.risk_points,
         node_id=entry.node_id,
         sources=sources,
         created_at=entry.created_at,

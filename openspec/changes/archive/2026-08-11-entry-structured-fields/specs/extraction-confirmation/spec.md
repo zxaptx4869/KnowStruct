@@ -1,8 +1,5 @@
-# extraction-confirmation Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change capture-text-to-entry. Update Purpose after archive.
-## Requirements
 ### Requirement: Replaceable AI provider generates pending candidates
 
 系统 SHALL 通过可替换的 AI Provider 抽象为每个可提取 Source 生成一条或多条 Extraction
@@ -43,18 +40,6 @@ Key 时优先使用，未配置时回退到部署环境变量。Provider 实现 
 #### Scenario: Reject invalid structured output
 - **WHEN** AI 输出的 key_params 不是对象、值不是字符串或超限，或 risk_points 条目超限
 - **THEN** 系统按无效 AI 输出将任务标记为失败并可重试，不创建候选或 Entry
-
-### Requirement: Invalid or empty extraction output is a retryable failure
-
-系统 MUST 在 AI 返回非法结构、校验失败或空候选时将该任务标记为失败，不得把失败当成功，也不得创建 Extraction 或 Entry。
-
-#### Scenario: Reject invalid AI output
-- **WHEN** AI Provider 返回无法通过结构化校验的内容或空候选列表
-- **THEN** 系统标记任务失败并说明"未生成有效候选"，Source 保留且可重试
-
-#### Scenario: Retry produces candidates without duplication
-- **WHEN** 用户重试一个因无效 AI 输出而失败的任务
-- **THEN** 系统重新执行提取，成功后仅生成一次候选，不复制 Source、候选或 Entry
 
 ### Requirement: Per-candidate confirmation before archiving
 
@@ -126,47 +111,3 @@ SHALL 归属当前 Workspace 与所选项目，状态默认为已归档；Entry 
 #### Scenario: Hide another workspace's confirmation data
 - **WHEN** 已认证用户使用其他 Workspace 的 Source、Extraction、Project 或 Node 标识执行确认
 - **THEN** 系统按对应对象不存在处理，不暴露标识是否真实存在，也不修改任何数据
-
-### Requirement: Accepted entries store applicable conditions
-
-系统 SHALL 在接受 Extraction 候选并创建正式 Entry 时，将确认后的适用条件写入 Entry。适用条件为字符串列表，可为空；Entry 的适用条件 MUST 与候选及其确认结果一致，并自包含于正式记录（不依赖回查候选）。
-
-#### Scenario: Save conditions on accept
-- **WHEN** 用户接受候选并提交适用条件
-- **THEN** 系统创建 Entry 时写入该适用条件，可从 Entry 直接读取
-
-#### Scenario: Preserve candidate conditions when not edited
-- **WHEN** 用户未修改适用条件直接接受候选
-- **THEN** Entry 保存候选原有的适用条件
-
-#### Scenario: Allow empty conditions
-- **WHEN** 用户接受候选且适用条件为空
-- **THEN** Entry 的适用条件保持为空，界面按"无适用条件"展示
-
-#### Scenario: Backfill existing entries from their extractions
-- **WHEN** 数据库迁移 0006 执行
-- **THEN** 已有 Entry 从关联 Extraction 回填适用条件，无关联或无条件记录的适用条件保持为空
-
-### Requirement: Suggest archive node during per-candidate confirmation
-
-逐条确认候选时，系统 SHALL 在用户选定项目后按该项目目录解析候选的 `suggested_node_path`：
-置信度达标（≥0.6）且路径全匹配时，MUST 预选归档节点并标注「AI 建议」；部分匹配时 MUST
-提供「建议新建缺失段」的显式入口（创建后自动作为归档节点，复用重名/超深/归属校验，失败
-显示错误可改选）；低置信度或目录变化导致无法匹配时 MUST 降级为手动选择并给出说明。
-解析与新建 MUST NOT 自动创建节点或归档，保持人工确认边界。
-
-#### Scenario: Preselect a matched suggestion
-- **WHEN** 候选置信度达标且建议路径全匹配现有节点
-- **THEN** 归档节点下拉预选该节点并标注「AI 建议」，接受后按该节点归档
-
-#### Scenario: Create missing path segments explicitly
-- **WHEN** 建议路径仅前缀匹配且用户点击「新建该节点」
-- **THEN** 系统沿路径创建缺失段，新节点自动成为该候选的归档节点，创建失败显示可读错误
-
-#### Scenario: Fall back to manual selection
-- **WHEN** 候选置信度低于 0.6，或建议路径无法匹配且用户未选择新建
-- **THEN** 系统不预选节点，界面提示手动选择，确认流程不受影响
-
-#### Scenario: Keep decisions editable before acceptance
-- **WHEN** 用户修改预选的归档节点或取消新建
-- **THEN** 以用户最终选择为准，建议仅作为初始值

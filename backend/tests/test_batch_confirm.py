@@ -71,6 +71,40 @@ async def test_batch_confirm_creates_traceable_entries(
 
 
 @pytest.mark.asyncio
+async def test_batch_confirm_carries_structured_fields(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    provider = FakeAIProvider(
+        candidates=[
+            make_candidate(
+                entry_type="parameter",
+                key_params={"型号": "M60", "容量": "10kg"},
+                risk_points=["示例参数需以产品说明书核对"],
+            ),
+        ]
+    )
+    source = await _ready_source(client, db, content="零嵌冰箱参数", provider=provider)
+
+    response = await client.post(
+        "/api/inbox/sources/batch/confirm",
+        json={
+            "source_ids": [source["id"]],
+            "project_id": project["id"],
+        },
+    )
+    assert response.status_code == 200
+    entries = (
+        await db.scalars(select(Entry).where(Entry.project_id == project["id"]))
+    ).all()
+    assert len(entries) == 1
+    assert entries[0].key_params == {"型号": "M60", "容量": "10kg"}
+    assert entries[0].risk_points == ["示例参数需以产品说明书核对"]
+
+
+@pytest.mark.asyncio
 async def test_batch_confirm_with_node(
     client: AsyncClient,
     db: AsyncSession,

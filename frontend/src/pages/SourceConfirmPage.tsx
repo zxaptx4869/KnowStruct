@@ -17,6 +17,12 @@ import type { DecideInput, Extraction, SourceDetail } from '../inbox/types'
 import { mutationMessage } from '../projects/errors'
 import { useCreateNode, useNodes, useProjects } from '../projects/queries'
 import { resolveSuggestedPath } from '../inbox/suggestedPath'
+import {
+  formatKeyParams,
+  formatRiskPoints,
+  parseKeyParams,
+  parseRiskPoints,
+} from '../inbox/structuredFields'
 
 function confidenceBadge(confidence: number | null) {
   if (confidence === null) return null
@@ -45,6 +51,12 @@ function CandidateCard({
   const [conditions, setConditions] = useState(
     (extraction.applicable_conditions ?? []).join('；'),
   )
+  const [keyParamsText, setKeyParamsText] = useState(
+    formatKeyParams(extraction.key_params),
+  )
+  const [riskPointsText, setRiskPointsText] = useState(
+    formatRiskPoints(extraction.risk_points),
+  )
   const [nodeId, setNodeId] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const decideMutation = useDecideExtraction(sourceId)
@@ -54,6 +66,12 @@ function CandidateCard({
 
   const decided = extraction.status !== 'pending_confirm'
   const nodes = nodesQuery.data ?? []
+  const showKeyParams = Boolean(
+    extraction.key_params && Object.keys(extraction.key_params).length > 0,
+  )
+  const showRiskPoints = Boolean(
+    extraction.risk_points && extraction.risk_points.length > 0,
+  )
   const suggestion = useMemo<
     { kind: 'low' } | ({ kind: 'suggest' } & ReturnType<typeof resolveSuggestedPath>) | null
   >(() => {
@@ -105,7 +123,31 @@ function CandidateCard({
     }
   }
 
-  function buildInput(decision: 'accepted' | 'rejected'): DecideInput {
+  function buildStructuredInput():
+    | { key_params?: Record<string, string>, risk_points?: string[] }
+    | { error: string } {
+    const structured: {
+      key_params?: Record<string, string>
+      risk_points?: string[]
+    } = {}
+    if (showKeyParams) {
+      const parsed = parseKeyParams(keyParamsText)
+      if ('error' in parsed) return { error: `关键参数：${parsed.error}` }
+      structured.key_params = parsed.value
+    }
+    if (showRiskPoints) {
+      structured.risk_points = parseRiskPoints(riskPointsText)
+    }
+    return structured
+  }
+
+  function buildInput(
+    decision: 'accepted' | 'rejected',
+    structured: {
+      key_params?: Record<string, string>
+      risk_points?: string[]
+    } = {},
+  ): DecideInput {
     return {
       decision,
       project_id: projectId || undefined,
@@ -117,6 +159,12 @@ function CandidateCard({
         .split(/[；;]/)
         .map((item) => item.trim())
         .filter(Boolean),
+      ...(decision === 'accepted'
+        ? {
+            key_params: structured.key_params,
+            risk_points: structured.risk_points,
+          }
+        : {}),
     }
   }
 
@@ -126,8 +174,16 @@ function CandidateCard({
       onProjectNeeded()
       return
     }
+    const structured = buildStructuredInput()
+    if ('error' in structured) {
+      setActionError(structured.error)
+      return
+    }
     try {
-      await decideMutation.mutateAsync({ extractionId: extraction.id, input: buildInput(decision) })
+      await decideMutation.mutateAsync({
+        extractionId: extraction.id,
+        input: buildInput(decision, structured),
+      })
     } catch (error) {
       setActionError(mutationMessage(error, '提交失败，请重试'))
     }
@@ -171,6 +227,30 @@ function CandidateCard({
             disabled={decided}
           />
         </div>
+        {showKeyParams && (
+          <div className="form-field">
+            <span>关键参数（每行一条「名称：值」）</span>
+            <textarea
+              rows={3}
+              value={keyParamsText}
+              onChange={(event) => setKeyParamsText(event.target.value)}
+              placeholder="散热方式：底部散热"
+              disabled={decided}
+            />
+          </div>
+        )}
+        {showRiskPoints && (
+          <div className="form-field">
+            <span>避坑要点（每行一条）</span>
+            <textarea
+              rows={3}
+              value={riskPointsText}
+              onChange={(event) => setRiskPointsText(event.target.value)}
+              placeholder="具体、非显而易见的要点"
+              disabled={decided}
+            />
+          </div>
+        )}
         <div className="form-field">
           <span>归档节点（可选）</span>
           <select

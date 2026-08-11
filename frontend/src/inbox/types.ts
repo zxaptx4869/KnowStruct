@@ -75,6 +75,7 @@ export interface Extraction {
   suggested_node_confidence?: number | null
   applicable_conditions: string[] | null
   risk_points: string[] | null
+  key_params?: Record<string, string> | null
   confidence: number | null
   decided_at: string | null
   created_at: string
@@ -130,6 +131,8 @@ export interface DecideInput {
   content?: string
   entry_type?: EntryType
   applicable_conditions?: string[]
+  key_params?: Record<string, string>
+  risk_points?: string[]
 }
 
 export interface EntrySummary {

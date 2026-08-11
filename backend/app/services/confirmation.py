@@ -133,6 +133,16 @@ async def decide_extraction(
         if payload.applicable_conditions is not None
         else extraction.applicable_conditions
     )
+    key_params = (
+        payload.key_params
+        if "key_params" in payload.model_fields_set
+        else extraction.key_params
+    )
+    risk_points = (
+        payload.risk_points
+        if "risk_points" in payload.model_fields_set
+        else extraction.risk_points
+    )
 
     entry = Entry(
         workspace_id=workspace_id,
@@ -143,6 +153,8 @@ async def decide_extraction(
         title=title,
         content=content,
         applicable_conditions=conditions,
+        key_params=key_params,
+        risk_points=risk_points,
         status="archived",
     )
     db.add(entry)
@@ -346,6 +358,8 @@ async def batch_confirm_sources(
             title=extraction.title,
             content=extraction.content,
             applicable_conditions=extraction.applicable_conditions,
+            key_params=extraction.key_params,
+            risk_points=extraction.risk_points,
             status="archived",
         )
         db.add(entry)

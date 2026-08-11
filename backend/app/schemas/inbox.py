@@ -5,6 +5,11 @@ from typing import Annotated, Literal
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.structured_fields import (
+    normalize_key_params,
+    normalize_risk_points,
+)
+
 SourceTypeValue = Literal["text", "link", "image"]
 ProcessingStateValue = Literal["processing", "failed", "pending_confirm", "done"]
 DecisionValue = Literal["accepted", "rejected"]
@@ -113,6 +118,7 @@ class ExtractionResponse(BaseModel):
     suggested_node_confidence: float | None = None
     applicable_conditions: list[str] | None = None
     risk_points: list[str] | None = None
+    key_params: dict | None = None
     confidence: float | None = None
     decided_at: datetime | None = None
     created_at: datetime
@@ -173,9 +179,21 @@ class DecideRequest(BaseModel):
     content: TrimmedTextContent | None = None
     entry_type: EntryTypeValue | None = None
     applicable_conditions: list[str] | None = None
+    key_params: dict | None = None
+    risk_points: list[str] | None = None
 
     _strip_title = field_validator("title", mode="before")(strip_optional)
     _strip_content = field_validator("content", mode="before")(strip_optional)
+
+    @field_validator("key_params")
+    @classmethod
+    def validate_key_params(cls, value: object) -> dict[str, str] | None:
+        return normalize_key_params(value)
+
+    @field_validator("risk_points")
+    @classmethod
+    def validate_risk_points(cls, value: object) -> list[str] | None:
+        return normalize_risk_points(value)
 
     @model_validator(mode="after")
     def require_edits_are_valid(self) -> "DecideRequest":
