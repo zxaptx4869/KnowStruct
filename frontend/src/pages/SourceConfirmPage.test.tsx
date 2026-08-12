@@ -411,6 +411,39 @@ describe('SourceConfirmPage confirmation flow', () => {
     ).toBe(false)
   })
 
+  it('rejects a candidate even with malformed structured fields', async () => {
+    const user = userEvent.setup()
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      extractions: [
+        {
+          ...detail.extractions[0],
+          entry_type: 'parameter',
+          key_params: { 散热方式: '底部散热' },
+        },
+      ],
+    }
+    const fetchMock = confirmFetch({ state })
+    vi.stubGlobal('fetch', fetchMock)
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    const keyParamsEditor = (await screen.findAllByPlaceholderText('散热方式：底部散热'))[0]
+    fireEvent.change(keyParamsEditor, { target: { value: '缺少分隔符的一行' } })
+    await user.click(
+      (await screen.findAllByRole('button', { name: '拒绝' }))[0],
+    )
+
+    await waitFor(() => {
+      const decideCall = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).includes('/decide') && init?.method === 'POST') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(decideCall).toBeDefined()
+      const body = JSON.parse(String(decideCall![1].body))
+      expect(body).toMatchObject({ decision: 'rejected' })
+    })
+    expect(screen.queryByText(/关键参数：第 1 行缺少/)).not.toBeInTheDocument()
+  })
+
   it('preselects a fully matched suggested node', async () => {
     const state: SourceDetail = {
       ...JSON.parse(JSON.stringify(detail)) as SourceDetail,

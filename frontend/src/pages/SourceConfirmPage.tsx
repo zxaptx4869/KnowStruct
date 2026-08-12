@@ -174,10 +174,17 @@ function CandidateCard({
       onProjectNeeded()
       return
     }
-    const structured = buildStructuredInput()
-    if ('error' in structured) {
-      setActionError(structured.error)
-      return
+    let structured: {
+      key_params?: Record<string, string>
+      risk_points?: string[]
+    } = {}
+    if (decision === 'accepted') {
+      const parsed = buildStructuredInput()
+      if ('error' in parsed) {
+        setActionError(parsed.error)
+        return
+      }
+      structured = parsed
     }
     try {
       await decideMutation.mutateAsync({
