@@ -65,18 +65,23 @@ const detail: SourceDetail = {
   ],
 }
 
-function confirmFetch(overrides: { state?: SourceDetail, nodes?: Array<Record<string, unknown>> } = {}) {
+function confirmFetch(overrides: {
+  state?: SourceDetail
+  nodes?: Array<Record<string, unknown>>
+  projects?: Array<Record<string, unknown>>
+} = {}) {
   let state = overrides.state ?? JSON.parse(JSON.stringify(detail)) as SourceDetail
   const mockNodes = overrides.nodes ?? [
     { id: 'node-1', project_id: 'project-1', parent_id: null, name: '冰箱', description: null, sort_order: 0, created_at: '', updated_at: '' },
+  ]
+  const mockProjects = overrides.projects ?? [
+    { id: 'project-1', name: '新房装修', status: 'planning', node_count: 0, created_at: '', updated_at: '' },
   ]
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
     if (method === 'GET' && url === '/api/projects') {
-      return Promise.resolve(jsonResponse([
-        { id: 'project-1', name: '新房装修', status: 'planning', node_count: 0, created_at: '', updated_at: '' },
-      ]))
+      return Promise.resolve(jsonResponse(mockProjects))
     }
     if (url.startsWith('/api/projects/project-1/nodes')) {
       if (method === 'GET') {
@@ -229,6 +234,76 @@ describe('SourceConfirmPage confirmation flow', () => {
     expect(screen.getByLabelText(/归档项目/)).toHaveValue('project-1')
     expect(screen.queryByRole('button', { name: '使用' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '忽略' })).not.toBeInTheDocument()
+  })
+
+  it('shows a manual selection hint when the recommendation could not be determined', async () => {
+    vi.stubGlobal('fetch', confirmFetch())
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    expect(
+      await screen.findByText(/AI 未能可靠判断归档项目，请手动选择/),
+    ).toBeInTheDocument()
+  })
+
+  it('hides the manual selection hint when the source is already assigned', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      project_id: 'project-1',
+      project_name: '新房装修',
+    }
+    vi.stubGlobal('fetch', confirmFetch({ state }))
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    await screen.findByLabelText('归档项目')
+    expect(screen.queryByText(/AI 未能可靠判断归档项目，请手动选择/)).not.toBeInTheDocument()
+  })
+
+  it('hides the manual selection hint when the workspace has no projects', async () => {
+    vi.stubGlobal('fetch', confirmFetch({ projects: [] }))
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    await screen.findByLabelText('归档项目')
+    expect(screen.queryByText(/AI 未能可靠判断归档项目，请手动选择/)).not.toBeInTheDocument()
+  })
+
+  it('hides the manual selection hint while the source is processing', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      processing_state: 'processing',
+      extractions: [],
+      candidates: { pending_confirm: 0, accepted: 0, rejected: 0 },
+    }
+    vi.stubGlobal('fetch', confirmFetch({ state }))
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    await screen.findByText('AI 提取中')
+    expect(screen.queryByText(/AI 未能可靠判断归档项目，请手动选择/)).not.toBeInTheDocument()
+  })
+
+  it('hides the manual selection hint after the user picks a project', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', confirmFetch())
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    expect(
+      await screen.findByText(/AI 未能可靠判断归档项目，请手动选择/),
+    ).toBeInTheDocument()
+    await user.selectOptions(await screen.findByLabelText(/归档项目/), 'project-1')
+    expect(screen.queryByText(/AI 未能可靠判断归档项目，请手动选择/)).not.toBeInTheDocument()
+  })
+
+  it('hides the manual selection hint after all candidates are decided', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', confirmFetch())
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    await screen.findByText(/AI 未能可靠判断归档项目，请手动选择/)
+    const rejectButtons = await screen.findAllByRole('button', { name: '拒绝' })
+    await user.click(rejectButtons[0])
+    await user.click((await screen.findAllByRole('button', { name: '拒绝' }))[0])
+
+    expect(await screen.findByText(/已处理完成：接受 0 条，拒绝 2 条/)).toBeInTheDocument()
+    expect(screen.queryByText(/AI 未能可靠判断归档项目，请手动选择/)).not.toBeInTheDocument()
   })
 
   it('preselects a fully matched suggested node', async () => {
