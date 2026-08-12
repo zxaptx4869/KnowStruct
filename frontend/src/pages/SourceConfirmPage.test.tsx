@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -304,6 +304,144 @@ describe('SourceConfirmPage confirmation flow', () => {
 
     expect(await screen.findByText(/已处理完成：接受 0 条，拒绝 2 条/)).toBeInTheDocument()
     expect(screen.queryByText(/AI 未能可靠判断归档项目，请手动选择/)).not.toBeInTheDocument()
+  })
+
+  it('shows structured field editors only when the candidate has values', async () => {
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      extractions: [
+        {
+          ...detail.extractions[0],
+          entry_type: 'parameter',
+          key_params: { 散热方式: '底部散热', 安装余量: '左右各 2-5mm' },
+          risk_points: ['散热方式不同，余量要求不同'],
+        },
+      ],
+    }
+    vi.stubGlobal('fetch', confirmFetch({ state }))
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    const keyParamsEditor = (await screen.findAllByPlaceholderText('散热方式：底部散热'))[0]
+    expect(keyParamsEditor).toHaveValue('散热方式：底部散热\n安装余量：左右各 2-5mm')
+    expect(
+      (await screen.findAllByPlaceholderText('具体、非显而易见的要点'))[0],
+    ).toHaveValue(
+      '散热方式不同，余量要求不同',
+    )
+  })
+
+  it('hides structured field editors when the candidate has none', async () => {
+    vi.stubGlobal('fetch', confirmFetch())
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    await screen.findByLabelText('归档项目')
+    expect(screen.queryAllByPlaceholderText('散热方式：底部散热')).toHaveLength(0)
+    expect(screen.queryAllByPlaceholderText('具体、非显而易见的要点')).toHaveLength(0)
+  })
+
+  it('submits edited structured fields with the decision', async () => {
+    const user = userEvent.setup()
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      extractions: [
+        {
+          ...detail.extractions[0],
+          entry_type: 'parameter',
+          key_params: { 散热方式: '底部散热' },
+          risk_points: ['原要点'],
+        },
+      ],
+    }
+    const fetchMock = confirmFetch({ state })
+    vi.stubGlobal('fetch', fetchMock)
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    const keyParamsEditor = (await screen.findAllByPlaceholderText('散热方式：底部散热'))[0]
+    fireEvent.change(keyParamsEditor, {
+      target: { value: '散热方式：底部散热\n安装余量：左右各 5-10mm' },
+    })
+    const riskEditor = (await screen.findAllByPlaceholderText('具体、非显而易见的要点'))[0]
+    fireEvent.change(riskEditor, { target: { value: '只保留这一条具体要点' } })
+    await user.selectOptions(await screen.findByLabelText(/归档项目/), 'project-1')
+    await user.click(
+      (await screen.findAllByRole('button', { name: '接受并生成正式记录' }))[0],
+    )
+
+    await waitFor(() => {
+      const decideCall = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).includes('/decide') && init?.method === 'POST') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(decideCall).toBeDefined()
+      const body = JSON.parse(String(decideCall![1].body))
+      expect(body).toMatchObject({
+        decision: 'accepted',
+        key_params: { 散热方式: '底部散热', 安装余量: '左右各 5-10mm' },
+        risk_points: ['只保留这一条具体要点'],
+      })
+    })
+  })
+
+  it('blocks acceptance with a malformed key params line', async () => {
+    const user = userEvent.setup()
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      extractions: [
+        {
+          ...detail.extractions[0],
+          entry_type: 'parameter',
+          key_params: { 散热方式: '底部散热' },
+        },
+      ],
+    }
+    const fetchMock = confirmFetch({ state })
+    vi.stubGlobal('fetch', fetchMock)
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    const keyParamsEditor = (await screen.findAllByPlaceholderText('散热方式：底部散热'))[0]
+    fireEvent.change(keyParamsEditor, { target: { value: '缺少分隔符的一行' } })
+    await user.selectOptions(await screen.findByLabelText(/归档项目/), 'project-1')
+    await user.click(
+      (await screen.findAllByRole('button', { name: '接受并生成正式记录' }))[0],
+    )
+
+    expect(await screen.findByText(/关键参数：第 1 行缺少/)).toBeInTheDocument()
+    expect(
+      fetchMock.mock.calls.some(([url, init]) =>
+        String(url).includes('/decide') && init?.method === 'POST'),
+    ).toBe(false)
+  })
+
+  it('rejects a candidate even with malformed structured fields', async () => {
+    const user = userEvent.setup()
+    const state: SourceDetail = {
+      ...JSON.parse(JSON.stringify(detail)) as SourceDetail,
+      extractions: [
+        {
+          ...detail.extractions[0],
+          entry_type: 'parameter',
+          key_params: { 散热方式: '底部散热' },
+        },
+      ],
+    }
+    const fetchMock = confirmFetch({ state })
+    vi.stubGlobal('fetch', fetchMock)
+    renderRoute(<SourceConfirmPage />, '/inbox/src-1', '/inbox/:sourceId')
+
+    const keyParamsEditor = (await screen.findAllByPlaceholderText('散热方式：底部散热'))[0]
+    fireEvent.change(keyParamsEditor, { target: { value: '缺少分隔符的一行' } })
+    await user.click(
+      (await screen.findAllByRole('button', { name: '拒绝' }))[0],
+    )
+
+    await waitFor(() => {
+      const decideCall = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).includes('/decide') && init?.method === 'POST') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(decideCall).toBeDefined()
+      const body = JSON.parse(String(decideCall![1].body))
+      expect(body).toMatchObject({ decision: 'rejected' })
+    })
+    expect(screen.queryByText(/关键参数：第 1 行缺少/)).not.toBeInTheDocument()
   })
 
   it('preselects a fully matched suggested node', async () => {

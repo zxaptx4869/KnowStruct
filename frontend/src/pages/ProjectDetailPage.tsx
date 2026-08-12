@@ -73,6 +73,12 @@ import {
 } from '../projects/tree'
 import { projectStatusLabel, type Node, type NodeInput, type ProjectInput } from '../projects/types'
 import type { EntryUpdateInput, NodeEntry } from '../projects/types'
+import {
+  formatKeyParams,
+  formatRiskPoints,
+  parseKeyParams,
+  parseRiskPoints,
+} from '../inbox/structuredFields'
 
 interface NodeMenuProps {
   node: Node
@@ -157,6 +163,26 @@ function NodeRecordCard({
           适用条件：{entry.applicable_conditions.join('；')}
         </p>
       )}
+      {entry.key_params && Object.keys(entry.key_params).length > 0 && (
+        <div className="record-structured">
+          <strong>关键参数</strong>
+          <ul>
+            {Object.entries(entry.key_params).map(([key, value]) => (
+              <li key={key}>{key}：{value}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {entry.risk_points && entry.risk_points.length > 0 && (
+        <div className="record-structured">
+          <strong>避坑要点</strong>
+          <ul>
+            {entry.risk_points.map((point, index) => (
+              <li key={index}>{point}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {entry.sources.length > 0 && (
         <div className="record-source-chips">
           {entry.sources.map((source) => (
@@ -198,6 +224,12 @@ function EntryEditDialog({
   const [conditions, setConditions] = useState(
     (entry.applicable_conditions ?? []).join('；'),
   )
+  const [keyParamsText, setKeyParamsText] = useState(
+    formatKeyParams(entry.key_params),
+  )
+  const [riskPointsText, setRiskPointsText] = useState(
+    formatRiskPoints(entry.risk_points),
+  )
   const [nodeId, setNodeId] = useState(entry.node_id ?? '')
   const [validation, setValidation] = useState('')
 
@@ -211,6 +243,11 @@ function EntryEditDialog({
       setValidation('请输入记录内容')
       return
     }
+    const keyParams = parseKeyParams(keyParamsText)
+    if ('error' in keyParams) {
+      setValidation(`关键参数：${keyParams.error}`)
+      return
+    }
     await onSubmit({
       title: title.trim(),
       content: content.trim(),
@@ -219,6 +256,8 @@ function EntryEditDialog({
         .split(/[；;]/)
         .map((item) => item.trim())
         .filter(Boolean),
+      key_params: keyParams.value,
+      risk_points: parseRiskPoints(riskPointsText),
       node_id: nodeId || null,
     })
   }
@@ -250,6 +289,14 @@ function EntryEditDialog({
           <label className="form-field">
             <span>适用条件</span>
             <input value={conditions} onChange={(event) => setConditions(event.target.value)} placeholder="用分号分隔多条条件" />
+          </label>
+          <label className="form-field">
+            <span>关键参数（每行一条「名称：值」）</span>
+            <textarea rows={3} value={keyParamsText} onChange={(event) => { setKeyParamsText(event.target.value); setValidation('') }} placeholder="散热方式：底部散热" />
+          </label>
+          <label className="form-field">
+            <span>避坑要点（每行一条）</span>
+            <textarea rows={3} value={riskPointsText} onChange={(event) => { setRiskPointsText(event.target.value); setValidation('') }} placeholder="具体、非显而易见的要点" />
           </label>
           <label className="form-field">
             <span>归档节点</span>

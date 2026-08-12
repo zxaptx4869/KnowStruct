@@ -114,6 +114,61 @@ async def test_clear_archive_node(
 
 
 @pytest.mark.asyncio
+async def test_update_structured_fields_and_clear(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    entry_id, _ = await _accepted_entry(
+        client,
+        db,
+        project_id=project["id"],
+    )
+    url = f"/api/projects/{project['id']}/entries/{entry_id}"
+
+    response = await client.patch(
+        url,
+        json={
+            "key_params": {"散热方式": "底部散热", "安装余量": "左右各 2-5mm"},
+            "risk_points": ["散热方式不同，余量要求不同"],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["key_params"] == {"散热方式": "底部散热", "安装余量": "左右各 2-5mm"}
+    assert body["risk_points"] == ["散热方式不同，余量要求不同"]
+
+    response = await client.patch(url, json={"key_params": None, "risk_points": None})
+    assert response.status_code == 200
+    assert response.json()["key_params"] is None
+    assert response.json()["risk_points"] is None
+    stored = await db.scalar(select(Entry).where(Entry.id == entry_id))
+    assert stored is not None and stored.key_params is None and stored.risk_points is None
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_invalid_structured_fields(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    entry_id, _ = await _accepted_entry(
+        client,
+        db,
+        project_id=project["id"],
+    )
+    response = await client.patch(
+        f"/api/projects/{project['id']}/entries/{entry_id}",
+        json={"key_params": {"型号": ["非法值"]}},
+    )
+    assert response.status_code == 422
+    stored = await db.scalar(select(Entry).where(Entry.id == entry_id))
+    assert stored is not None and stored.key_params is None
+
+
+@pytest.mark.asyncio
 async def test_reject_blank_and_empty_updates(
     client: AsyncClient,
     db: AsyncSession,

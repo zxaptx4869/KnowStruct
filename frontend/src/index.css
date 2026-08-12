@@ -4073,6 +4073,30 @@ mark.search-highlight {
   color: var(--color-text-secondary);
 }
 
+.record-structured {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.record-structured strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--color-text-ink2);
+}
+
+.record-structured ul {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+
+.record-structured li {
+  margin: 2px 0;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
 .record-source-chips {
   display: flex;
   flex-wrap: wrap;

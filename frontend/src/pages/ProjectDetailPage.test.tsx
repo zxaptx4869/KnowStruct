@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jsonResponse, renderRoute } from '../projects/testUtils'
@@ -221,6 +221,27 @@ describe('node detail records section', () => {
     expect(within(desktop).getByText('冰箱位净宽 915mm')).toBeInTheDocument()
   })
 
+  it('renders structured fields on records when present', async () => {
+    const entries = [
+      {
+        ...entryRows[0],
+        key_params: { 散热方式: '底部散热', 安装余量: '左右各 2-5mm' },
+        risk_points: ['散热方式不同，余量要求不同'],
+      },
+      entryRows[1],
+    ]
+    vi.stubGlobal('fetch', recordsFetch({ entries }))
+    const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
+    await screen.findAllByText('大家电')
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+
+    expect(await within(desktop).findByText('关键参数')).toBeInTheDocument()
+    expect(within(desktop).getByText('散热方式：底部散热')).toBeInTheDocument()
+    expect(within(desktop).getByText('安装余量：左右各 2-5mm')).toBeInTheDocument()
+    expect(within(desktop).getByText('避坑要点')).toBeInTheDocument()
+    expect(within(desktop).getByText('散热方式不同，余量要求不同')).toBeInTheDocument()
+  })
+
   it('shows an empty hint when the node has no records', async () => {
     vi.stubGlobal('fetch', recordsFetch({ entries: [] }))
     const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
@@ -322,6 +343,50 @@ describe('node detail records section', () => {
     })
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: '编辑记录' })).not.toBeInTheDocument()
+    })
+  })
+
+  it('edits structured fields through the record dialog', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).includes('/entries')) {
+        if (init?.method === 'PATCH') {
+          return Promise.resolve(jsonResponse({
+            ...entryRows[0],
+            key_params: { 散热方式: '底部散热' },
+            risk_points: ['散热方式不同，余量要求不同'],
+          }))
+        }
+        return Promise.resolve(jsonResponse(entryRows))
+      }
+      return mockProjectApi()(url)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { container } = renderRoute(<ProjectDetailPage />, '/projects/project-1/nodes/appliances', '/projects/:id/nodes/:nid')
+    await screen.findAllByText('大家电')
+    const desktop = container.querySelector('.desktop-directory') as HTMLElement
+    await within(desktop).findByText('散热方式决定侧边预留')
+
+    await userEvent.click(within(desktop).getByRole('button', { name: '管理记录：散热方式决定侧边预留' }))
+    await userEvent.click(within(desktop).getByRole('button', { name: '编辑记录' }))
+    const dialog = screen.getByRole('dialog', { name: '编辑记录' })
+    const keyParamsInput = within(dialog).getByLabelText(/关键参数/)
+    fireEvent.change(keyParamsInput, { target: { value: '散热方式：底部散热' } })
+    const riskInput = within(dialog).getByLabelText(/避坑要点/)
+    fireEvent.change(riskInput, {
+      target: { value: '散热方式不同，余量要求不同' },
+    })
+    await userEvent.click(within(dialog).getByRole('button', { name: '保存更改' }))
+
+    await waitFor(() => {
+      const patchCall = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).includes('/entries') && init?.method === 'PATCH') as
+        [RequestInfo | URL, RequestInit] | undefined
+      expect(patchCall).toBeDefined()
+      const body = JSON.parse(String(patchCall![1].body))
+      expect(body).toMatchObject({
+        key_params: { 散热方式: '底部散热' },
+        risk_points: ['散热方式不同，余量要求不同'],
+      })
     })
   })
 

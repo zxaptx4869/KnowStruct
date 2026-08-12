@@ -62,6 +62,8 @@ export interface NodeEntry {
   title: string
   content: string
   applicable_conditions: string[] | null
+  key_params?: Record<string, string> | null
+  risk_points?: string[] | null
   node_id: string | null
   node_path: string[]
   sources: NodeEntrySourceRef[]
@@ -73,6 +75,8 @@ export interface EntryUpdateInput {
   content?: string
   entry_type?: string
   applicable_conditions?: string[] | null
+  key_params?: Record<string, string> | null
+  risk_points?: string[] | null
   node_id?: string | null
 }
 

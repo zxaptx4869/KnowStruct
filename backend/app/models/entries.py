@@ -77,6 +77,8 @@ class Entry(UUIDMixin, TimestampMixin, Base):
         JSON,
         nullable=True,
     )
+    key_params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    risk_points: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Entry, EntrySource, Extraction, Project, Source
 from app.services.accounts import create_account
 from app.services.task_worker import process_next_task
-from tests.fakes import FakeAIProvider
+from tests.fakes import FakeAIProvider, make_candidate
 from tests.test_inbox_api import capture, create_project, login_owner
 
 
@@ -64,6 +64,103 @@ async def test_accept_creates_traceable_entry(
 
     source = await db.scalar(select(Source).where(Source.id == detail["id"]))
     assert source is not None and source.project_id == project["id"]
+
+
+@pytest.mark.asyncio
+async def test_accept_persists_structured_fields_with_edits(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    provider = FakeAIProvider(
+        candidates=[
+            make_candidate(
+                title="底部散热型号的安装余量",
+                entry_type="parameter",
+                key_params={"散热方式": "底部散热", "安装余量": "左右各 2-5mm"},
+                risk_points=["散热方式不同，余量要求不同"],
+            ),
+        ]
+    )
+    source = await capture(client, source_type="text", content="零嵌冰箱散热方式")
+    await process_next_task(db, provider)
+    detail = (await client.get(f"/api/inbox/sources/{source['id']}")).json()
+    extraction = detail["extractions"][0]
+    assert extraction["key_params"] == {
+        "散热方式": "底部散热",
+        "安装余量": "左右各 2-5mm",
+    }
+    assert extraction["risk_points"] == ["散热方式不同，余量要求不同"]
+
+    response = await client.post(
+        f"/api/inbox/sources/{source['id']}/extractions/{extraction['id']}/decide",
+        json={
+            "decision": "accepted",
+            "project_id": project["id"],
+            "key_params": {"散热方式": "底部散热", "安装余量": "左右各 5-10mm"},
+            "risk_points": [],
+        },
+    )
+    assert response.status_code == 200
+    entry = await db.scalar(select(Entry).where(Entry.extraction_id == extraction["id"]))
+    assert entry is not None
+    assert entry.key_params == {"散热方式": "底部散热", "安装余量": "左右各 5-10mm"}
+    assert entry.risk_points is None
+
+
+@pytest.mark.asyncio
+async def test_accept_inherits_structured_fields_from_candidate(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    provider = FakeAIProvider(
+        candidates=[
+            make_candidate(
+                entry_type="parameter",
+                key_params={"型号": "M60"},
+                risk_points=["需以产品说明书核对"],
+            ),
+        ]
+    )
+    source = await capture(client, source_type="text", content="零嵌冰箱散热方式")
+    await process_next_task(db, provider)
+    detail = (await client.get(f"/api/inbox/sources/{source['id']}")).json()
+    extraction = detail["extractions"][0]
+
+    response = await client.post(
+        f"/api/inbox/sources/{source['id']}/extractions/{extraction['id']}/decide",
+        json={"decision": "accepted", "project_id": project["id"]},
+    )
+    assert response.status_code == 200
+    entry = await db.scalar(select(Entry).where(Entry.extraction_id == extraction["id"]))
+    assert entry is not None
+    assert entry.key_params == {"型号": "M60"}
+    assert entry.risk_points == ["需以产品说明书核对"]
+
+
+@pytest.mark.asyncio
+async def test_accept_rejects_invalid_structured_fields(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    await login_owner(client, db)
+    project = await create_project(client)
+    detail = await _ready_source(client, db)
+    extraction = detail["extractions"][0]
+
+    response = await client.post(
+        f"/api/inbox/sources/{detail['id']}/extractions/{extraction['id']}/decide",
+        json={
+            "decision": "accepted",
+            "project_id": project["id"],
+            "key_params": ["不是对象"],
+        },
+    )
+    assert response.status_code == 422
+    assert await db.scalar(select(func.count(Entry.id))) == 0
 
 
 @pytest.mark.asyncio
